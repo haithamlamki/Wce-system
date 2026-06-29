@@ -8,8 +8,8 @@
 export interface SymbolDef {
   /** Display name, e.g. "Annular BOP" */
   name: string;
-  /** Category bucket (see SYM_ORDER) */
-  cat: SymbolCategory;
+  /** Category bucket (built-in SymbolCategory, or any string for custom symbols) */
+  cat: SymbolCategory | string;
   /** Base width in canvas units */
   w: number;
   /** Base height in canvas units */
@@ -22,6 +22,23 @@ export interface SymbolDef {
   defaults?: { size?: string };
   /** Nominal stack height (m) for the BOP elevation, where applicable. */
   bopHeight?: number;
+  /** User-drawn custom symbol (vs. built-in). */
+  custom?: boolean;
+  /** Editable vector primitives backing a custom symbol's artwork. */
+  shapes?: DrawShape[];
+}
+
+/** A primitive drawn in the Symbol Drawer (units are symbol-local 0..w / 0..h). */
+export interface DrawShape {
+  type: 'rect' | 'ellipse' | 'line' | 'poly';
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  points?: Array<[number, number]>;
+  stroke: string;
+  fill: string; // colour or 'none'
+  sw: number; // stroke width
 }
 
 export type SymbolCategory =
@@ -68,8 +85,8 @@ export const SYM: Record<string, SymbolDef> = {
   gauge:{name:'Pressure Gauge',cat:'Instruments',w:48,h:56,color:'#9aa7b3',svg:`<circle cx="24" cy="20" r="17" fill="#eef3f6" stroke="#67737e" stroke-width="2.4"/><line x1="24" y1="20" x2="34" y2="11" stroke="#cf3a30" stroke-width="2.2"/><circle cx="24" cy="20" r="2.4" fill="#2b3640"/><rect x="20" y="36" width="8" height="10" fill="#67737e"/><line x1="16" y1="52" x2="32" y2="52" stroke="#67737e" stroke-width="3"/><line x1="24" y1="46" x2="24" y2="52" stroke="#67737e" stroke-width="3"/>`},
   gasdet:{name:'Gas / H2S Monitor',cat:'Instruments',w:36,h:52,color:'#e6a829',svg:`<rect x="8" y="6" width="20" height="40" rx="4" fill="#e6a829" stroke="#a9781a" stroke-width="2"/><rect x="11" y="10" width="14" height="11" rx="2" fill="#2b3640"/><circle cx="18" cy="30" r="3" fill="#2f8b55"/><circle cx="18" cy="40" r="4" fill="none" stroke="#a9781a" stroke-width="1.6"/>`},
 };
-/** Palette grouping order for the symbol categories. */
-export const SYM_ORDER: SymbolCategory[] = ["BOP Stack", "Wellhead & Tree", "Valves", "Manifold", "Mud System", "Koomey", "Instruments"];
+/** Palette grouping order for the symbol categories (custom categories appended at runtime). */
+export const SYM_ORDER: string[] = ["BOP Stack", "Wellhead & Tree", "Valves", "Manifold", "Mud System", "Koomey", "Instruments"];
 
 /** Categories whose adjacent items auto-connect with routed piping. */
 export const AUTOCONNECT: Set<string> = new Set(['BOP Stack','Wellhead & Tree','Valves','Manifold']);

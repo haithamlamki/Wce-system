@@ -10,7 +10,8 @@ import type { Annotation, Component, Edge, PipeSeg, PortName, Project, TemplateI
 import { buildMaster, importFromAEMP, type AempConfig } from '../lib/aemp';
 import { buildBopStack, type HoleSection } from '../lib/bop';
 import { box } from '../lib/geometry';
-import { SYM, type SymbolKey } from '../lib/symbols';
+import { SYM, type SymbolDef, type SymbolKey } from '../lib/symbols';
+import { mergeCustomSymbols, newCustomKey, unregisterSymbol } from '../lib/customSymbols';
 import { REWARDS, rewardStats } from '../lib/rewards';
 import { validate, type Issue } from '../lib/validation';
 
@@ -154,6 +155,11 @@ interface ProjectCtx {
   ungroupSelection: () => void;
   toggleLockSelection: () => void;
 
+  // custom symbols (Symbol Library / Drawer)
+  addCustomSymbol: (def: SymbolDef) => string;
+  updateCustomSymbol: (key: string, def: SymbolDef) => void;
+  deleteCustomSymbol: (key: string) => void;
+
   // rewards redemption (FR-55)
   redeemReward: (id: string) => void;
 }
@@ -161,7 +167,7 @@ interface ProjectCtx {
 const Ctx = createContext<ProjectCtx | null>(null);
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  const [restored] = useState(() => restore());
+  const [restored] = useState(() => { const r = restore(); mergeCustomSymbols(r?.customSymbols); return r; });
   const [project, setProject] = useState<Project>(() => restored ?? emptyProject());
   const [mode, setMode] = useState<Mode>('admin');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -245,6 +251,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   );
 
   const issues = useMemo(() => validate(project), [project]);
+
+  // keep the shared SYM registry in sync with the project's custom symbols
+  // (covers open/load/cloud-restore; live edits also mutate SYM directly)
+  useEffect(() => { mergeCustomSymbols(project.customSymbols); }, [project.customSymbols]);
 
   const bump = (p: Project, patch: Partial<Project>): Project => ({ ...p, ...patch, revision: (p.revision ?? 0) + 1 });
 
@@ -602,6 +612,28 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     });
   }, [selectedIds]);
 
+  // ---- custom symbols (Symbol Library / Drawer) -----------------------------
+  const addCustomSymbol = useCallback((def: SymbolDef) => {
+    const key = newCustomKey(project.customSymbols ?? {});
+    SYM[key] = { ...def, custom: true }; // make available immediately
+    setProject((p) => ({ ...p, customSymbols: { ...(p.customSymbols ?? {}), [key]: { ...def, custom: true } } }));
+    return key;
+  }, [project.customSymbols]);
+
+  const updateCustomSymbol = useCallback((key: string, def: SymbolDef) => {
+    SYM[key] = { ...def, custom: true };
+    setProject((p) => ({ ...p, customSymbols: { ...(p.customSymbols ?? {}), [key]: { ...def, custom: true } } }));
+  }, []);
+
+  const deleteCustomSymbol = useCallback((key: string) => {
+    unregisterSymbol(key);
+    setProject((p) => {
+      const next = { ...(p.customSymbols ?? {}) };
+      delete next[key];
+      return { ...p, customSymbols: next };
+    });
+  }, []);
+
   // FR-55: redeem a reward if affordable; persists in project.rewards
   const redeemReward = useCallback((id: string) => {
     const item = REWARDS.find((r) => r.id === id);
@@ -630,6 +662,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     focusId, focusSeq, requestFocus, issues,
     addAnnotation, updateAnnotation, deleteAnnotation,
     groupSelection, ungroupSelection, toggleLockSelection,
+    addCustomSymbol, updateCustomSymbol, deleteCustomSymbol,
     redeemReward,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

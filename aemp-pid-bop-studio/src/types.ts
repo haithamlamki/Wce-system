@@ -2,7 +2,7 @@
 //  Core data model  —  AEMP P&ID & BOP Studio  (PRD §8)
 //  Ported from the Phase-0 prototype `state` object and AEMP read model.
 // ============================================================================
-import type { SymbolKey } from './lib/symbols';
+import type { SymbolDef, SymbolKey } from './lib/symbols';
 
 export type InspectionStatus = 'ok' | 'due' | 'over' | 'untag';
 
@@ -138,5 +138,7 @@ export interface Project {
   bop: BopScheme;
   rewards: RewardsState;
   annotations?: Annotation[];
+  /** User-drawn symbols added via the Symbol Drawer (keyed by symbol key). */
+  customSymbols?: Record<string, SymbolDef>;
   revision?: number;
 }

@@ -17,6 +17,7 @@ import {
 import { parseDrawing } from '../lib/layoutImport';
 import ExportDialog from '../components/ExportDialog';
 import AnnotationLayer from '../components/AnnotationLayer';
+import SymbolLibrary from '../components/SymbolLibrary';
 import type { Component, PortName } from '../types';
 
 type Tool = 'select' | 'connect' | 'pan';
@@ -75,8 +76,12 @@ export default function PidFullView() {
   const [palQuery, setPalQuery] = useState('');
   const [palCollapsed, setPalCollapsed] = useState<Set<string>>(new Set());
   const [palHover, setPalHover] = useState<SymbolKey | null>(null);
+  const [showLibrary, setShowLibrary] = useState(false);
 
   const editable = mode === 'admin' && !iso;
+  // drop-shadow depth is per-node SVG filter work — only worth it on smaller
+  // diagrams; disable on dense masters to keep rendering fast.
+  const shadow = !iso && project.nodes.length <= 80;
   const selSet = useMemo(() => new Set(p.selectedIds), [p.selectedIds]);
   // nodes implicated in any validation issue → red ring (report §2.4)
   const flagged = useMemo(() => new Set(p.issues.flatMap((i) => i.nodeIds)), [p.issues]);
@@ -290,6 +295,7 @@ export default function PidFullView() {
           <button style={primaryBtn} onClick={p.loadMaster}>Build Full P&amp;ID</button>
           <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => p.importAEMP()}>Import from AEMP</button>
           <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => drawingRef.current?.click()}>Import drawing…</button>
+          <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => setShowLibrary(true)}>⊞ Symbol library</button>
           <input ref={drawingRef} type="file" accept=".html,.htm,.json,.js,text/html,application/json" style={{ display: 'none' }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportDrawing(f); e.target.value = ''; }} />
           <input placeholder="Search symbols…" value={palQuery} onChange={(e) => setPalQuery(e.target.value)} style={palSearch} />
@@ -457,7 +463,7 @@ export default function PidFullView() {
             {/* nodes */}
             {(iso ? [...project.nodes].sort((x, y) => isoDepth(x) - isoDepth(y)) : project.nodes).map((n) => (
               <NodeG key={n.id} n={n} selected={selSet.has(n.id)} connecting={connectFrom?.id === n.id}
-                pending={pendingId === n.id} flagged={flagged.has(n.id)} refDate={refDate} iso={iso} />
+                pending={pendingId === n.id} flagged={flagged.has(n.id)} shadow={shadow} refDate={refDate} iso={iso} />
             ))}
             {marquee && (
               <rect x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)}
@@ -535,6 +541,7 @@ export default function PidFullView() {
       {mode === 'admin' && !iso && <PropertiesPanel />}
       {hover && !iso && <Tooltip h={hover} refDate={refDate} />}
       {showExport && <ExportDialog project={project} refDate={refDate} onClose={() => setShowExport(false)} />}
+      {showLibrary && <SymbolLibrary onClose={() => setShowLibrary(false)} />}
       {showPalette && palHover && SYM[palHover] && (
         <div style={palPreview}>
           <svg viewBox={`-4 -4 ${SYM[palHover].w + 8} ${SYM[palHover].h + 8}`} width={130} height={104}>
@@ -548,7 +555,7 @@ export default function PidFullView() {
   );
 }
 
-function NodeG({ n, selected, connecting, pending, flagged, refDate, iso }: { n: Component; selected: boolean; connecting: boolean; pending: boolean; flagged: boolean; refDate: Date; iso: boolean }) {
+function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso }: { n: Component; selected: boolean; connecting: boolean; pending: boolean; flagged: boolean; shadow: boolean; refDate: Date; iso: boolean }) {
   const s = SYM[n.type as SymbolKey];
   if (!s) return null;
   const { w: ew, h: eh } = box(n);
@@ -576,7 +583,7 @@ function NodeG({ n, selected, connecting, pending, flagged, refDate, iso }: { n:
         <text x={ew - 2} y={eh + 1} textAnchor="end" style={{ font: '10px var(--body)' }}>🔒</text>
       )}
       <g transform={innerTransform(n)} dangerouslySetInnerHTML={{ __html: s.svg }} opacity={pending ? 0.85 : 1}
-        filter={!iso && !pending ? 'url(#symShadow)' : undefined}
+        filter={shadow && !pending ? 'url(#symShadow)' : undefined}
         style={pending ? { filter: 'none' } : undefined} strokeDasharray={pending ? '5 3' : undefined} />
       <circle cx={ew - 2} cy={-2} r={5.5} fill="var(--panel)" stroke={STATUS_COLOR[st]} strokeWidth={2.5} />
       <text x={ew / 2} y={eh + 15} textAnchor="middle" style={{ font: '600 11px var(--mono)', fill: 'var(--ink)' }}>{n.tag || '—'}</text>
