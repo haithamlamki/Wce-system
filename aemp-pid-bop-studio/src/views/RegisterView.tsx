@@ -1,16 +1,47 @@
 // Equipment Sheet (register) — PRD §7.6, FR-24..28.
 // Fully wired to the extracted status engine + project state to prove the
 // modules work end-to-end. Search / filter / sort + summary counters + CSV.
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useProject } from '../state/ProjectContext';
 import { STATUS_COLOR, STATUS_LABEL, statusOf, summarize } from '../lib/status';
 import { SYM, type SymbolKey } from '../lib/symbols';
-import type { InspectionStatus } from '../types';
+import { parseCsv, pick } from '../lib/csv';
+import type { Component, InspectionStatus } from '../types';
+
+const SYM_KEYS = new Set(Object.keys(SYM));
 
 export default function RegisterView() {
-  const { project, refDate, importAEMP } = useProject();
+  const { project, refDate, importAEMP, addComponents } = useProject();
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<'' | InspectionStatus>('');
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  async function onImportFile(file: File) {
+    try {
+      const rows = parseCsv(await file.text());
+      const mapped = rows.map((r): Partial<Component> & { type?: SymbolKey } => {
+        const typeRaw = pick(r, 'type', 'symbol').toLowerCase();
+        return {
+          type: SYM_KEYS.has(typeRaw) ? (typeRaw as SymbolKey) : undefined,
+          tag: pick(r, 'tag'),
+          description: pick(r, 'description', 'desc'),
+          section: pick(r, 'system', 'section'),
+          rwp: pick(r, 'rwp'),
+          size: pick(r, 'size'),
+          manufacturer: pick(r, 'manufacturer', 'mfr'),
+          serial: pick(r, 'serial', 'sn'),
+          int_last: pick(r, 'int_last', 'intermediate last'),
+          int_due: pick(r, 'int_due', 'intermediate due'),
+          maj_last: pick(r, 'maj_last', 'major last'),
+          maj_due: pick(r, 'maj_due', 'major due'),
+        };
+      });
+      const n = addComponents(mapped);
+      alert(n ? `Imported ${n} component${n === 1 ? '' : 's'} into the project register.` : 'No rows found in that CSV.');
+    } catch (e) {
+      alert(`Could not import CSV: ${(e as Error).message}`);
+    }
+  }
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -63,7 +94,10 @@ export default function RegisterView() {
         </select>
         <span className="spacer" style={{ flex: 1 }} />
         <button style={btn} onClick={() => importAEMP()}>Import from AEMP</button>
-        <button style={btn} onClick={exportCsv} disabled={!rows.length}>CSV</button>
+        <button style={btn} onClick={() => fileRef.current?.click()}>Import CSV</button>
+        <button style={btn} onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
+        <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportFile(f); e.target.value = ''; }} />
       </div>
 
       {rows.length === 0 ? (

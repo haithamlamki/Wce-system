@@ -100,6 +100,8 @@ interface ProjectCtx {
   scaleNode: (id: string, scale: number) => void;
   toggleRemoved: (id: string) => void;
   addEdge: (from: string, to: string) => void;
+  /** Bulk-add components (e.g. from CSV import); grid-places them. Returns count. */
+  addComponents: (rows: Array<Partial<Component> & { type?: SymbolKey }>) => number;
 }
 
 const Ctx = createContext<ProjectCtx | null>(null);
@@ -216,6 +218,28 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setProject((p) => ({ ...p, nodes: p.nodes.map((n) => (n.id === id ? { ...n, removed: !n.removed } : n)) }));
   }, []);
 
+  const addComponents = useCallback((rows: Array<Partial<Component> & { type?: SymbolKey }>) => {
+    if (!rows.length) return 0;
+    setProject((p) => {
+      const base = p.nodes.length;
+      const added: Component[] = rows.map((r, i) => {
+        const type = (r.type && SYM[r.type] ? r.type : 'gate') as SymbolKey;
+        const idx = base + i;
+        return {
+          id: nextId('n'), type,
+          x: 80 + (idx % 8) * 120, y: 80 + Math.floor(idx / 8) * 120,
+          rot: 0, scale: 1, flip: false,
+          tag: r.tag ?? '', description: r.description ?? SYM[type].name, section: r.section ?? SYM[type].cat,
+          rwp: r.rwp ?? '', size: r.size ?? '', manufacturer: r.manufacturer ?? '', serial: r.serial ?? '',
+          int_last: r.int_last ?? '', int_due: r.int_due ?? '', maj_last: r.maj_last ?? '', maj_due: r.maj_due ?? '',
+          removed: false, installed: true,
+        };
+      });
+      return { ...p, nodes: [...p.nodes, ...added] };
+    });
+    return rows.length;
+  }, []);
+
   const addEdge = useCallback((from: string, to: string) => {
     if (from === to) return;
     setProject((p) => {
@@ -266,7 +290,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     showOnboard, setShowOnboard, completeOnboarding,
     cloudEnabled: isSupabaseConfigured, cloudId, saveCloud, listCloud, loadCloud,
     addNode, updateNode, moveNode, deleteNode, duplicateNode,
-    rotateNode, flipNode, scaleNode, toggleRemoved, addEdge,
+    rotateNode, flipNode, scaleNode, toggleRemoved, addEdge, addComponents,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
