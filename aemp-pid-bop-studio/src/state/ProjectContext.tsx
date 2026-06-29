@@ -9,7 +9,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Component, Edge, PipeSeg, Project, TemplateItem } from '../types';
 import { buildMaster, importFromAEMP, type AempConfig } from '../lib/aemp';
 import { buildBopStack, type HoleSection } from '../lib/bop';
+import { box } from '../lib/geometry';
 import { SYM, type SymbolKey } from '../lib/symbols';
+
+export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vmiddle' | 'bottom';
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
 import { autosave, openFromFile, restore, saveToFile } from '../lib/persistence';
 import { isSupabaseConfigured, listProjectsCloud, loadProjectCloud, saveProjectCloud, type ProjectSummary } from '../lib/cloud';
@@ -82,6 +85,8 @@ interface ProjectCtx {
   flipSelection: () => void;
   scaleSelection: (scale: number) => void;
   moveMany: (updates: Array<{ id: string; x: number; y: number }>) => void;
+  alignSelection: (mode: AlignMode) => void;
+  distributeSelection: (axis: 'h' | 'v') => void;
 
   // engine actions
   loadMaster: () => void;
@@ -352,6 +357,51 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setProject((p) => { const set = new Set(selectedIds); return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, scale: s } : n)) }; });
   }, [selectedIds]);
 
+  const alignSelection = useCallback((mode: AlignMode) => {
+    setProject((p) => {
+      const set = new Set(selectedIds);
+      const dims = p.nodes.filter((n) => set.has(n.id)).map((n) => ({ n, b: box(n) }));
+      if (dims.length < 2) return p;
+      const minX = Math.min(...dims.map((d) => d.n.x));
+      const maxR = Math.max(...dims.map((d) => d.n.x + d.b.w));
+      const minY = Math.min(...dims.map((d) => d.n.y));
+      const maxB = Math.max(...dims.map((d) => d.n.y + d.b.h));
+      const cx = (minX + maxR) / 2, cy = (minY + maxB) / 2;
+      const upd = new Map<string, { x: number; y: number }>();
+      for (const { n, b } of dims) {
+        let x = n.x, y = n.y;
+        if (mode === 'left') x = minX;
+        else if (mode === 'right') x = maxR - b.w;
+        else if (mode === 'hcenter') x = cx - b.w / 2;
+        else if (mode === 'top') y = minY;
+        else if (mode === 'bottom') y = maxB - b.h;
+        else if (mode === 'vmiddle') y = cy - b.h / 2;
+        upd.set(n.id, { x: Math.round(x), y: Math.round(y) });
+      }
+      return { ...p, nodes: p.nodes.map((n) => { const u = upd.get(n.id); return u ? { ...n, ...u } : n; }) };
+    });
+  }, [selectedIds]);
+
+  const distributeSelection = useCallback((axis: 'h' | 'v') => {
+    setProject((p) => {
+      const set = new Set(selectedIds);
+      const dims = p.nodes.filter((n) => set.has(n.id)).map((n) => ({ n, b: box(n) }));
+      if (dims.length < 3) return p;
+      const cOf = (d: { n: Component; b: { w: number; h: number } }) =>
+        axis === 'h' ? d.n.x + d.b.w / 2 : d.n.y + d.b.h / 2;
+      dims.sort((a, b) => cOf(a) - cOf(b));
+      const c0 = cOf(dims[0]), c1 = cOf(dims[dims.length - 1]);
+      const step = (c1 - c0) / (dims.length - 1);
+      const upd = new Map<string, { x: number; y: number }>();
+      dims.forEach((d, i) => {
+        if (i === 0 || i === dims.length - 1) return;
+        const c = c0 + step * i;
+        upd.set(d.n.id, axis === 'h' ? { x: Math.round(c - d.b.w / 2), y: d.n.y } : { x: d.n.x, y: Math.round(c - d.b.h / 2) });
+      });
+      return { ...p, nodes: p.nodes.map((n) => { const u = upd.get(n.id); return u ? { ...n, ...u } : n; }) };
+    });
+  }, [selectedIds]);
+
   const saveProject = useCallback(() => saveToFile(project), [project]);
   const openProject = useCallback(async (file: File) => {
     const loaded = await openFromFile(file);
@@ -391,6 +441,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     selectedIds, setSelectedIds, toggleSelect, clearSelection, selectAll,
     clipboardCount: clipboard.length, copySelection, cutSelection, pasteClipboard,
     deleteSelection, duplicateSelection, rotateSelection, flipSelection, scaleSelection, moveMany,
+    alignSelection, distributeSelection,
     loadMaster, loadLayout, importAEMP, buildBop, setProject,
     saveProject, openProject, updateMeta,
     showOnboard, setShowOnboard, completeOnboarding,

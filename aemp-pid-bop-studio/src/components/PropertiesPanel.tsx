@@ -11,6 +11,7 @@ export default function PropertiesPanel() {
   const {
     selected, selectedIds, refDate, updateNode, rotateNode, flipNode, scaleNode, duplicateNode, deleteNode,
     rotateSelection, flipSelection, duplicateSelection, deleteSelection, scaleSelection, copySelection,
+    alignSelection, distributeSelection,
   } = useProject();
 
   // multi-selection: show group actions instead of the single-item editor
@@ -32,8 +33,26 @@ export default function PropertiesPanel() {
           <Field label="Scale all">
             <input type="range" min={0.4} max={2.4} step={0.1} defaultValue={1} onChange={(e) => scaleSelection(+e.target.value)} style={{ width: '100%' }} />
           </Field>
+
+          <Field label="Align">
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button style={ctlBtn} title="Align left" onClick={() => alignSelection('left')}>⤙</button>
+              <button style={ctlBtn} title="Align horizontal centers" onClick={() => alignSelection('hcenter')}>⤧</button>
+              <button style={ctlBtn} title="Align right" onClick={() => alignSelection('right')}>⤚</button>
+              <button style={ctlBtn} title="Align top" onClick={() => alignSelection('top')}>⤒</button>
+              <button style={ctlBtn} title="Align vertical centers" onClick={() => alignSelection('vmiddle')}>⤫</button>
+              <button style={ctlBtn} title="Align bottom" onClick={() => alignSelection('bottom')}>⤓</button>
+            </div>
+          </Field>
+          <Field label="Distribute (3+ items)">
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button style={{ ...ctlBtn, flex: 1 }} title="Distribute horizontally" disabled={selectedIds.length < 3} onClick={() => distributeSelection('h')}>↔ Horizontal</button>
+              <button style={{ ...ctlBtn, flex: 1 }} title="Distribute vertically" disabled={selectedIds.length < 3} onClick={() => distributeSelection('v')}>↕ Vertical</button>
+            </div>
+          </Field>
+
           <div style={{ fontSize: 11.5, color: 'var(--faint)', lineHeight: 1.6 }}>
-            Rotate / flip / scale / duplicate / delete apply to all selected items. Select one item to edit its details.
+            Align/distribute use the selection’s bounding box. Rotate / flip / scale / duplicate / delete apply to all selected. Select one item to edit its details.
           </div>
         </div>
       </aside>
