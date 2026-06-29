@@ -67,6 +67,38 @@ export async function fetchEquipmentCloud(rig?: string): Promise<AempAsset[]> {
   }));
 }
 
+export interface EquipmentInput {
+  tag: string | null;
+  type: string | null;
+  section: string | null;
+  description: string | null;
+  rwp: string | null;
+  size: string | null;
+  manufacturer: string | null;
+  serial: string | null;
+  int_last: string | null;
+  int_due: string | null;
+  maj_last: string | null;
+  maj_due: string | null;
+}
+
+/**
+ * Replace the shared equipment register for one rig (admin-only, FR-36/37).
+ * Deletes the rig's existing rows then inserts the new set in chunks. RLS
+ * rejects this for non-admins. Returns the number of rows written.
+ */
+export async function replaceRigEquipment(rig: string, rows: EquipmentInput[]): Promise<number> {
+  if (!supabase) throw new Error('Cloud not configured');
+  const del = await supabase.from('equipment').delete().eq('rig_name', rig);
+  if (del.error) throw new Error(del.error.message);
+  for (let i = 0; i < rows.length; i += 100) {
+    const chunk = rows.slice(i, i + 100).map((r) => ({ ...r, rig_name: rig }));
+    const { error } = await supabase.from('equipment').insert(chunk);
+    if (error) throw new Error(error.message);
+  }
+  return rows.length;
+}
+
 export interface ComplianceRow {
   rig_name: string;
   section: string;

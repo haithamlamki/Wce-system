@@ -3,18 +3,54 @@
 // modules work end-to-end. Search / filter / sort + summary counters + CSV.
 import { useMemo, useRef, useState } from 'react';
 import { useProject } from '../state/ProjectContext';
+import { useAuth } from '../state/AuthContext';
 import { STATUS_COLOR, STATUS_LABEL, statusOf, summarize } from '../lib/status';
 import { SYM, type SymbolKey } from '../lib/symbols';
 import { parseCsv, pick } from '../lib/csv';
+import { replaceRigEquipment, type EquipmentInput } from '../lib/cloud';
 import type { Component, InspectionStatus } from '../types';
+
+const nz = (v: string) => (v && v.trim() ? v : null);
 
 const SYM_KEYS = new Set(Object.keys(SYM));
 
 export default function RegisterView() {
   const { project, refDate, importAEMP, addComponents } = useProject();
+  const { enabled: cloudEnabled, role, rig } = useAuth();
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<'' | InspectionStatus>('');
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const cloudFileRef = useRef<HTMLInputElement | null>(null);
+  const canPushCloud = cloudEnabled && role === 'admin';
+
+  function csvToEquipment(rows: Record<string, string>[]): EquipmentInput[] {
+    return rows.map((r) => ({
+      tag: nz(pick(r, 'tag')),
+      type: nz(pick(r, 'type', 'symbol').toLowerCase()),
+      section: nz(pick(r, 'system', 'section')),
+      description: nz(pick(r, 'description', 'desc')),
+      rwp: nz(pick(r, 'rwp')),
+      size: nz(pick(r, 'size')),
+      manufacturer: nz(pick(r, 'manufacturer', 'mfr')),
+      serial: nz(pick(r, 'serial', 'sn')),
+      int_last: nz(pick(r, 'int_last', 'intermediate last')),
+      int_due: nz(pick(r, 'int_due', 'intermediate due')),
+      maj_last: nz(pick(r, 'maj_last', 'major last')),
+      maj_due: nz(pick(r, 'maj_due', 'major due')),
+    }));
+  }
+
+  async function onPushCloud(file: File) {
+    const targetRig = rig || project.meta.rig;
+    if (!confirm(`Replace the shared "${targetRig}" equipment register in AEMP/Supabase with this CSV? This overwrites that rig's rows.`)) return;
+    try {
+      const rows = csvToEquipment(parseCsv(await file.text()));
+      const n = await replaceRigEquipment(targetRig, rows);
+      alert(`Pushed ${n} rows to the "${targetRig}" register. Use “Import from AEMP” to pull them in.`);
+    } catch (e) {
+      alert(`Cloud push failed: ${(e as Error).message}`);
+    }
+  }
 
   async function onImportFile(file: File) {
     try {
@@ -96,8 +132,14 @@ export default function RegisterView() {
         <button style={btn} onClick={() => importAEMP()}>Import from AEMP</button>
         <button style={btn} onClick={() => fileRef.current?.click()}>Import CSV</button>
         <button style={btn} onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
+        {canPushCloud && (
+          <button style={{ ...btn, borderColor: 'var(--accent2)', color: 'var(--accent2)' }} onClick={() => cloudFileRef.current?.click()}
+            title="Admin: replace this rig's shared equipment register from a CSV">Push CSV → Cloud</button>
+        )}
         <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportFile(f); e.target.value = ''; }} />
+        <input ref={cloudFileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onPushCloud(f); e.target.value = ''; }} />
       </div>
 
       {rows.length === 0 ? (
