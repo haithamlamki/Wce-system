@@ -1,0 +1,380 @@
+// ============================================================================
+//  P&ID Full — interactive master canvas (PRD §7.3 / §7.5 / §7.11)
+//  Admin: drag-from-palette + click-to-place (with approve bar), select/move
+//  (snap), connect, rotate/flip/scale/duplicate/delete, full properties panel.
+//  Field: pan-and-read; click toggles installed/removed; hover tooltips.
+//  Pan / wheel-zoom / fit-to-view, title block + legend overlay, 3D iso view.
+// ============================================================================
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useProject } from '../state/ProjectContext';
+import PropertiesPanel from '../components/PropertiesPanel';
+import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
+import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
+import {
+  box, edgeNodes, fitView, innerTransform, isoDepth, isoPlacement, pickNode,
+  proj, routeEdge, screenToWorld, snap, type View,
+} from '../lib/geometry';
+import type { Component } from '../types';
+
+type Tool = 'select' | 'connect' | 'pan';
+interface Drag { kind: 'pan' | 'node'; sx: number; sy: number; view0?: View; nodeId?: string; nx0?: number; ny0?: number }
+interface Hover { n: Component; x: number; y: number }
+
+const PIPE_LEGEND = [
+  ['#16a6e0', 'Suction / interconnect'],
+  ['#ed1c24', 'Choke line'],
+  ['#1f9d57', 'Suction line'],
+  ['#8957d6', 'Discharge line'],
+];
+
+export default function PidFullView() {
+  const p = useProject();
+  const { project, refDate, mode } = p;
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const dragRef = useRef<Drag | null>(null);
+  const [view, setView] = useState<View>({ x: 60, y: 60, k: 1 });
+  const [tool, setTool] = useState<Tool>('select');
+  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [hover, setHover] = useState<Hover | null>(null);
+  const [iso, setIso] = useState(false);
+  const [showTitle, setShowTitle] = useState(true);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const editable = mode === 'admin' && !iso;
+
+  const local = (e: { clientX: number; clientY: number }) => {
+    const r = svgRef.current!.getBoundingClientRect();
+    return { px: e.clientX - r.left, py: e.clientY - r.top };
+  };
+
+  const doFit = useCallback(() => {
+    const r = svgRef.current?.getBoundingClientRect();
+    if (r) setView(fitView(project.nodes, r.width, r.height));
+  }, [project.nodes]);
+
+  useEffect(() => { if (project.nodes.length) doFit(); /* eslint-disable-next-line */ }, [project.revision]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+      if (!editable || !p.selectedId) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') p.deleteNode(p.selectedId);
+      else if (e.key === 'r' || e.key === 'R') p.rotateNode(p.selectedId, e.shiftKey);
+      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); p.duplicateNode(p.selectedId); }
+      else if (e.key === 'f' || e.key === 'F') p.flipNode(p.selectedId);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editable, p]);
+
+  // ---- pointer interactions -------------------------------------------------
+  function onPointerDown(e: React.PointerEvent) {
+    const { px, py } = local(e);
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    // iso = presentation: pan + hover only
+    if (iso) { dragRef.current = { kind: 'pan', sx: px, sy: py, view0: { ...view } }; return; }
+
+    const w = screenToWorld(px, py, view);
+    const hit = pickNode(project.nodes, w.x, w.y);
+
+    if (hit) {
+      if (mode === 'field') { p.toggleRemoved(hit.id); return; }
+      if (tool === 'connect') {
+        if (!connectFrom) setConnectFrom(hit.id);
+        else { p.addEdge(connectFrom, hit.id); setConnectFrom(null); }
+        p.setSelectedId(hit.id);
+        return;
+      }
+      p.setSelectedId(hit.id);
+      dragRef.current = { kind: 'node', sx: px, sy: py, nodeId: hit.id, nx0: hit.x, ny0: hit.y };
+      return;
+    }
+    if (mode === 'admin' && tool === 'select') p.setSelectedId(null);
+    dragRef.current = { kind: 'pan', sx: px, sy: py, view0: { ...view } };
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    const { px, py } = local(e);
+    const d = dragRef.current;
+    if (!d) {
+      if (iso) return;
+      const w = screenToWorld(px, py, view);
+      const hit = pickNode(project.nodes, w.x, w.y);
+      setHover(hit ? { n: hit, x: e.clientX, y: e.clientY } : null);
+      return;
+    }
+    if (d.kind === 'pan') setView((v) => ({ ...v, x: d.view0!.x + (px - d.sx), y: d.view0!.y + (py - d.sy) }));
+    else if (d.kind === 'node' && d.nodeId) {
+      const dx = (px - d.sx) / view.k;
+      const dy = (py - d.sy) / view.k;
+      p.moveNode(d.nodeId, snap(d.nx0! + dx), snap(d.ny0! + dy));
+    }
+  }
+  function onPointerUp() { dragRef.current = null; }
+
+  function onWheel(e: React.WheelEvent) {
+    const { px, py } = local(e);
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    setView((v) => {
+      const k = Math.max(0.2, Math.min(4, v.k * factor));
+      const wx = (px - v.x) / v.k;
+      const wy = (py - v.y) / v.k;
+      return { k, x: px - wx * k, y: py - wy * k };
+    });
+  }
+
+  // ---- palette drag/drop + click-to-place (approve) ------------------------
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    const type = e.dataTransfer.getData('type') as SymbolKey;
+    if (!type || !SYM[type] || iso) return;
+    const { px, py } = local(e);
+    const w = screenToWorld(px, py, view);
+    const s = SYM[type];
+    p.addNode(type, snap(w.x - s.w / 2), snap(w.y - s.h / 2)); // drag = direct place
+  }
+  function placeCentre(type: SymbolKey) {
+    const r = svgRef.current!.getBoundingClientRect();
+    const w = screenToWorld(r.width / 2, r.height / 2, view);
+    const s = SYM[type];
+    const id = p.addNode(type, snap(w.x - s.w / 2), snap(w.y - s.h / 2));
+    setPendingId(id); // click = pending → approve
+  }
+  const approve = () => setPendingId(null);
+  const cancelPending = () => { if (pendingId) p.deleteNode(pendingId); setPendingId(null); };
+
+  const showPalette = mode === 'admin' && !iso;
+  const hasNodes = project.nodes.length > 0;
+  const pendingNode = project.nodes.find((n) => n.id === pendingId) ?? null;
+
+  return (
+    <>
+      {showPalette && (
+        <aside style={paletteStyle}>
+          <button style={primaryBtn} onClick={p.loadMaster}>Build Full P&amp;ID</button>
+          <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => p.importAEMP()}>Import from AEMP</button>
+          {SYM_ORDER.map((cat) => (
+            <div key={cat}>
+              <div style={palHead}>{cat}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {Object.entries(SYM).filter(([, s]) => s.cat === cat).map(([key, s]) => (
+                  <div key={key} title={s.name} style={palCard} draggable
+                    onDragStart={(e) => e.dataTransfer.setData('type', key)}
+                    onClick={() => placeCentre(key as SymbolKey)}>
+                    <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={44} height={36}>
+                      <g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
+                    </svg>
+                    <span style={{ fontSize: 10, color: 'var(--dim)', textAlign: 'center' }}>{s.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.6, padding: '12px 4px', borderTop: '1px solid var(--line)', marginTop: 12 }}>
+            Click a symbol to place &amp; approve, or drag it onto the canvas.<br />
+            <b>R</b> rotate (⇧R all) · <b>D</b> duplicate · <b>F</b> flip · <b>Del</b> remove.
+          </div>
+        </aside>
+      )}
+
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: 'var(--sunk)' }}>
+        {/* left toolbar (admin, 2D) */}
+        {editable && (
+          <div style={toolbar}>
+            {(['select', 'connect', 'pan'] as Tool[]).map((t) => (
+              <button key={t} style={{ ...tbtn, ...(tool === t ? tbtnActive : {}) }} title={t}
+                onClick={() => { setTool(t); setConnectFrom(null); }}>
+                {t === 'select' ? '⬉' : t === 'connect' ? '⎯' : '✋'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* top-right view controls (both modes) */}
+        <div style={viewControls}>
+          <button style={{ ...pill, ...(iso ? pillActive : {}) }} onClick={() => { setIso((v) => !v); setConnectFrom(null); }}>3D</button>
+          <button style={{ ...pill, ...(showTitle ? pillActive : {}) }} onClick={() => setShowTitle((v) => !v)}>Title</button>
+        </div>
+
+        {mode === 'field' && !iso && <div style={modebar}>Field mode · click items to mark installed / removed</div>}
+        {iso && <div style={{ ...modebar, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>3D presentation · pan &amp; hover (editing disabled)</div>}
+        {connectFrom && <div style={{ ...modebar, top: 56, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>Click a second item to connect…</div>}
+
+        {/* approve bar (click-to-place) */}
+        {pendingNode && (
+          <div style={approveBar}>
+            <div style={{ fontSize: 12.5 }}>
+              Placed <b style={{ color: 'var(--accent)' }}>{SYM[pendingNode.type as SymbolKey]?.name}</b>
+              <small style={{ display: 'block', color: 'var(--faint)', fontSize: 11 }}>Drag to fine-tune, then approve</small>
+            </div>
+            <button style={primarySm} onClick={approve}>✓ Approve</button>
+            <button style={ghostSm} onClick={cancelPending}>Cancel</button>
+          </div>
+        )}
+
+        <svg ref={svgRef} width="100%" height="100%"
+          style={{ position: 'absolute', inset: 0, cursor: iso || tool === 'pan' || mode === 'field' ? 'grab' : 'default', touchAction: 'none' }}
+          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+          onPointerLeave={() => { onPointerUp(); setHover(null); }}
+          onWheel={onWheel} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+          <defs>
+            <pattern id="grid" width={20} height={20} patternUnits="userSpaceOnUse">
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="var(--grid)" strokeWidth={1} />
+            </pattern>
+          </defs>
+          {!iso && <rect x={0} y={0} width="100%" height="100%" fill="url(#grid)" />}
+
+          <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
+            {/* piping */}
+            {project.pipes.map(([x1, y1, x2, y2, color], i) => {
+              const a = iso ? proj(x1, y1) : { x: x1, y: y1 };
+              const b = iso ? proj(x2, y2) : { x: x2, y: y2 };
+              return <line key={`p${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={3} strokeLinecap="round" opacity={iso ? 0.55 : 0.9} />;
+            })}
+            {/* user connections */}
+            {project.edges.map((e) => {
+              const pr = edgeNodes(e, project.nodes);
+              if (!pr) return null;
+              if (iso) {
+                const ba = box(pr.a), bb = box(pr.b);
+                const a = proj(pr.a.x + ba.w / 2, pr.a.y + ba.h / 2);
+                const b = proj(pr.b.x + bb.w / 2, pr.b.y + bb.h / 2);
+                return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={e.color || 'var(--accent2)'} strokeWidth={2.2} opacity={0.55} />;
+              }
+              return <path key={e.id} d={routeEdge(pr.a, pr.b)} fill="none" stroke={e.color || 'var(--accent2)'} strokeWidth={2.2} opacity={0.7} />;
+            })}
+            {/* nodes */}
+            {(iso ? [...project.nodes].sort((x, y) => isoDepth(x) - isoDepth(y)) : project.nodes).map((n) => (
+              <NodeG key={n.id} n={n} selected={p.selectedId === n.id} connecting={connectFrom === n.id}
+                pending={pendingId === n.id} refDate={refDate} iso={iso} />
+            ))}
+          </g>
+        </svg>
+
+        {/* zoom controls */}
+        <div style={zoombar}>
+          <button style={zbtn} onClick={() => setView((v) => ({ ...v, k: Math.max(0.2, v.k / 1.2) }))}>−</button>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--dim)', minWidth: 42, textAlign: 'center' }}>{Math.round(view.k * 100)}%</span>
+          <button style={zbtn} onClick={() => setView((v) => ({ ...v, k: Math.min(4, v.k * 1.2) }))}>+</button>
+          <button style={{ ...zbtn, width: 'auto', padding: '0 8px', fontSize: 11 }} onClick={doFit}>FIT</button>
+        </div>
+
+        {/* piping legend */}
+        {showTitle && hasNodes && (
+          <div style={legend}>
+            <b style={legendHead}>PIPING &amp; LINES</b>
+            {PIPE_LEGEND.map(([c, label]) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '3px 0' }}>
+                <span style={{ width: 20, height: 3, borderRadius: 2, background: c }} />{label}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* title block */}
+        {showTitle && hasNodes && (
+          <div style={titleBlock}>
+            <div style={tbHead}>{project.meta.title || 'HP WELL CONTROL EQUIPMENT'}</div>
+            <TBRow k="Drawing" v={project.meta.drawingNo || 'AEMP / HPWC P&ID'} />
+            <TBRow k="Rig / Unit" v={project.meta.rig} />
+            <TBRow k="Ref date" v={project.meta.date} />
+            <TBRow k="Inspector" v={project.meta.who || '—'} />
+            <TBRow k="Items" v={String(project.nodes.length)} />
+          </div>
+        )}
+
+        {!hasNodes && (
+          <div className="placeholder" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
+            <div><strong>No master P&amp;ID yet</strong>{showPalette ? 'Click “Build Full P&ID”, import from AEMP, or drag a symbol in.' : 'Switch to Admin mode to build the master.'}</div>
+          </div>
+        )}
+      </div>
+
+      {mode === 'admin' && !iso && <PropertiesPanel />}
+      {hover && !iso && <Tooltip h={hover} refDate={refDate} />}
+    </>
+  );
+}
+
+function NodeG({ n, selected, connecting, pending, refDate, iso }: { n: Component; selected: boolean; connecting: boolean; pending: boolean; refDate: Date; iso: boolean }) {
+  const s = SYM[n.type as SymbolKey];
+  if (!s) return null;
+  const { w: ew, h: eh } = box(n);
+  const st = statusOf(n, refDate);
+  const ip = iso ? isoPlacement(n) : null;
+  const outer = iso ? `translate(${ip!.x},${ip!.y})` : `translate(${n.x},${n.y})`;
+  return (
+    <g transform={outer} opacity={n.removed ? 0.28 : 1} style={{ color: s.color }}>
+      {iso && (
+        <>
+          <ellipse cx={ew / 2} cy={ip!.lift + eh / 2 + 4} rx={ew * 0.5} ry={ew * 0.2} fill="#0b1a2655" />
+          <line x1={ew / 2} y1={eh} x2={ew / 2} y2={ip!.lift + eh / 2} stroke="#4a5a68" strokeWidth={2} opacity={0.5} />
+        </>
+      )}
+      {(selected || connecting) && !iso && (
+        <rect x={-9} y={-9} width={ew + 18} height={eh + 34} rx={7}
+          fill="color-mix(in srgb, var(--accent) 7%, transparent)"
+          stroke={connecting ? 'var(--accent2)' : 'var(--accent)'} strokeWidth={1.6} strokeDasharray="4 3" />
+      )}
+      <g transform={innerTransform(n)} dangerouslySetInnerHTML={{ __html: s.svg }} opacity={pending ? 0.85 : 1}
+        style={pending ? { filter: 'none' } : undefined} strokeDasharray={pending ? '5 3' : undefined} />
+      <circle cx={ew - 2} cy={-2} r={5.5} fill="var(--panel)" stroke={STATUS_COLOR[st]} strokeWidth={2.5} />
+      <text x={ew / 2} y={eh + 15} textAnchor="middle" style={{ font: '600 11px var(--mono)', fill: 'var(--ink)' }}>{n.tag || '—'}</text>
+      <text x={ew / 2} y={eh + 26} textAnchor="middle" style={{ font: '9px var(--body)', fill: 'var(--dim)' }}>{(n.description || '').slice(0, 24)}</text>
+    </g>
+  );
+}
+
+function Tooltip({ h, refDate }: { h: Hover; refDate: Date }) {
+  const { n } = h;
+  const s = SYM[n.type as SymbolKey];
+  const st = statusOf(n, refDate);
+  return (
+    <div style={{ position: 'fixed', left: h.x + 16, top: h.y + 12, zIndex: 90, width: 248, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 11, boxShadow: 'var(--shadow)', overflow: 'hidden', pointerEvents: 'none' }}>
+      <div style={{ padding: '10px 13px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 9 }}>
+        <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={34} height={28}><g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} /></svg>
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 13 }}>{n.tag || '—'}{n.removed && ' · REMOVED'}</div>
+          <div style={{ fontSize: 10.5, color: 'var(--dim)' }}>{s.name}</div>
+        </div>
+      </div>
+      <div style={{ padding: '9px 13px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '5px 10px', fontSize: 11.5, fontFamily: 'var(--mono)' }}>
+        <Row k="Serial" v={n.serial || '—'} />
+        <Row k="RWP / size" v={`${n.rwp || '—'} · ${n.size || '—'}`} />
+        <Row k="Interm. due" v={n.int_due || '—'} />
+        <Row k="Major due" v={n.maj_due || '—'} />
+      </div>
+      <div style={{ padding: '7px 13px', borderTop: '1px solid var(--line)', fontSize: 11, fontWeight: 600, color: STATUS_COLOR[st] }}>● {STATUS_LABEL[st]}</div>
+    </div>
+  );
+}
+const Row = ({ k, v }: { k: string; v: string }) => (<><span style={{ color: 'var(--faint)' }}>{k}</span><span style={{ textAlign: 'right' }}>{v}</span></>);
+const TBRow = ({ k, v }: { k: string; v: string }) => (
+  <div style={{ display: 'grid', gridTemplateColumns: '78px 1fr', borderBottom: '1px solid var(--line2)' }}>
+    <div style={{ padding: '5px 8px', fontSize: 8.5, letterSpacing: 0.6, color: 'var(--faint)', textTransform: 'uppercase', borderRight: '1px solid var(--line2)', background: 'var(--panel2)' }}>{k}</div>
+    <div style={{ padding: '5px 9px', fontSize: 11.5, color: 'var(--ink)', fontWeight: 600 }}>{v}</div>
+  </div>
+);
+
+// ---- styles ----------------------------------------------------------------
+const paletteStyle: React.CSSProperties = { width: 230, flex: '0 0 auto', background: 'var(--panel)', borderRight: '1px solid var(--line2)', overflowY: 'auto', padding: 12 };
+const primaryBtn: React.CSSProperties = { width: '100%', background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '9px 11px', fontWeight: 600, fontSize: 12, marginBottom: 8, cursor: 'pointer' };
+const palHead: React.CSSProperties = { fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1.6, color: 'var(--faint)', textTransform: 'uppercase', margin: '15px 4px 8px', fontWeight: 600 };
+const palCard: React.CSSProperties = { background: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 4px 7px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: 'grab' };
+const toolbar: React.CSSProperties = { position: 'absolute', left: 16, top: 16, display: 'flex', gap: 5, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: 5, zIndex: 10, boxShadow: 'var(--shadow)' };
+const tbtn: React.CSSProperties = { width: 36, height: 36, border: 0, background: 'transparent', borderRadius: 7, color: 'var(--dim)', fontSize: 16, cursor: 'pointer' };
+const tbtnActive: React.CSSProperties = { background: 'var(--accent)', color: '#fff' };
+const viewControls: React.CSSProperties = { position: 'absolute', right: 16, top: 16, display: 'flex', gap: 6, zIndex: 12 };
+const pill: React.CSSProperties = { padding: '7px 12px', borderRadius: 8, border: '1px solid var(--line2)', background: 'var(--panel)', color: 'var(--dim)', fontWeight: 600, fontSize: 12, cursor: 'pointer', boxShadow: 'var(--shadow)' };
+const pillActive: React.CSSProperties = { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' };
+const modebar: React.CSSProperties = { position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 15, background: 'color-mix(in srgb,var(--green) 14%,var(--panel))', border: '1px solid var(--green)', color: 'var(--green)', borderRadius: 30, padding: '6px 16px', fontSize: 12, fontWeight: 600 };
+const approveBar: React.CSSProperties = { position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 20, display: 'flex', alignItems: 'center', gap: 12, background: 'var(--panel)', border: '1px solid var(--accent)', borderRadius: 11, padding: '9px 12px 9px 16px', boxShadow: 'var(--shadow)' };
+const primarySm: React.CSSProperties = { background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '7px 12px', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
+const ghostSm: React.CSSProperties = { background: 'var(--panel2)', color: 'var(--ink)', border: '1px solid var(--line2)', borderRadius: 7, padding: '7px 12px', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
+const zoombar: React.CSSProperties = { position: 'absolute', right: 16, bottom: 16, display: 'flex', gap: 6, alignItems: 'center', background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: '5px 8px', zIndex: 10, boxShadow: 'var(--shadow)' };
+const zbtn: React.CSSProperties = { width: 26, height: 26, border: 0, background: 'var(--sunk)', color: 'var(--ink)', borderRadius: 6, fontSize: 16, cursor: 'pointer' };
+const legend: React.CSSProperties = { position: 'absolute', left: 16, bottom: 16, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: '9px 13px', zIndex: 10, fontSize: 11, color: 'var(--dim)', boxShadow: 'var(--shadow)' };
+const legendHead: React.CSSProperties = { color: 'var(--ink)', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1, display: 'block', marginBottom: 6 };
+const titleBlock: React.CSSProperties = { position: 'absolute', right: 16, bottom: 64, zIndex: 11, background: 'var(--panel)', border: '1.5px solid var(--ink)', borderRadius: 4, boxShadow: 'var(--shadow)', fontFamily: 'var(--mono)', minWidth: 260, overflow: 'hidden' };
+const tbHead: React.CSSProperties = { background: 'var(--ink)', color: 'var(--panel)', padding: '6px 9px', fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 12, letterSpacing: 0.5 };

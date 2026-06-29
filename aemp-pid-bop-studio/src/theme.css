@@ -1,0 +1,59 @@
+/* ============================================================================
+   Design tokens — light / dark / auto (PRD §7.14, FR-56/57).
+   Lifted from the Phase-0 prototype. Status is never colour-only: pair these
+   with the status ring + text/badge from STATUS_LABEL.
+   ============================================================================ */
+:root {
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --disp: 'Barlow Semi Condensed', system-ui, sans-serif;
+  --body: 'Inter', system-ui, sans-serif;
+}
+html[data-theme='light'] {
+  --bg: #e9eef3; --panel: #fff; --panel2: #f3f6f9; --sunk: #eef2f6;
+  --line: #e3e9ef; --line2: #d2dbe4; --ink: #1b2a38; --dim: #5a6b7b;
+  --faint: #8d9dab; --accent: #0e7c86; --accent2: #1769b0; --grid: #dde6ee;
+  --gridb: #cdd9e4; --face: #fff;
+  --shadow: 0 1px 3px rgba(20, 40, 60, 0.08), 0 6px 24px rgba(20, 40, 60, 0.07);
+  --green: #1f9d57; --amber: #cf8a00; --red: #d8453d; --blue: #1769b0;
+  --gold: #c9981c; --gold-deep: #a37c12; --gold-soft: #fbf1d6;
+}
+html[data-theme='dark'] {
+  --bg: #0c1116; --panel: #121a22; --panel2: #0f161d; --sunk: #0b1117;
+  --line: #1f2b36; --line2: #2a3a48; --ink: #dfe9f0; --dim: #90a4b6;
+  --faint: #5f7689; --accent: #27c4d9; --accent2: #4ea1ff; --grid: #13202b;
+  --gridb: #1b2a36; --face: #0f1820;
+  --shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35);
+  --green: #3ddc84; --amber: #f5a623; --red: #ff5d5d; --blue: #4ea1ff;
+  --gold: #e8b53a; --gold-deep: #c9981c; --gold-soft: #2c2611;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--body);
+  font-size: 14px; -webkit-font-smoothing: antialiased;
+}
+#root { height: 100vh; display: flex; flex-direction: column; }
+a { color: var(--accent); }
+
+header.appbar {
+  display: flex; align-items: center; gap: 15px; padding: 0 16px; height: 56px;
+  background: var(--panel); border-bottom: 1px solid var(--line2); box-shadow: var(--shadow);
+}
+.brand { display: flex; align-items: center; gap: 11px; }
+.brand .logo {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: grid; place-items: center; color: #fff; font-weight: 700;
+  font-family: var(--disp); font-size: 15px;
+}
+.brand h1 { font-family: var(--disp); font-weight: 700; font-size: 16px; margin: 0; }
+.tabs { display: flex; gap: 3px; background: var(--sunk); padding: 3px; border-radius: 9px; border: 1px solid var(--line); }
+.tabs a {
+  text-decoration: none; color: var(--dim); padding: 7px 14px; border-radius: 6px;
+  font-family: var(--disp); font-weight: 600; font-size: 13px; letter-spacing: 0.4px;
+}
+.tabs a.active { background: var(--accent); color: #fff; }
+.spacer { flex: 1; }
+main.viewport { flex: 1; min-height: 0; display: flex; }
+.placeholder { margin: auto; text-align: center; color: var(--faint); line-height: 1.8; max-width: 460px; }
+.placeholder strong { display: block; color: var(--dim); font-family: var(--disp); font-size: 18px; margin-bottom: 8px; }
