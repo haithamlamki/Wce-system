@@ -67,4 +67,26 @@ export async function fetchEquipmentCloud(rig?: string): Promise<AempAsset[]> {
   }));
 }
 
+export interface ComplianceRow {
+  rig_name: string;
+  section: string;
+  tag: string;
+  int_due: string;
+  maj_due: string;
+}
+
+/** Pull minimal equipment rows across all rigs the caller can see (FR §13). */
+export async function fetchComplianceRows(): Promise<ComplianceRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('equipment').select('rig_name, section, tag, int_due, maj_due');
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => ({
+    rig_name: d(r.rig_name) || '—',
+    section: d(r.section) || '—',
+    tag: d(r.tag),
+    int_due: d(r.int_due),
+    maj_due: d(r.maj_due),
+  }));
+}
+
 export { isSupabaseConfigured };

@@ -10,6 +10,7 @@ import PidFullView from './views/PidFullView';
 import BopSchemeView from './views/BopSchemeView';
 import RegisterView from './views/RegisterView';
 import AccountView from './views/AccountView';
+import DashboardView from './views/DashboardView';
 
 type ThemeMode = 'auto' | 'light' | 'dark';
 
@@ -27,6 +28,7 @@ const TABS = [
   { to: '/full', label: 'P&ID Full' },
   { to: '/bop', label: 'BOP Scheme' },
   { to: '/register', label: 'Equipment Sheet' },
+  { to: '/dashboard', label: 'Dashboard' },
   { to: '/account', label: 'Account' },
 ];
 
@@ -114,6 +116,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
           <Route path="/full" element={<PidFullView />} />
           <Route path="/bop" element={<BopSchemeView />} />
           <Route path="/register" element={<RegisterView />} />
+          <Route path="/dashboard" element={<DashboardView />} />
           <Route path="/account" element={<AccountView />} />
         </Routes>
       </main>
