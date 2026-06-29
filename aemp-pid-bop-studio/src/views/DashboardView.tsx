@@ -8,6 +8,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchComplianceRows, isSupabaseConfigured, type ComplianceRow } from '../lib/cloud';
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
+import { useProject } from '../state/ProjectContext';
+import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
 
 type DateStatus = 'ok' | 'due' | 'over' | 'none';
 const MS = 864e5;
@@ -26,10 +28,24 @@ const embeddedRows = (): ComplianceRow[] =>
   RIG303_EQUIPMENT.map((r) => ({ rig_name: 'Rig 303', section: r.section || '—', tag: r.tag, int_due: r.int_due, maj_due: r.maj_due }));
 
 export default function DashboardView() {
+  const { project } = useProject();
   const [rows, setRows] = useState<ComplianceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [live, setLive] = useState(false);
   const ref = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+
+  // Bill of materials for the current project (report §6): counts by category +
+  // total components + total pipe length (world units summed over segments).
+  const bom = useMemo(() => {
+    const byCat = new Map<string, number>();
+    for (const n of project.nodes) {
+      const cat = SYM[n.type as SymbolKey]?.cat ?? 'Other';
+      byCat.set(cat, (byCat.get(cat) ?? 0) + 1);
+    }
+    let pipeLen = 0;
+    for (const [x1, y1, x2, y2] of project.pipes) pipeLen += Math.hypot(x2 - x1, y2 - y1);
+    return { byCat, total: project.nodes.length, pipes: project.pipes.length, pipeLen: Math.round(pipeLen) };
+  }, [project.nodes, project.pipes]);
 
   useEffect(() => {
     let active = true;
@@ -105,7 +121,36 @@ export default function DashboardView() {
         <Card title="Compliance by system">
           {[...stats.bySys.entries()].sort((a, b) => b[1].over - a[1].over).map(([sys, c]) => <Bar key={sys} label={sys} c={c} />)}
         </Card>
+
+        <Card title="Bill of materials (current project)">
+          {bom.total === 0 ? (
+            <div style={{ fontSize: 12.5, color: 'var(--faint)' }}>No equipment placed yet — build or import a P&amp;ID.</div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 18, marginBottom: 12 }}>
+                <MiniStat n={bom.total} label="Components" />
+                <MiniStat n={bom.pipes} label="Pipe runs" />
+                <MiniStat n={`${bom.pipeLen}`} label="Pipe length (u)" />
+              </div>
+              {SYM_ORDER.filter((cat) => bom.byCat.get(cat)).map((cat) => (
+                <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--line)', fontSize: 13 }}>
+                  <span>{cat}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{bom.byCat.get(cat)}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </Card>
       </div>
+    </div>
+  );
+}
+
+function MiniStat({ n, label }: { n: number | string; label: string }) {
+  return (
+    <div>
+      <div style={{ fontFamily: 'var(--disp)', fontSize: 22, fontWeight: 700 }}>{n}</div>
+      <div style={{ fontSize: 11, color: 'var(--faint)' }}>{label}</div>
     </div>
   );
 }

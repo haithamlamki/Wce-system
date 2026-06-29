@@ -6,12 +6,13 @@
 //  touching the views.
 // ============================================================================
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Component, Edge, PipeSeg, Project, TemplateItem } from '../types';
+import type { Annotation, Component, Edge, PipeSeg, PortName, Project, TemplateItem } from '../types';
 import { buildMaster, importFromAEMP, type AempConfig } from '../lib/aemp';
 import { buildBopStack, type HoleSection } from '../lib/bop';
 import { box } from '../lib/geometry';
 import { SYM, type SymbolKey } from '../lib/symbols';
 import { REWARDS, rewardStats } from '../lib/rewards';
+import { validate, type Issue } from '../lib/validation';
 
 export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vmiddle' | 'bottom';
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
@@ -131,7 +132,7 @@ interface ProjectCtx {
   flipNode: (id: string, applyToType?: boolean) => void;
   scaleNode: (id: string, scale: number, applyToType?: boolean) => void;
   toggleRemoved: (id: string) => void;
-  addEdge: (from: string, to: string) => void;
+  addEdge: (from: string, to: string, opts?: { fromPort?: PortName; toPort?: PortName }) => void;
   /** Bulk-add components (e.g. from CSV import); grid-places them. Returns count. */
   addComponents: (rows: Array<Partial<Component> & { type?: SymbolKey }>) => number;
 
@@ -139,6 +140,19 @@ interface ProjectCtx {
   focusId: string | null;
   focusSeq: number;
   requestFocus: (id: string) => void;
+
+  // layout validation issues (report §2.4) — recomputed from the project
+  issues: Issue[];
+
+  // annotations (report §6)
+  addAnnotation: (a: Omit<Annotation, 'id'>) => string;
+  updateAnnotation: (id: string, patch: Partial<Annotation>) => void;
+  deleteAnnotation: (id: string) => void;
+
+  // grouping / locking (report §3)
+  groupSelection: () => void;
+  ungroupSelection: () => void;
+  toggleLockSelection: () => void;
 
   // rewards redemption (FR-55)
   redeemReward: (id: string) => void;
@@ -230,6 +244,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     [project.nodes, selectedIds],
   );
 
+  const issues = useMemo(() => validate(project), [project]);
+
   const bump = (p: Project, patch: Partial<Project>): Project => ({ ...p, ...patch, revision: (p.revision ?? 0) + 1 });
 
   const loadMaster = useCallback(() => {
@@ -274,11 +290,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteNode = useCallback((id: string) => {
-    setProject((p) => ({
-      ...p,
-      nodes: p.nodes.filter((n) => n.id !== id),
-      edges: p.edges.filter((e) => e.from !== id && e.to !== id),
-    }));
+    setProject((p) => {
+      if (p.nodes.find((n) => n.id === id)?.locked) return p; // locked items are protected
+      return {
+        ...p,
+        nodes: p.nodes.filter((n) => n.id !== id),
+        edges: p.edges.filter((e) => e.from !== id && e.to !== id),
+      };
+    });
     setSelectedIds((ids) => ids.filter((x) => x !== id));
   }, []);
 
@@ -379,11 +398,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return rows.length;
   }, []);
 
-  const addEdge = useCallback((from: string, to: string) => {
+  const addEdge = useCallback((from: string, to: string, opts?: { fromPort?: PortName; toPort?: PortName }) => {
     if (from === to) return;
     setProject((p) => {
       if (p.edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from))) return p;
-      const edge: Edge = { id: nextId('e'), from, to, color: 'var(--accent2)' };
+      const edge: Edge = { id: nextId('e'), from, to, color: 'var(--accent2)', fromPort: opts?.fromPort, toPort: opts?.toPort };
       return { ...p, edges: [...p.edges, edge] };
     });
   }, []);
@@ -397,7 +416,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const moveMany = useCallback((updates: Array<{ id: string; x: number; y: number }>) => {
     if (!updates.length) return;
     const map = new Map(updates.map((u) => [u.id, u]));
-    setProject((p) => ({ ...p, nodes: p.nodes.map((n) => { const u = map.get(n.id); return u ? { ...n, x: u.x, y: u.y } : n; }) }));
+    setProject((p) => ({ ...p, nodes: p.nodes.map((n) => { if (n.locked) return n; const u = map.get(n.id); return u ? { ...n, x: u.x, y: u.y } : n; }) }));
   }, []);
 
   // ---- clipboard + group transforms -----------------------------------------
@@ -407,17 +426,20 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [project.nodes, selectedIds]);
 
   const deleteSelection = useCallback(() => {
-    setSelectedIds((ids) => {
-      if (!ids.length) return ids;
-      const set = new Set(ids);
-      setProject((p) => ({
+    const sel = new Set(selectedIds);
+    if (!sel.size) return;
+    setProject((p) => {
+      // locked items survive deletion (report §3)
+      const del = new Set(p.nodes.filter((n) => sel.has(n.id) && !n.locked).map((n) => n.id));
+      if (!del.size) return p;
+      return {
         ...p,
-        nodes: p.nodes.filter((n) => !set.has(n.id)),
-        edges: p.edges.filter((e) => !set.has(e.from) && !set.has(e.to)),
-      }));
-      return [];
+        nodes: p.nodes.filter((n) => !del.has(n.id)),
+        edges: p.edges.filter((e) => !del.has(e.from) && !del.has(e.to)),
+      };
     });
-  }, []);
+    setSelectedIds([]);
+  }, [selectedIds]);
 
   const cutSelection = useCallback(() => { copySelection(); deleteSelection(); }, [copySelection, deleteSelection]);
 
@@ -547,6 +569,39 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setFocusSeq((s) => s + 1);
   }, [setSelectedId]);
 
+  // ---- annotations (report §6) ----------------------------------------------
+  const addAnnotation = useCallback((a: Omit<Annotation, 'id'>) => {
+    const id = nextId('a');
+    setProject((p) => ({ ...p, annotations: [...(p.annotations ?? []), { ...a, id }] }));
+    return id;
+  }, []);
+  const updateAnnotation = useCallback((id: string, patch: Partial<Annotation>) => {
+    setProject((p) => ({ ...p, annotations: (p.annotations ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+  }, []);
+  const deleteAnnotation = useCallback((id: string) => {
+    setProject((p) => ({ ...p, annotations: (p.annotations ?? []).filter((x) => x.id !== id) }));
+  }, []);
+
+  // ---- grouping / locking (report §3) ---------------------------------------
+  const groupSelection = useCallback(() => {
+    if (selectedIds.length < 2) return;
+    const gid = nextId('g');
+    const set = new Set(selectedIds);
+    setProject((p) => ({ ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, groupId: gid } : n)) }));
+  }, [selectedIds]);
+  const ungroupSelection = useCallback(() => {
+    const set = new Set(selectedIds);
+    setProject((p) => ({ ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, groupId: undefined } : n)) }));
+  }, [selectedIds]);
+  const toggleLockSelection = useCallback(() => {
+    const set = new Set(selectedIds);
+    setProject((p) => {
+      const sel = p.nodes.filter((n) => set.has(n.id));
+      const allLocked = sel.length > 0 && sel.every((n) => n.locked);
+      return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, locked: !allLocked } : n)) };
+    });
+  }, [selectedIds]);
+
   // FR-55: redeem a reward if affordable; persists in project.rewards
   const redeemReward = useCallback((id: string) => {
     const item = REWARDS.find((r) => r.id === id);
@@ -572,7 +627,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     cloudEnabled: isSupabaseConfigured, cloudId, saveCloud, listCloud, loadCloud,
     addNode, updateNode, moveNode, deleteNode, duplicateNode, changeType,
     rotateNode, flipNode, scaleNode, toggleRemoved, addEdge, addComponents,
-    focusId, focusSeq, requestFocus, redeemReward,
+    focusId, focusSeq, requestFocus, issues,
+    addAnnotation, updateAnnotation, deleteAnnotation,
+    groupSelection, ungroupSelection, toggleLockSelection,
+    redeemReward,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

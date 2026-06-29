@@ -3,7 +3,7 @@
 //  Ported from the prototype's box()/ports() and node render transform so the
 //  React canvas places, rotates, scales and connects items identically.
 // ============================================================================
-import type { Component, Edge } from '../types';
+import type { Component, Edge, PortName as TPortName } from '../types';
 import { SYM, type SymbolKey } from './symbols';
 
 export interface View {
@@ -83,17 +83,68 @@ export function pickNode(nodes: Component[], wx: number, wy: number): Component 
   return null;
 }
 
-/** Orthogonal (elbow) route between the nearest ports of two nodes. */
-export function routeEdge(a: Component, b: Component): string {
-  const ca = center(a);
-  const cb = center(b);
+type Pt = { x: number; y: number };
+interface Rect { x: number; y: number; w: number; h: number }
+
+const rectOf = (n: Component): Rect => { const { w, h } = box(n); return { x: n.x, y: n.y, w, h }; };
+
+/** Does an axis-aligned segment p0→p1 cross rect r? (segments here are H or V.) */
+function segHitsRect(p0: Pt, p1: Pt, r: Rect): boolean {
+  if (p0.y === p1.y) {
+    const [lo, hi] = [Math.min(p0.x, p1.x), Math.max(p0.x, p1.x)];
+    return p0.y > r.y && p0.y < r.y + r.h && hi > r.x && lo < r.x + r.w;
+  }
+  const [lo, hi] = [Math.min(p0.y, p1.y), Math.max(p0.y, p1.y)];
+  return p0.x > r.x && p0.x < r.x + r.w && hi > r.y && lo < r.y + r.h;
+}
+
+function crossings(path: Pt[], rects: Rect[]): number {
+  let c = 0;
+  for (let i = 0; i < path.length - 1; i++)
+    for (const r of rects) if (segHitsRect(path[i], path[i + 1], r)) c++;
+  return c;
+}
+
+const polyline = (pts: Pt[]) => `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map((p) => `L ${p.x} ${p.y}`).join(' ');
+
+function curvedPath(pts: Pt[]): string {
+  if (pts.length === 2) {
+    const [a, b] = pts;
+    const mx = (a.x + b.x) / 2;
+    return `M ${a.x} ${a.y} C ${mx} ${a.y} ${mx} ${b.y} ${b.x} ${b.y}`;
+  }
+  return polyline(pts);
+}
+
+/**
+ * Route a logical edge as an SVG path. Honours explicit ports + stored
+ * waypoints + a curved flag (report §2.2); otherwise draws an orthogonal elbow
+ * and, given the other nodes as obstacles, picks the bend direction that
+ * crosses the fewest of them (light obstacle avoidance, report §4).
+ */
+export function routeEdge(a: Component, b: Component, edge?: Edge, obstacles?: Component[]): string {
   const pa = ports(a);
   const pb = ports(b);
-  // choose the port on each node closest to the other node's centre
-  const from = nearestPort(pa, cb);
-  const to = nearestPort(pb, ca);
+  const fromPort = edge?.fromPort as TPortName | undefined;
+  const toPort = edge?.toPort as TPortName | undefined;
+  const from = fromPort ? pa[fromPort] : nearestPort(pa, center(b));
+  const to = toPort ? pb[toPort] : nearestPort(pb, center(a));
+
+  if (edge?.waypoints?.length) {
+    const pts = [from, ...edge.waypoints, to];
+    return edge.curved ? curvedPath(pts) : polyline(pts);
+  }
+  if (edge?.curved) return curvedPath([from, to]);
+
+  // orthogonal: compare horizontal-first vs vertical-first, fewest crossings wins
   const midX = (from.x + to.x) / 2;
-  return `M ${from.x} ${from.y} H ${midX} V ${to.y} H ${to.x}`;
+  const midY = (from.y + to.y) / 2;
+  const hvh: Pt[] = [from, { x: midX, y: from.y }, { x: midX, y: to.y }, to];
+  const vhv: Pt[] = [from, { x: from.x, y: midY }, { x: to.x, y: midY }, to];
+  const rects = (obstacles ?? [])
+    .filter((n) => n.id !== a.id && n.id !== b.id && !n.removed)
+    .map(rectOf);
+  return crossings(vhv, rects) < crossings(hvh, rects) ? polyline(vhv) : polyline(hvh);
 }
 
 function nearestPort(p: Ports, target: { x: number; y: number }) {

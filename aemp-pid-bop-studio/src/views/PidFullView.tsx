@@ -12,13 +12,27 @@ import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import {
   box, edgeNodes, fitView, GRID, innerTransform, isoDepth, isoPlacement, pickNode,
-  proj, routeEdge, screenToWorld, snap, type View,
+  ports, proj, routeEdge, screenToWorld, snap, type View,
 } from '../lib/geometry';
 import { parseDrawing } from '../lib/layoutImport';
-import { printPid } from '../lib/printExport';
-import type { Component } from '../types';
+import ExportDialog from '../components/ExportDialog';
+import AnnotationLayer from '../components/AnnotationLayer';
+import type { Component, PortName } from '../types';
 
 type Tool = 'select' | 'connect' | 'pan';
+interface PortRef { id: string; port?: PortName }
+
+/** Nearest N/E/S/W port to a world point, within tolerance (else undefined). */
+function portAt(n: Component, w: { x: number; y: number }, tol: number): PortName | undefined {
+  const ps = ports(n);
+  let best: PortName | undefined;
+  let bd = tol * tol;
+  for (const k of ['N', 'E', 'S', 'W'] as PortName[]) {
+    const d = (ps[k].x - w.x) ** 2 + (ps[k].y - w.y) ** 2;
+    if (d <= bd) { bd = d; best = k; }
+  }
+  return best;
+}
 interface Drag {
   kind: 'pan' | 'node' | 'marquee';
   sx: number; sy: number;
@@ -49,15 +63,20 @@ export default function PidFullView() {
   const drawingRef = useRef<HTMLInputElement | null>(null);
   const [view, setView] = useState<View>({ x: 60, y: 60, k: 1 });
   const [tool, setTool] = useState<Tool>('select');
-  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [connectFrom, setConnectFrom] = useState<PortRef | null>(null);
+  const [portHover, setPortHover] = useState<PortRef | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
   const [iso, setIso] = useState(false);
   const [showTitle, setShowTitle] = useState(true);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
+  const [showWarnings, setShowWarnings] = useState(false);
+  const [showExport, setShowExport] = useState(false);
 
   const editable = mode === 'admin' && !iso;
   const selSet = useMemo(() => new Set(p.selectedIds), [p.selectedIds]);
+  // nodes implicated in any validation issue → red ring (report §2.4)
+  const flagged = useMemo(() => new Set(p.issues.flatMap((i) => i.nodeIds)), [p.issues]);
 
   // selection bounding box (world) → for the floating mini-toolbar
   const selBounds = useMemo(() => {
@@ -107,7 +126,7 @@ export default function PidFullView() {
       if (mod && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); p.cutSelection(); return; }
       if (mod && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); p.pasteClipboard(); return; }
       if (mod && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); p.selectAll(); return; }
-      if (e.key === 'Escape') { p.clearSelection(); setConnectFrom(null); return; }
+      if (e.key === 'Escape') { p.clearSelection(); setConnectFrom(null); setPortHover(null); return; }
       if (!p.selectedIds.length) return;
       const arrow = ARROW_DELTA[e.key];
       if (arrow) {
@@ -139,17 +158,25 @@ export default function PidFullView() {
     if (hit) {
       if (mode === 'field') { p.toggleRemoved(hit.id); return; }
       if (tool === 'connect') {
-        if (!connectFrom) setConnectFrom(hit.id);
-        else { p.addEdge(connectFrom, hit.id); setConnectFrom(null); }
+        const port = portAt(hit, w, 12 / view.k);
+        if (!connectFrom) setConnectFrom({ id: hit.id, port });
+        else {
+          p.addEdge(connectFrom.id, hit.id, { fromPort: connectFrom.port, toPort: port });
+          setConnectFrom(null);
+          setPortHover(null);
+        }
         p.setSelectedId(hit.id);
         return;
       }
       // Shift- or Ctrl/⌘-click toggles membership without starting a drag
       if (e.shiftKey || e.ctrlKey || e.metaKey) { p.toggleSelect(hit.id); return; }
-      // clicking an unselected node selects only it; clicking within a multi-
+      // a grouped node selects its whole group; clicking within a multi-
       // selection keeps the group (so you can drag them all together)
-      const groupIds = selSet.has(hit.id) && p.selectedIds.length > 1 ? p.selectedIds : [hit.id];
-      if (!selSet.has(hit.id) || p.selectedIds.length <= 1) p.setSelectedId(hit.id);
+      const groupMates = hit.groupId ? project.nodes.filter((n) => n.groupId === hit.groupId).map((n) => n.id) : [hit.id];
+      const groupIds = selSet.has(hit.id) && p.selectedIds.length > 1 ? p.selectedIds : groupMates;
+      if (!selSet.has(hit.id) || p.selectedIds.length <= 1) {
+        if (groupMates.length > 1) p.setSelectedIds(groupMates); else p.setSelectedId(hit.id);
+      }
       const starts = project.nodes.filter((n) => groupIds.includes(n.id)).map((n) => ({ id: n.id, x: n.x, y: n.y }));
       dragRef.current = { kind: 'node', sx: px, sy: py, starts };
       return;
@@ -170,6 +197,9 @@ export default function PidFullView() {
       const w = screenToWorld(px, py, view);
       const hit = pickNode(project.nodes, w.x, w.y);
       setHover(hit ? { n: hit, x: e.clientX, y: e.clientY } : null);
+      if (tool === 'connect' && mode === 'admin') {
+        setPortHover(hit ? { id: hit.id, port: portAt(hit, w, 12 / view.k) } : null);
+      }
       return;
     }
     d.moved = true;
@@ -230,6 +260,12 @@ export default function PidFullView() {
   const approve = () => setPendingId(null);
   const cancelPending = () => { if (pendingId) p.deleteNode(pendingId); setPendingId(null); };
 
+  function addNote() {
+    const r = svgRef.current!.getBoundingClientRect();
+    const w = screenToWorld(r.width / 2, r.height / 2, view);
+    p.addAnnotation({ kind: 'text', x: snap(w.x), y: snap(w.y), w: 140, h: 24, text: 'Note' });
+  }
+
   async function onImportDrawing(file: File) {
     try {
       const { template, pipes, source } = parseDrawing(await file.text());
@@ -285,10 +321,12 @@ export default function PidFullView() {
           <div style={toolbar}>
             {(['select', 'connect', 'pan'] as Tool[]).map((t) => (
               <button key={t} style={{ ...tbtn, ...(tool === t ? tbtnActive : {}) }} title={t}
-                onClick={() => { setTool(t); setConnectFrom(null); }}>
+                onClick={() => { setTool(t); setConnectFrom(null); setPortHover(null); }}>
                 {t === 'select' ? '⬉' : t === 'connect' ? '⎯' : '✋'}
               </button>
             ))}
+            <span style={{ width: 1, background: 'var(--line2)', margin: '4px 2px' }} />
+            <button style={tbtn} title="Add text note" onClick={addNote}>✎</button>
             <span style={{ width: 1, background: 'var(--line2)', margin: '4px 2px' }} />
             <button style={{ ...tbtn, opacity: p.canUndo ? 1 : 0.35 }} title="Undo (Ctrl+Z)" disabled={!p.canUndo} onClick={p.undo}>↶</button>
             <button style={{ ...tbtn, opacity: p.canRedo ? 1 : 0.35 }} title="Redo (Ctrl+Shift+Z)" disabled={!p.canRedo} onClick={p.redo}>↷</button>
@@ -297,10 +335,38 @@ export default function PidFullView() {
 
         {/* top-right view controls (both modes) */}
         <div style={viewControls}>
-          <button style={{ ...pill, ...(iso ? pillActive : {}) }} onClick={() => { setIso((v) => !v); setConnectFrom(null); }}>3D</button>
+          {p.issues.length > 0 && (
+            <button style={{ ...pill, ...(showWarnings ? pillActive : {}), borderColor: showWarnings ? 'var(--accent)' : 'var(--amber)', color: showWarnings ? '#fff' : 'var(--amber)' }}
+              title="Layout validation warnings" onClick={() => setShowWarnings((v) => !v)}>
+              ⚠ {p.issues.length}
+            </button>
+          )}
+          <button style={{ ...pill, ...(iso ? pillActive : {}) }} onClick={() => { setIso((v) => !v); setConnectFrom(null); setPortHover(null); }}>3D</button>
           <button style={{ ...pill, ...(showTitle ? pillActive : {}) }} onClick={() => setShowTitle((v) => !v)}>Title</button>
-          <button style={pill} title="Print / Save as PDF" onClick={() => printPid(project, refDate)}>⎙ PDF</button>
+          <button style={pill} title="Export / Print (PDF, PNG, SVG)" onClick={() => setShowExport(true)}>⎙ Export</button>
         </div>
+
+        {/* validation warnings panel (report §2.4) — click an issue to zoom to it */}
+        {showWarnings && p.issues.length > 0 && (
+          <div style={warnPanel}>
+            <div style={warnHead}>
+              <span>Validation · {p.issues.length} issue{p.issues.length === 1 ? '' : 's'}</span>
+              <button style={{ ...miniBtn, width: 22, height: 22 }} onClick={() => setShowWarnings(false)}>✕</button>
+            </div>
+            <div style={{ overflowY: 'auto', maxHeight: 280 }}>
+              {p.issues.map((i) => (
+                <button key={i.id} style={warnRow}
+                  title="Show on diagram"
+                  onClick={() => { if (i.nodeIds[0]) p.requestFocus(i.nodeIds[0]); }}>
+                  <span style={{ color: i.severity === 'error' ? 'var(--red)' : 'var(--amber)', fontWeight: 700 }}>
+                    {i.severity === 'error' ? '⛔' : '⚠'}
+                  </span>
+                  <span style={{ flex: 1 }}>{i.message}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {mode === 'field' && !iso && <div style={modebar}>Field mode · click items to mark installed / removed</div>}
         {iso && <div style={{ ...modebar, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>3D presentation · pan &amp; hover (editing disabled)</div>}
@@ -347,12 +413,28 @@ export default function PidFullView() {
                 const b = proj(pr.b.x + bb.w / 2, pr.b.y + bb.h / 2);
                 return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={e.color || 'var(--accent2)'} strokeWidth={2.2} opacity={0.55} />;
               }
-              return <path key={e.id} d={routeEdge(pr.a, pr.b)} fill="none" stroke={e.color || 'var(--accent2)'} strokeWidth={2.2} opacity={0.7} />;
+              return <path key={e.id} d={routeEdge(pr.a, pr.b, e, project.nodes)} fill="none" stroke={e.color || 'var(--accent2)'} strokeWidth={2.2} opacity={0.7} />;
             })}
+            {/* connection ports (connect mode) — dots on the source + hovered node */}
+            {tool === 'connect' && !iso && (() => {
+              const ids = new Set<string>();
+              if (connectFrom) ids.add(connectFrom.id);
+              if (hover) ids.add(hover.n.id);
+              return [...ids].map((id) => {
+                const n = project.nodes.find((x) => x.id === id);
+                if (!n) return null;
+                const ps = ports(n);
+                return (['N', 'E', 'S', 'W'] as PortName[]).map((k) => {
+                  const lit = (portHover?.id === id && portHover.port === k) || (connectFrom?.id === id && connectFrom.port === k);
+                  return <circle key={`${id}${k}`} cx={ps[k].x} cy={ps[k].y} r={lit ? 5.5 : 4}
+                    fill={lit ? 'var(--accent2)' : 'var(--panel)'} stroke="var(--accent2)" strokeWidth={1.6} />;
+                });
+              });
+            })()}
             {/* nodes */}
             {(iso ? [...project.nodes].sort((x, y) => isoDepth(x) - isoDepth(y)) : project.nodes).map((n) => (
-              <NodeG key={n.id} n={n} selected={selSet.has(n.id)} connecting={connectFrom === n.id}
-                pending={pendingId === n.id} refDate={refDate} iso={iso} />
+              <NodeG key={n.id} n={n} selected={selSet.has(n.id)} connecting={connectFrom?.id === n.id}
+                pending={pendingId === n.id} flagged={flagged.has(n.id)} refDate={refDate} iso={iso} />
             ))}
             {marquee && (
               <rect x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)}
@@ -361,6 +443,8 @@ export default function PidFullView() {
             )}
           </g>
         </svg>
+
+        <AnnotationLayer view={view} editable={editable} />
 
         {/* floating selection mini-toolbar */}
         {editable && selBounds && !marquee && p.selectedIds.length > 0 && (() => {
@@ -427,11 +511,12 @@ export default function PidFullView() {
 
       {mode === 'admin' && !iso && <PropertiesPanel />}
       {hover && !iso && <Tooltip h={hover} refDate={refDate} />}
+      {showExport && <ExportDialog project={project} refDate={refDate} onClose={() => setShowExport(false)} />}
     </>
   );
 }
 
-function NodeG({ n, selected, connecting, pending, refDate, iso }: { n: Component; selected: boolean; connecting: boolean; pending: boolean; refDate: Date; iso: boolean }) {
+function NodeG({ n, selected, connecting, pending, flagged, refDate, iso }: { n: Component; selected: boolean; connecting: boolean; pending: boolean; flagged: boolean; refDate: Date; iso: boolean }) {
   const s = SYM[n.type as SymbolKey];
   if (!s) return null;
   const { w: ew, h: eh } = box(n);
@@ -446,10 +531,17 @@ function NodeG({ n, selected, connecting, pending, refDate, iso }: { n: Componen
           <line x1={ew / 2} y1={eh} x2={ew / 2} y2={ip!.lift + eh / 2} stroke="#4a5a68" strokeWidth={2} opacity={0.5} />
         </>
       )}
+      {flagged && !iso && (
+        <rect x={-7} y={-7} width={ew + 14} height={eh + 30} rx={7}
+          fill="none" stroke="var(--red)" strokeWidth={1.8} strokeDasharray="3 3" opacity={0.85} />
+      )}
       {(selected || connecting) && !iso && (
         <rect x={-9} y={-9} width={ew + 18} height={eh + 34} rx={7}
           fill="color-mix(in srgb, var(--accent) 7%, transparent)"
           stroke={connecting ? 'var(--accent2)' : 'var(--accent)'} strokeWidth={1.6} strokeDasharray="4 3" />
+      )}
+      {n.locked && !iso && (
+        <text x={ew - 2} y={eh + 1} textAnchor="end" style={{ font: '10px var(--body)' }}>🔒</text>
       )}
       <g transform={innerTransform(n)} dangerouslySetInnerHTML={{ __html: s.svg }} opacity={pending ? 0.85 : 1}
         style={pending ? { filter: 'none' } : undefined} strokeDasharray={pending ? '5 3' : undefined} />
@@ -513,3 +605,6 @@ const legend: React.CSSProperties = { position: 'absolute', left: 16, bottom: 16
 const legendHead: React.CSSProperties = { color: 'var(--ink)', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1, display: 'block', marginBottom: 6 };
 const titleBlock: React.CSSProperties = { position: 'absolute', right: 16, bottom: 64, zIndex: 11, background: 'var(--panel)', border: '1.5px solid var(--ink)', borderRadius: 4, boxShadow: 'var(--shadow)', fontFamily: 'var(--mono)', minWidth: 260, overflow: 'hidden' };
 const tbHead: React.CSSProperties = { background: 'var(--ink)', color: 'var(--panel)', padding: '6px 9px', fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 12, letterSpacing: 0.5 };
+const warnPanel: React.CSSProperties = { position: 'absolute', right: 16, top: 58, zIndex: 16, width: 300, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 11, boxShadow: 'var(--shadow)', overflow: 'hidden' };
+const warnHead: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderBottom: '1px solid var(--line2)', fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 12.5 };
+const warnRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 12px', background: 'transparent', border: 0, borderBottom: '1px solid var(--line)', cursor: 'pointer', fontSize: 12, color: 'var(--ink)' };

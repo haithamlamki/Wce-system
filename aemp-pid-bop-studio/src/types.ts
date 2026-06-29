@@ -33,6 +33,9 @@ export interface Component {
   // as-built overlay (field mode)
   removed: boolean;
   installed?: boolean;
+  // editor grouping / locking (report §3 grouping/locking)
+  groupId?: string;
+  locked?: boolean;
   // link to the AEMP system-of-record asset
   aempAssetId?: string;
 }
@@ -40,11 +43,31 @@ export interface Component {
 /** A piping polyline. Tuple form matches the prototype: [x1,y1,x2,y2,color]. */
 export type PipeSeg = [number, number, number, number, string];
 
+/** Cardinal connection-port name. */
+export type PortName = 'N' | 'E' | 'S' | 'W';
+
 /** Logical connection between two components (optional / derived). */
 export interface Edge {
   id: string;
   from: string;
   to: string;
+  color?: string;
+  // explicit attach ports + intermediate route bends (report §2.2)
+  fromPort?: PortName;
+  toPort?: PortName;
+  waypoints?: Array<{ x: number; y: number }>;
+  curved?: boolean;
+}
+
+/** Free annotation on the canvas — text note or boxed region (report §6). */
+export interface Annotation {
+  id: string;
+  kind: 'text' | 'rect';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  text?: string;
   color?: string;
 }
 
@@ -114,5 +137,6 @@ export interface Project {
   pipes: PipeSeg[];
   bop: BopScheme;
   rewards: RewardsState;
+  annotations?: Annotation[];
   revision?: number;
 }

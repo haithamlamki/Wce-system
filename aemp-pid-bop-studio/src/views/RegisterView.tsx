@@ -8,17 +8,20 @@ import { useAuth } from '../state/AuthContext';
 import { STATUS_COLOR, STATUS_LABEL, statusOf, summarize } from '../lib/status';
 import { SYM, type SymbolKey } from '../lib/symbols';
 import { parseCsv, pick } from '../lib/csv';
+import { parseXlsx } from '../lib/xlsx';
 import { replaceRigEquipment, type EquipmentInput } from '../lib/cloud';
+import ImportDialog, { type DupMode } from '../components/ImportDialog';
+import type { MappedRow } from '../lib/importMap';
 import type { Component, InspectionStatus } from '../types';
 
 const nz = (v: string) => (v && v.trim() ? v : null);
 
-const SYM_KEYS = new Set(Object.keys(SYM));
-
 export default function RegisterView() {
-  const { project, refDate, importAEMP, addComponents, requestFocus } = useProject();
+  const { project, refDate, importAEMP, addComponents, updateNode, requestFocus } = useProject();
   const { enabled: cloudEnabled, role, rig } = useAuth();
   const navigate = useNavigate();
+  const [importData, setImportData] = useState<{ rows: Record<string, string>[]; headers: string[] } | null>(null);
+  const existingTags = useMemo(() => new Set(project.nodes.map((n) => n.tag).filter(Boolean)), [project.nodes]);
 
   // FR-27: jump from a register row to the item on the diagram
   function viewOnDiagram(id: string) {
@@ -60,31 +63,49 @@ export default function RegisterView() {
     }
   }
 
-  async function onImportFile(file: File) {
+  // Parse a CSV/XLSX file, then open the column-mapping dialog (report §5).
+  async function onPickImport(file: File) {
     try {
-      const rows = parseCsv(await file.text());
-      const mapped = rows.map((r): Partial<Component> & { type?: SymbolKey } => {
-        const typeRaw = pick(r, 'type', 'symbol').toLowerCase();
-        return {
-          type: SYM_KEYS.has(typeRaw) ? (typeRaw as SymbolKey) : undefined,
-          tag: pick(r, 'tag'),
-          description: pick(r, 'description', 'desc'),
-          section: pick(r, 'system', 'section'),
-          rwp: pick(r, 'rwp'),
-          size: pick(r, 'size'),
-          manufacturer: pick(r, 'manufacturer', 'mfr'),
-          serial: pick(r, 'serial', 'sn'),
-          int_last: pick(r, 'int_last', 'intermediate last'),
-          int_due: pick(r, 'int_due', 'intermediate due'),
-          maj_last: pick(r, 'maj_last', 'major last'),
-          maj_due: pick(r, 'maj_due', 'major due'),
-        };
-      });
-      const n = addComponents(mapped);
-      alert(n ? `Imported ${n} component${n === 1 ? '' : 's'} into the project register.` : 'No rows found in that CSV.');
+      const rows = file.name.toLowerCase().endsWith('.xlsx')
+        ? await parseXlsx(await file.arrayBuffer())
+        : parseCsv(await file.text());
+      if (!rows.length) { alert('No rows found in that file.'); return; }
+      const headers = Object.keys(rows[0]);
+      setImportData({ rows, headers });
     } catch (e) {
-      alert(`Could not import CSV: ${(e as Error).message}`);
+      alert(`Could not read file: ${(e as Error).message}`);
     }
+  }
+
+  // Apply the mapped rows with duplicate-tag handling (skip / overwrite / rename).
+  function onApplyImport(mapped: MappedRow[], dup: DupMode) {
+    setImportData(null);
+    const tagToId = new Map(project.nodes.filter((n) => n.tag).map((n) => [n.tag, n.id]));
+    let added = 0, updated = 0, skipped = 0;
+    if (dup === 'overwrite') {
+      const toAdd: MappedRow[] = [];
+      for (const r of mapped) {
+        const id = r.tag ? tagToId.get(r.tag) : undefined;
+        if (id) { updateNode(id, r as Partial<Component>); updated++; }
+        else toAdd.push(r);
+      }
+      added = addComponents(toAdd);
+    } else if (dup === 'rename') {
+      const used = new Set(existingTags);
+      const renamed = mapped.map((r) => {
+        if (!r.tag || !used.has(r.tag)) { if (r.tag) used.add(r.tag); return r; }
+        let t = r.tag, i = 2;
+        while (used.has(t)) t = `${r.tag}-${i++}`;
+        used.add(t);
+        return { ...r, tag: t };
+      });
+      added = addComponents(renamed);
+    } else {
+      const fresh = mapped.filter((r) => !r.tag || !existingTags.has(r.tag));
+      skipped = mapped.length - fresh.length;
+      added = addComponents(fresh);
+    }
+    alert(`Imported: ${added} added${updated ? `, ${updated} updated` : ''}${skipped ? `, ${skipped} skipped` : ''}.`);
   }
 
   const rows = useMemo(() => {
@@ -138,14 +159,14 @@ export default function RegisterView() {
         </select>
         <span className="spacer" style={{ flex: 1 }} />
         <button style={btn} onClick={() => importAEMP()}>Import from AEMP</button>
-        <button style={btn} onClick={() => fileRef.current?.click()}>Import CSV</button>
+        <button style={btn} onClick={() => fileRef.current?.click()}>Import CSV/XLSX</button>
         <button style={btn} onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
         {canPushCloud && (
           <button style={{ ...btn, borderColor: 'var(--accent2)', color: 'var(--accent2)' }} onClick={() => cloudFileRef.current?.click()}
             title="Admin: replace this rig's shared equipment register from a CSV">Push CSV → Cloud</button>
         )}
-        <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }}
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportFile(f); e.target.value = ''; }} />
+        <input ref={fileRef} type="file" accept=".csv,.xlsx,text/csv" style={{ display: 'none' }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickImport(f); e.target.value = ''; }} />
         <input ref={cloudFileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onPushCloud(f); e.target.value = ''; }} />
       </div>
@@ -184,6 +205,16 @@ export default function RegisterView() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {importData && (
+        <ImportDialog
+          rows={importData.rows}
+          headers={importData.headers}
+          existingTags={existingTags}
+          onCancel={() => setImportData(null)}
+          onApply={onApplyImport}
+        />
       )}
     </div>
   );

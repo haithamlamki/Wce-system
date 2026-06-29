@@ -13,7 +13,7 @@ export default function PropertiesPanel() {
   const {
     selected, selectedIds, refDate, updateNode, changeType, rotateNode, flipNode, scaleNode, duplicateNode, deleteNode,
     rotateSelection, flipSelection, duplicateSelection, deleteSelection, scaleSelection, copySelection,
-    alignSelection, distributeSelection,
+    alignSelection, distributeSelection, groupSelection, ungroupSelection, toggleLockSelection,
   } = useProject();
   const [applyAll, setApplyAll] = useState(false);
 
@@ -51,6 +51,14 @@ export default function PropertiesPanel() {
             <div style={{ display: 'flex', gap: 6 }}>
               <button style={{ ...ctlBtn, flex: 1 }} title="Distribute horizontally" disabled={selectedIds.length < 3} onClick={() => distributeSelection('h')}>↔ Horizontal</button>
               <button style={{ ...ctlBtn, flex: 1 }} title="Distribute vertically" disabled={selectedIds.length < 3} onClick={() => distributeSelection('v')}>↕ Vertical</button>
+            </div>
+          </Field>
+
+          <Field label="Group / lock">
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button style={{ ...ctlBtn, flex: 1 }} title="Group (move together)" onClick={groupSelection}>⛶ Group</button>
+              <button style={{ ...ctlBtn, flex: 1 }} title="Ungroup" onClick={ungroupSelection}>⤬ Ungroup</button>
+              <button style={{ ...ctlBtn, flex: 1 }} title="Lock / unlock" onClick={toggleLockSelection}>🔒 Lock</button>
             </div>
           </Field>
 
@@ -117,6 +125,7 @@ export default function PropertiesPanel() {
           <button style={ctlBtn} title={applyAll ? 'Rotate all of this type 90°' : 'Rotate 90° (R)'} onClick={() => rotateNode(n.id, applyAll)}>⟳</button>
           <button style={ctlBtn} title={applyAll ? 'Flip all of this type' : 'Flip'} onClick={() => flipNode(n.id, applyAll)}>⇄</button>
           <button style={ctlBtn} title="Duplicate (D)" onClick={() => duplicateNode(n.id)}>⧉</button>
+          <button style={{ ...ctlBtn, ...(n.locked ? { color: 'var(--accent)' } : {}) }} title={n.locked ? 'Unlock' : 'Lock in place'} onClick={toggleLockSelection}>{n.locked ? '🔒' : '🔓'}</button>
           <button style={{ ...ctlBtn, color: 'var(--red)' }} title="Delete (Del)" onClick={() => deleteNode(n.id)}>🗑</button>
         </div>
         <Field label={`Scale · ${Math.round((n.scale || 1) * 100)}%`}>

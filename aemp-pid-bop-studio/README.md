@@ -80,10 +80,27 @@ src/
 - **AI assistant (preview)** — deterministic NL planner: build master, BOP
   stack, import, place symbols, clear (FR-47; production = AEMP model, FR-48).
 
+**Research-report enhancements (`deep-research-report.md`):**
+- **Smart/clash validation** (`lib/validation.ts`) — node overlap/clearance,
+  dangling edges, duplicate links, untagged-critical checks; a Warnings panel
+  with click-to-zoom and red rings on offending items.
+- **Connection ports + smarter routing** — N/E/S/W ports with hover-highlight in
+  connect mode; edges store `fromPort`/`toPort`/`waypoints`; orthogonal routing
+  picks the bend that avoids intervening equipment.
+- **Import upgrades** — XLSX (lazy-loaded SheetJS) + CSV with an interactive
+  **column-mapping dialog** (persisted) and duplicate-tag skip/overwrite/rename.
+- **Export upgrades** (`lib/printExport.ts`) — layer toggles, paper/orientation,
+  PNG + SVG file export, alongside print→PDF.
+- **Annotations** (text notes), **grouping/locking** of components, and a
+  **Bill-of-materials** dashboard card (counts by category + total pipe length).
+- **Vitest** unit tests for validation, import mapping, and edge routing.
+
 **Phase-1 TODO (carried from PRD §7):**
 - AEMP **live** integration — finalise endpoint/auth/field-map (PRD §16.1 blocker).
 - Auth/RBAC via AEMP SSO; **server** persistence + revision history (FR-59).
 - Layout import service (drawing → template); shared/real leaderboard (FR-54).
+- **Deferred from the research report:** real-time multi-user collaboration
+  (Yjs; PRD §5.2 out of scope) and engineering hydraulics/cost-BOM (off-domain).
 
 > Dev note: `state/ProjectContext.tsx` exports both a provider component and the
 > `useProject` hook, so Vite Fast Refresh full-reloads on edits to that file

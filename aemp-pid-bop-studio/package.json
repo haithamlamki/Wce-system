@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "seed": "node --env-file=.env.local scripts/seed-equipment.mjs",
     "db:pull": "prisma db pull",
     "db:generate": "prisma generate"
@@ -17,7 +18,8 @@
     "@supabase/supabase-js": "^2.108.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.2"
+    "react-router-dom": "^6.26.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^18.3.5",
@@ -25,6 +27,7 @@
     "@vitejs/plugin-react": "^4.3.1",
     "prisma": "^7.8.0",
     "typescript": "^5.5.4",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "vitest": "^4.1.9"
   }
 }
