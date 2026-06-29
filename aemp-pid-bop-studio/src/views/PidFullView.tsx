@@ -11,7 +11,7 @@ import PropertiesPanel from '../components/PropertiesPanel';
 import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import {
-  box, edgeNodes, fitView, innerTransform, isoDepth, isoPlacement, pickNode,
+  box, edgeNodes, fitView, GRID, innerTransform, isoDepth, isoPlacement, pickNode,
   proj, routeEdge, screenToWorld, snap, type View,
 } from '../lib/geometry';
 import { parseDrawing } from '../lib/layoutImport';
@@ -29,6 +29,10 @@ interface Drag {
 }
 interface Marquee { x0: number; y0: number; x1: number; y1: number }
 interface Hover { n: Component; x: number; y: number }
+
+const ARROW_DELTA: Record<string, [number, number]> = {
+  ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+};
 
 const PIPE_LEGEND = [
   ['#16a6e0', 'Suction / interconnect'],
@@ -80,6 +84,14 @@ export default function PidFullView() {
       if (mod && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); p.selectAll(); return; }
       if (e.key === 'Escape') { p.clearSelection(); setConnectFrom(null); return; }
       if (!p.selectedIds.length) return;
+      const arrow = ARROW_DELTA[e.key];
+      if (arrow) {
+        e.preventDefault();
+        const step = e.shiftKey ? 1 : GRID; // Shift = 1px fine nudge, else one grid cell
+        const sel = new Set(p.selectedIds);
+        p.moveMany(project.nodes.filter((n) => sel.has(n.id)).map((n) => ({ id: n.id, x: n.x + arrow[0] * step, y: n.y + arrow[1] * step })));
+        return;
+      }
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); p.deleteSelection(); }
       else if (e.key === 'r' || e.key === 'R') p.rotateSelection(e.shiftKey);
       else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); p.duplicateSelection(); }
@@ -235,7 +247,8 @@ export default function PidFullView() {
           <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.6, padding: '12px 4px', borderTop: '1px solid var(--line)', marginTop: 12 }}>
             Click a symbol to place &amp; approve, or drag it onto the canvas.<br />
             <b>Shift-click</b> or <b>drag a box</b> to multi-select · <b>Ctrl+A</b> all · <b>Esc</b> clear.<br />
-            <b>Ctrl+C/X/V</b> copy/cut/paste · <b>R</b> rotate (⇧R type) · <b>D</b> duplicate · <b>F</b> flip · <b>Del</b> remove.
+            <b>Ctrl+C/X/V</b> copy/cut/paste · <b>R</b> rotate (⇧R type) · <b>D</b> duplicate · <b>F</b> flip · <b>Del</b> remove.<br />
+            <b>Arrow keys</b> nudge by grid · <b>Shift+Arrow</b> nudge 1px.
           </div>
         </aside>
       )}
