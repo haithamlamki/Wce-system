@@ -50,7 +50,7 @@ function newNode(type: SymbolKey, x: number, y: number): Component {
     description: s.name,
     section: s.cat,
     rwp: '',
-    size: '',
+    size: s.defaults?.size ?? '',
     manufacturer: '',
     serial: '',
     int_last: '',

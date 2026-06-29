@@ -4,9 +4,10 @@
 //  prototype. Real serials/dates are grafted from the AEMP register by tag.
 // ============================================================================
 import type { AempAsset, BopItem, BopScheme } from '../types';
-import type { SymbolKey } from './symbols';
+import { SYM, type SymbolKey } from './symbols';
 
-/** Nominal component heights (metres) used to draw the stack to scale. */
+/** Nominal component heights (metres) used to draw the stack to scale.
+ *  A symbol's own `bopHeight` (symbols.ts) wins where present; this is fallback. */
 export const BOPH: Partial<Record<SymbolKey, number>> = {
   wellhead: 0.8,
   annular: 1.5,
@@ -59,7 +60,7 @@ export function buildBopStack(section: HoleSection, register: AempAsset[] = []):
       type,
       tag,
       description,
-      height: BOPH[type] ?? 0.5,
+      height: SYM[type]?.bopHeight ?? BOPH[type] ?? 0.5,
       serial: ref.serial ?? '',
       int_due: ref.int_due ?? '',
       maj_due: ref.maj_due ?? '',

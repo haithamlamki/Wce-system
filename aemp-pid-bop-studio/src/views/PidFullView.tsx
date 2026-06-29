@@ -72,6 +72,9 @@ export default function PidFullView() {
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [showWarnings, setShowWarnings] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [palQuery, setPalQuery] = useState('');
+  const [palCollapsed, setPalCollapsed] = useState<Set<string>>(new Set());
+  const [palHover, setPalHover] = useState<SymbolKey | null>(null);
 
   const editable = mode === 'admin' && !iso;
   const selSet = useMemo(() => new Set(p.selectedIds), [p.selectedIds]);
@@ -289,23 +292,39 @@ export default function PidFullView() {
           <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => drawingRef.current?.click()}>Import drawing…</button>
           <input ref={drawingRef} type="file" accept=".html,.htm,.json,.js,text/html,application/json" style={{ display: 'none' }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportDrawing(f); e.target.value = ''; }} />
-          {SYM_ORDER.map((cat) => (
-            <div key={cat}>
-              <div style={palHead}>{cat}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {Object.entries(SYM).filter(([, s]) => s.cat === cat).map(([key, s]) => (
-                  <div key={key} title={s.name} style={palCard} draggable
-                    onDragStart={(e) => e.dataTransfer.setData('type', key)}
-                    onClick={() => placeCentre(key as SymbolKey)}>
-                    <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={44} height={36}>
-                      <g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
-                    </svg>
-                    <span style={{ fontSize: 10, color: 'var(--dim)', textAlign: 'center' }}>{s.name}</span>
+          <input placeholder="Search symbols…" value={palQuery} onChange={(e) => setPalQuery(e.target.value)} style={palSearch} />
+          {(() => {
+            const q = palQuery.trim().toLowerCase();
+            return SYM_ORDER.map((cat) => {
+              const items = Object.entries(SYM).filter(([key, s]) => s.cat === cat && (!q || s.name.toLowerCase().includes(q) || key.includes(q)));
+              if (!items.length) return null;
+              const collapsed = !q && palCollapsed.has(cat);
+              return (
+                <div key={cat}>
+                  <div style={palHead} onClick={() => !q && setPalCollapsed((cs) => { const n = new Set(cs); n.has(cat) ? n.delete(cat) : n.add(cat); return n; })}>
+                    <span>{q ? '' : (collapsed ? '▸ ' : '▾ ')}{cat}</span>
+                    <span style={{ opacity: 0.6 }}>{items.length}</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          ))}
+                  {!collapsed && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {items.map(([key, s]) => (
+                        <div key={key} title={s.name} style={palCard} draggable
+                          onDragStart={(e) => e.dataTransfer.setData('type', key)}
+                          onClick={() => placeCentre(key as SymbolKey)}
+                          onMouseEnter={() => setPalHover(key as SymbolKey)}
+                          onMouseLeave={() => setPalHover((h) => (h === key ? null : h))}>
+                          <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={44} height={36}>
+                            <g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
+                          </svg>
+                          <span style={{ fontSize: 10, color: 'var(--dim)', textAlign: 'center' }}>{s.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
           <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.6, padding: '12px 4px', borderTop: '1px solid var(--line)', marginTop: 12 }}>
             Click a symbol to place &amp; approve, or drag it onto the canvas.<br />
             <b>Shift-click</b> or <b>drag a box</b> to multi-select · <b>Ctrl+A</b> all · <b>Esc</b> clear.<br />
@@ -393,6 +412,10 @@ export default function PidFullView() {
             <pattern id="grid" width={20} height={20} patternUnits="userSpaceOnUse">
               <path d="M 20 0 L 0 0 0 20" fill="none" stroke="var(--grid)" strokeWidth={1} />
             </pattern>
+            {/* subtle depth for symbol artwork (higher-fidelity rendering) */}
+            <filter id="symShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="1.1" stdDeviation="1" floodColor="#0b1a26" floodOpacity="0.26" />
+            </filter>
           </defs>
           {!iso && <rect x={0} y={0} width="100%" height="100%" fill="url(#grid)" />}
 
@@ -512,6 +535,15 @@ export default function PidFullView() {
       {mode === 'admin' && !iso && <PropertiesPanel />}
       {hover && !iso && <Tooltip h={hover} refDate={refDate} />}
       {showExport && <ExportDialog project={project} refDate={refDate} onClose={() => setShowExport(false)} />}
+      {showPalette && palHover && SYM[palHover] && (
+        <div style={palPreview}>
+          <svg viewBox={`-4 -4 ${SYM[palHover].w + 8} ${SYM[palHover].h + 8}`} width={130} height={104}>
+            <g style={{ color: SYM[palHover].color }} dangerouslySetInnerHTML={{ __html: SYM[palHover].svg }} />
+          </svg>
+          <div style={{ fontWeight: 600, fontSize: 12.5, marginTop: 6 }}>{SYM[palHover].name}</div>
+          <div style={{ fontSize: 10.5, color: 'var(--faint)' }}>{SYM[palHover].cat}{SYM[palHover].defaults?.size ? ` · ${SYM[palHover].defaults!.size}` : ''}</div>
+        </div>
+      )}
     </>
   );
 }
@@ -544,6 +576,7 @@ function NodeG({ n, selected, connecting, pending, flagged, refDate, iso }: { n:
         <text x={ew - 2} y={eh + 1} textAnchor="end" style={{ font: '10px var(--body)' }}>🔒</text>
       )}
       <g transform={innerTransform(n)} dangerouslySetInnerHTML={{ __html: s.svg }} opacity={pending ? 0.85 : 1}
+        filter={!iso && !pending ? 'url(#symShadow)' : undefined}
         style={pending ? { filter: 'none' } : undefined} strokeDasharray={pending ? '5 3' : undefined} />
       <circle cx={ew - 2} cy={-2} r={5.5} fill="var(--panel)" stroke={STATUS_COLOR[st]} strokeWidth={2.5} />
       <text x={ew / 2} y={eh + 15} textAnchor="middle" style={{ font: '600 11px var(--mono)', fill: 'var(--ink)' }}>{n.tag || '—'}</text>
@@ -586,7 +619,9 @@ const TBRow = ({ k, v }: { k: string; v: string }) => (
 // ---- styles ----------------------------------------------------------------
 const paletteStyle: React.CSSProperties = { width: 230, flex: '0 0 auto', background: 'var(--panel)', borderRight: '1px solid var(--line2)', overflowY: 'auto', padding: 12 };
 const primaryBtn: React.CSSProperties = { width: '100%', background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '9px 11px', fontWeight: 600, fontSize: 12, marginBottom: 8, cursor: 'pointer' };
-const palHead: React.CSSProperties = { fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1.6, color: 'var(--faint)', textTransform: 'uppercase', margin: '15px 4px 8px', fontWeight: 600 };
+const palHead: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1.6, color: 'var(--faint)', textTransform: 'uppercase', margin: '15px 4px 8px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' };
+const palSearch: React.CSSProperties = { width: '100%', boxSizing: 'border-box', background: 'var(--panel2)', border: '1px solid var(--line2)', color: 'var(--ink)', padding: '7px 9px', borderRadius: 7, fontSize: 12, margin: '4px 0 4px' };
+const palPreview: React.CSSProperties = { position: 'absolute', left: 238, top: 120, zIndex: 30, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 11, boxShadow: 'var(--shadow)', padding: 12, width: 168, textAlign: 'center', pointerEvents: 'none' };
 const palCard: React.CSSProperties = { background: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 4px 7px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: 'grab' };
 const toolbar: React.CSSProperties = { position: 'absolute', left: 16, top: 16, display: 'flex', gap: 5, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: 5, zIndex: 10, boxShadow: 'var(--shadow)' };
 const tbtn: React.CSSProperties = { width: 36, height: 36, border: 0, background: 'transparent', borderRadius: 7, color: 'var(--dim)', fontSize: 16, cursor: 'pointer' };

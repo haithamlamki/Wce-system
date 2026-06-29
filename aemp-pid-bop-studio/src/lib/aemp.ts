@@ -104,7 +104,7 @@ export function buildMaster(
       description: t.name || s.name,
       section: ref.section || (t.name ? 'Mud System' : sectionForTag(t.tag)),
       rwp: ref.rwp || '',
-      size: ref.size || '',
+      size: ref.size || s.defaults?.size || '',
       manufacturer: ref.manufacturer || '',
       serial: ref.serial || '',
       int_last: ref.int_last || '',
