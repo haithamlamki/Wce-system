@@ -5,8 +5,9 @@ import { useProject } from '../state/ProjectContext';
 import { ACHIEVEMENTS, REWARDS, rewardStats, tierOf, TIERS } from '../lib/rewards';
 
 export default function AccountView() {
-  const { project, refDate } = useProject();
+  const { project, refDate, redeemReward } = useProject();
   const s = rewardStats(project, refDate);
+  const available = s.pts - project.rewards.spent;
   const tier = tierOf(s.pts);
   const idx = TIERS.indexOf(tier);
   const next = TIERS[idx + 1];
@@ -44,12 +45,24 @@ export default function AccountView() {
 
         <section style={card}>
           <H>Redeem points</H>
+          <div style={{ fontSize: 11.5, color: 'var(--dim)', marginBottom: 8 }}>{available} points available to spend</div>
           {REWARDS.map((r) => {
-            const can = s.pts - project.rewards.spent >= r.cost && !project.rewards.redeemed.includes(r.id);
+            const redeemed = project.rewards.redeemed.includes(r.id);
+            const can = !redeemed && available >= r.cost;
             return (
-              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
-                <span>{r.name}</span>
-                <span style={{ fontFamily: 'var(--mono)', color: can ? 'var(--accent)' : 'var(--faint)' }}>★ {r.cost}</span>
+              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
+                <span style={{ opacity: redeemed ? 0.55 : 1 }}>{r.name}</span>
+                {redeemed ? (
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--green)' }}>✓ Redeemed</span>
+                ) : (
+                  <button
+                    onClick={() => redeemReward(r.id)}
+                    disabled={!can}
+                    title={can ? `Redeem for ${r.cost} points` : 'Not enough points yet'}
+                    style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--line2)', cursor: can ? 'pointer' : 'not-allowed', background: can ? 'var(--accent)' : 'var(--panel2)', color: can ? '#fff' : 'var(--faint)' }}>
+                    ★ {r.cost}
+                  </button>
+                )}
               </div>
             );
           })}

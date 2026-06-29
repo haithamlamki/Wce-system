@@ -67,9 +67,12 @@ src/
 - **Equipment Register** — fully wired (search/filter/CSV/live status).
 - **Interactive P&ID canvas** — pan / wheel-zoom / fit, snap-to-grid,
   drag-from-palette + click-to-place with **approve bar**, select/move,
-  connect/route, rotate/flip/scale/duplicate/delete, keyboard shortcuts,
+  connect/route, **swap symbol type** (FR-16), rotate/flip/scale/duplicate/delete
+  with **"apply to all of this type"** (FR-18), keyboard shortcuts,
   properties panel, **field as-built toggle**, hover tooltips, **title block +
   piping legend**, and a **3D isometric** presentation view.
+- **Equipment Register** "view ▸" jumps to and re-centres the item on the
+  diagram (FR-27); **Account** rewards are redeemable and persist (FR-55).
 - **BOP scaled elevation** — datum→RKB axis, to-scale components, editable
   heights, clearance-to-RT dimension, m/ft units, hover status.
 - **Save / Open `.json` + debounced autosave** to localStorage (FR-58).

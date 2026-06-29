@@ -2,6 +2,7 @@
 // Fully wired to the extracted status engine + project state to prove the
 // modules work end-to-end. Search / filter / sort + summary counters + CSV.
 import { useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useProject } from '../state/ProjectContext';
 import { useAuth } from '../state/AuthContext';
 import { STATUS_COLOR, STATUS_LABEL, statusOf, summarize } from '../lib/status';
@@ -15,8 +16,15 @@ const nz = (v: string) => (v && v.trim() ? v : null);
 const SYM_KEYS = new Set(Object.keys(SYM));
 
 export default function RegisterView() {
-  const { project, refDate, importAEMP, addComponents } = useProject();
+  const { project, refDate, importAEMP, addComponents, requestFocus } = useProject();
   const { enabled: cloudEnabled, role, rig } = useAuth();
+  const navigate = useNavigate();
+
+  // FR-27: jump from a register row to the item on the diagram
+  function viewOnDiagram(id: string) {
+    requestFocus(id);
+    navigate('/full');
+  }
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<'' | InspectionStatus>('');
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -151,8 +159,8 @@ export default function RegisterView() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--mono)', fontSize: 12 }}>
           <thead>
             <tr>
-              {['Tag', 'Symbol', 'Description', 'System', 'RWP', 'Size', 'Serial', 'Int due', 'Maj due', 'Status'].map((h) => (
-                <th key={h} style={th}>{h}</th>
+              {['Tag', 'Symbol', 'Description', 'System', 'RWP', 'Size', 'Serial', 'Int due', 'Maj due', 'Status', ''].map((h, i) => (
+                <th key={h || `c${i}`} style={th}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -169,6 +177,9 @@ export default function RegisterView() {
                 <td style={td}>{n.int_due || '—'}</td>
                 <td style={td}>{n.maj_due || '—'}</td>
                 <td style={{ ...td, color: STATUS_COLOR[status], fontWeight: 600 }}>{STATUS_LABEL[status]}</td>
+                <td style={{ ...td, textAlign: 'right' }}>
+                  <button style={viewBtn} title="Show this item on the diagram" onClick={() => viewOnDiagram(n.id)}>view ▸</button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -191,3 +202,4 @@ const inp: React.CSSProperties = { background: 'var(--panel2)', border: '1px sol
 const btn: React.CSSProperties = { ...inp, cursor: 'pointer', fontWeight: 600 };
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid var(--line2)', color: 'var(--faint)', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', position: 'sticky', top: 0, background: 'var(--bg)' };
 const td: React.CSSProperties = { padding: '7px 10px', borderBottom: '1px solid var(--line)' };
+const viewBtn: React.CSSProperties = { background: 'transparent', border: '1px solid var(--line2)', color: 'var(--accent)', padding: '3px 8px', borderRadius: 6, fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' };

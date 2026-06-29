@@ -80,6 +80,19 @@ export default function PidFullView() {
 
   useEffect(() => { if (project.nodes.length) doFit(); /* eslint-disable-next-line */ }, [project.revision]);
 
+  // FR-27: when the register requests focus, re-center on that node (in 2D).
+  useEffect(() => {
+    if (!p.focusSeq || !p.focusId) return;
+    const node = project.nodes.find((n) => n.id === p.focusId);
+    const r = svgRef.current?.getBoundingClientRect();
+    if (!node || !r) return;
+    setIso(false);
+    const b = box(node);
+    const k = Math.max(view.k, 1);
+    setView({ k, x: r.width / 2 - (node.x + b.w / 2) * k, y: r.height / 2 - (node.y + b.h / 2) * k });
+    /* eslint-disable-next-line */
+  }, [p.focusSeq]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;

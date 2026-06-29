@@ -11,6 +11,7 @@ import { buildMaster, importFromAEMP, type AempConfig } from '../lib/aemp';
 import { buildBopStack, type HoleSection } from '../lib/bop';
 import { box } from '../lib/geometry';
 import { SYM, type SymbolKey } from '../lib/symbols';
+import { REWARDS, rewardStats } from '../lib/rewards';
 
 export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vmiddle' | 'bottom';
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
@@ -124,13 +125,23 @@ interface ProjectCtx {
   moveNode: (id: string, x: number, y: number) => void;
   deleteNode: (id: string) => void;
   duplicateNode: (id: string) => string | null;
+  /** Swap a placed item's symbol type without losing its data (FR-16). */
+  changeType: (id: string, type: SymbolKey, applyToType?: boolean) => void;
   rotateNode: (id: string, applyToType?: boolean) => void;
-  flipNode: (id: string) => void;
-  scaleNode: (id: string, scale: number) => void;
+  flipNode: (id: string, applyToType?: boolean) => void;
+  scaleNode: (id: string, scale: number, applyToType?: boolean) => void;
   toggleRemoved: (id: string) => void;
   addEdge: (from: string, to: string) => void;
   /** Bulk-add components (e.g. from CSV import); grid-places them. Returns count. */
   addComponents: (rows: Array<Partial<Component> & { type?: SymbolKey }>) => number;
+
+  // register → diagram jump (FR-27)
+  focusId: string | null;
+  focusSeq: number;
+  requestFocus: (id: string) => void;
+
+  // rewards redemption (FR-55)
+  redeemReward: (id: string) => void;
 }
 
 const Ctx = createContext<ProjectCtx | null>(null);
@@ -144,6 +155,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // first open (nothing autosaved) → show the date-first onboarding modal (FR-1)
   const [showOnboard, setShowOnboard] = useState(() => restored === null);
   const [cloudId, setCloudId] = useState<string | null>(null);
+  // register → diagram focus request (FR-27): bump seq to re-center on focusId
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [focusSeq, setFocusSeq] = useState(0);
 
   // primary selection (last) for single-target convenience + back-compat
   const selectedId = selectedIds.length ? selectedIds[selectedIds.length - 1] : null;
@@ -281,6 +295,22 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return newId;
   }, []);
 
+  // swap symbol type, keeping all inspection/identity data (FR-16);
+  // applyToType swaps every item of the original type (FR-18)
+  const changeType = useCallback((id: string, type: SymbolKey, applyToType = false) => {
+    if (!SYM[type]) return;
+    setProject((p) => {
+      const src = p.nodes.find((n) => n.id === id);
+      if (!src) return p;
+      return {
+        ...p,
+        nodes: p.nodes.map((n) =>
+          n.id === id || (applyToType && n.type === src.type) ? { ...n, type } : n,
+        ),
+      };
+    });
+  }, []);
+
   const rotateNode = useCallback((id: string, applyToType = false) => {
     setProject((p) => {
       const src = p.nodes.find((n) => n.id === id);
@@ -295,13 +325,32 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const flipNode = useCallback((id: string) => {
-    setProject((p) => ({ ...p, nodes: p.nodes.map((n) => (n.id === id ? { ...n, flip: !n.flip } : n)) }));
+  const flipNode = useCallback((id: string, applyToType = false) => {
+    setProject((p) => {
+      const src = p.nodes.find((n) => n.id === id);
+      if (!src) return p;
+      const flip = !src.flip;
+      return {
+        ...p,
+        nodes: p.nodes.map((n) =>
+          n.id === id || (applyToType && n.type === src.type) ? { ...n, flip } : n,
+        ),
+      };
+    });
   }, []);
 
-  const scaleNode = useCallback((id: string, scale: number) => {
+  const scaleNode = useCallback((id: string, scale: number, applyToType = false) => {
     const s = Math.max(0.4, Math.min(2.4, scale));
-    setProject((p) => ({ ...p, nodes: p.nodes.map((n) => (n.id === id ? { ...n, scale: s } : n)) }));
+    setProject((p) => {
+      const src = p.nodes.find((n) => n.id === id);
+      if (!src) return p;
+      return {
+        ...p,
+        nodes: p.nodes.map((n) =>
+          n.id === id || (applyToType && n.type === src.type) ? { ...n, scale: s } : n,
+        ),
+      };
+    });
   }, []);
 
   const toggleRemoved = useCallback((id: string) => {
@@ -491,6 +540,25 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     if (loaded) { setSelectedId(null); setCloudId(id); setProject(loaded); }
   }, []);
 
+  // FR-27: select a node + signal the canvas to re-center on it
+  const requestFocus = useCallback((id: string) => {
+    setSelectedId(id);
+    setFocusId(id);
+    setFocusSeq((s) => s + 1);
+  }, [setSelectedId]);
+
+  // FR-55: redeem a reward if affordable; persists in project.rewards
+  const redeemReward = useCallback((id: string) => {
+    const item = REWARDS.find((r) => r.id === id);
+    if (!item) return;
+    setProject((p) => {
+      if (p.rewards.redeemed.includes(id)) return p;
+      const available = rewardStats(p, refDate).pts - p.rewards.spent;
+      if (available < item.cost) return p;
+      return { ...p, rewards: { spent: p.rewards.spent + item.cost, redeemed: [...p.rewards.redeemed, id] } };
+    });
+  }, [refDate]);
+
   const value: ProjectCtx = {
     project, refDate, mode, setMode, selectedId, setSelectedId, selected,
     selectedIds, setSelectedIds, toggleSelect, clearSelection, selectAll,
@@ -502,8 +570,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     saveProject, openProject, updateMeta,
     showOnboard, setShowOnboard, completeOnboarding,
     cloudEnabled: isSupabaseConfigured, cloudId, saveCloud, listCloud, loadCloud,
-    addNode, updateNode, moveNode, deleteNode, duplicateNode,
+    addNode, updateNode, moveNode, deleteNode, duplicateNode, changeType,
     rotateNode, flipNode, scaleNode, toggleRemoved, addEdge, addComponents,
+    focusId, focusSeq, requestFocus, redeemReward,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
