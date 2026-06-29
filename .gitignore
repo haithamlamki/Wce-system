@@ -18,7 +18,9 @@ dist/
 *.db
 *.sqlite
 
-# Logs & OS
+# Build info / logs & OS
+*.tsbuildinfo
+**/*.tsbuildinfo
 *.log
 .DS_Store
 .vite/

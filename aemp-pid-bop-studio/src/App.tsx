@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { ProjectProvider, useProject } from './state/ProjectContext';
+import { AuthProvider, useAuth } from './state/AuthContext';
+import { AccountChip, LoginScreen } from './components/Auth';
 import { OnboardModal, ProjectChip } from './components/Onboarding';
 import AssistantPanel from './components/AssistantPanel';
 import CloudPanel from './components/CloudPanel';
@@ -30,14 +32,22 @@ const TABS = [
 
 function ModeToggle() {
   const { mode, setMode } = useProject();
+  const { role } = useAuth();
+  // FR-6: Field-role users cannot enter Admin edit. Offline/admin/manager may.
+  const adminLocked = role === 'field';
+  useEffect(() => { if (adminLocked && mode === 'admin') setMode('field'); }, [adminLocked, mode, setMode]);
   return (
     <div style={{ display: 'flex', background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 9, padding: 3, fontFamily: 'var(--disp)' }}>
-      {(['admin', 'field'] as const).map((m) => (
-        <button key={m} onClick={() => setMode(m)}
-          style={{ border: 0, background: mode === m ? (m === 'admin' ? 'var(--accent2)' : 'var(--green)') : 'transparent', color: mode === m ? '#fff' : 'var(--dim)', padding: '6px 13px', borderRadius: 6, fontWeight: 600, fontSize: 12.5, cursor: 'pointer', textTransform: 'capitalize' }}>
-          {m}
-        </button>
-      ))}
+      {(['admin', 'field'] as const).map((m) => {
+        const locked = m === 'admin' && adminLocked;
+        return (
+          <button key={m} disabled={locked} onClick={() => !locked && setMode(m)}
+            title={locked ? 'Field role cannot edit the master' : ''}
+            style={{ border: 0, background: mode === m ? (m === 'admin' ? 'var(--accent2)' : 'var(--green)') : 'transparent', color: mode === m ? '#fff' : 'var(--dim)', padding: '6px 13px', borderRadius: 6, fontWeight: 600, fontSize: 12.5, cursor: locked ? 'not-allowed' : 'pointer', textTransform: 'capitalize', opacity: locked ? 0.4 : 1 }}>
+            {m}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -95,6 +105,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
         <button className="tabs" onClick={cycleTheme} title={`Theme: ${theme}`} style={{ cursor: 'pointer' }}>
           <a>Theme: {theme}</a>
         </button>
+        <AccountChip />
       </header>
 
       <main className="viewport">
@@ -113,6 +124,23 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
   );
 }
 
+function Gate({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void }) {
+  const { enabled, loading, session } = useAuth();
+  const [skipped, setSkipped] = useState(false);
+
+  if (enabled && loading) {
+    return <div style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', color: 'var(--faint)' }}>Loading…</div>;
+  }
+  if (enabled && !session && !skipped) {
+    return <LoginScreen onSkip={() => setSkipped(true)} />;
+  }
+  return (
+    <ProjectProvider>
+      <Shell theme={theme} cycleTheme={cycleTheme} />
+    </ProjectProvider>
+  );
+}
+
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>('auto');
 
@@ -128,8 +156,8 @@ export default function App() {
     setTheme((t) => (t === 'auto' ? 'light' : t === 'light' ? 'dark' : 'auto'));
 
   return (
-    <ProjectProvider>
-      <Shell theme={theme} cycleTheme={cycleTheme} />
-    </ProjectProvider>
+    <AuthProvider>
+      <Gate theme={theme} cycleTheme={cycleTheme} />
+    </AuthProvider>
   );
 }

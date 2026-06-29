@@ -1,0 +1,71 @@
+// ============================================================================
+//  Prisma schema — SERVER-SIDE data model for the future AEMP-side API (FR-48).
+//  NOT imported by the Vite frontend (Prisma can't run in the browser); this is
+//  for a Node/edge service, migrations, and typed DB access from tooling.
+//  Mirrors the Supabase schema in supabase/migrations/. To sync from the live
+//  DB:  npm run db:pull   (uses DIRECT_URL).  Generate client:  npm run db:generate
+// ============================================================================
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled (pgbouncer:6543) — app runtime
+  directUrl = env("DIRECT_URL")   // direct (5432) — migrations / introspection
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum user_role {
+  admin
+  field
+  manager
+}
+
+/// One profile per Supabase auth user (auth.users lives in the `auth` schema,
+/// managed by GoTrue — referenced by id, not modelled here).
+model profiles {
+  id         String    @id @db.Uuid
+  email      String?
+  full_name  String?
+  role       user_role @default(field)
+  rig        String?
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+}
+
+/// Saved P&ID projects (FR-59). Full document stored as JSONB.
+model projects {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rig_name       String    @default("Rig")
+  reference_date DateTime? @db.Date
+  inspector      String?
+  revision       Int       @default(0)
+  data           Json
+  created_by     String?   @db.Uuid
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([rig_name])
+}
+
+/// AEMP-equivalent WCE equipment register (read model for import; FR-36/37).
+model equipment {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rig_name     String    @default("Rig 303")
+  tag          String?
+  type         String?
+  section      String?
+  description  String?
+  rwp          String?
+  size         String?
+  manufacturer String?
+  serial       String?
+  int_last     DateTime? @db.Date
+  int_due      DateTime? @db.Date
+  maj_last     DateTime? @db.Date
+  maj_due      DateTime? @db.Date
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([rig_name])
+  @@index([tag])
+}

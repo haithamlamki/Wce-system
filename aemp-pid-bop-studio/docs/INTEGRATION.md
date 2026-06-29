@@ -36,13 +36,40 @@ Schema: see `supabase/migrations/0001_initial_schema.sql` (already applied).
 node --env-file=.env.local scripts/seed-equipment.mjs
 ```
 
-### ⚠️ Security (must change before production)
-RLS is enabled but uses **demo policies that allow anonymous CRUD** so the
-keyless demo works. Production must:
-1. Authenticate via **AEMP SSO** (Supabase `authenticated` role or JWT from AEMP).
-2. Replace `demo_anon_*` policies with **per-rig, per-role** policies (Admin/Field/Manager, PRD §4/§7.2).
+### Auth & RLS (gap now closed — migration `0002`)
+Anonymous CRUD has been **removed**. Current state:
+- **`profiles`** table (one per `auth.users`), with a `user_role` enum
+  (`admin` / `field` / `manager`) and an auto-create trigger on sign-up.
+- **`projects`**: authenticated read/insert/update; owner-only delete (`created_by`).
+- **`equipment`**: authenticated read; **admin-only** writes.
+- Frontend: `src/state/AuthContext.tsx` + `src/components/Auth.tsx` — email/password
+  sign-in/up gate; the header shows the user + role; **Field role cannot enter
+  Admin edit** (FR-6). Sign-up creates a `field` user.
+
+**Promote a user to admin** (run after they register):
+```sql
+update public.profiles set role = 'admin' where email = 'you@example.com';
+```
+
+Verified: the anon key now sees **0** equipment rows and project inserts are
+rejected by RLS.
+
+### Still required for production
+1. Replace email/password with **AEMP SSO** (JWT from AEMP → Supabase) — PRD §7.2.
+2. Add **per-rig** authorisation to the policies (not just per-role).
 3. Seed `equipment` with a **service-role** key in CI, not the anon key.
-4. Never expose a service-role key in the frontend bundle.
+4. If email confirmation is enabled on the project, either confirm via email or
+   disable it in Supabase → Auth settings for internal use.
+
+### Server-side data model (Prisma)
+`prisma/schema.prisma` mirrors the DB and binds to the provided
+`DATABASE_URL` (pooled) / `DIRECT_URL` (direct) — the foundation for the future
+AEMP-side API (FR-48). It is **not** imported by the browser app.
+```bash
+# Prisma reads .env — copy the two URLs there first (gitignored), then:
+npm run db:pull       # introspect the live DB via DIRECT_URL
+npm run db:generate   # generate the typed client
+```
 
 ---
 
