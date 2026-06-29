@@ -25,6 +25,18 @@ describe('validate', () => {
     expect(issues).toHaveLength(0);
   });
 
+  it('ignores incidental edge contact below the overlap ratio', () => {
+    // gate is 64 wide; a 4px sliver overlap is well under the 18% threshold
+    const issues = validate(proj([mk('a', 'gate', 0, 0, { tag: 'A' }), mk('b', 'gate', 60, 0, { tag: 'B' })]));
+    expect(issues.some((i) => i.kind === 'overlap')).toBe(false);
+  });
+
+  it('does not flag overlap between connected components', () => {
+    const nodes = [mk('a', 'gate', 0, 0, { tag: 'A' }), mk('b', 'gate', 10, 10, { tag: 'B' })];
+    const issues = validate(proj(nodes, [{ id: 'e', from: 'a', to: 'b' }]));
+    expect(issues.some((i) => i.kind === 'overlap')).toBe(false);
+  });
+
   it('flags a dangling edge', () => {
     const issues = validate(proj([mk('a', 'gate', 0, 0, { tag: 'A' })], [{ id: 'e', from: 'a', to: 'ghost' }]));
     expect(issues.some((i) => i.kind === 'dangling' && i.severity === 'error')).toBe(true);
