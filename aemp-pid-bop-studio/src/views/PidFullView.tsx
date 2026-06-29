@@ -77,6 +77,9 @@ export default function PidFullView() {
       if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
       if (!editable) return;
       const mod = e.ctrlKey || e.metaKey;
+      // undo / redo
+      if (mod && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) { e.preventDefault(); p.undo(); return; }
+      if (mod && ((e.key === 'z' || e.key === 'Z') && e.shiftKey || e.key === 'y' || e.key === 'Y')) { e.preventDefault(); p.redo(); return; }
       // clipboard + select-all work on the whole selection
       if (mod && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); p.copySelection(); return; }
       if (mod && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); p.cutSelection(); return; }
@@ -248,7 +251,7 @@ export default function PidFullView() {
             Click a symbol to place &amp; approve, or drag it onto the canvas.<br />
             <b>Shift-click</b> or <b>drag a box</b> to multi-select · <b>Ctrl+A</b> all · <b>Esc</b> clear.<br />
             <b>Ctrl+C/X/V</b> copy/cut/paste · <b>R</b> rotate (⇧R type) · <b>D</b> duplicate · <b>F</b> flip · <b>Del</b> remove.<br />
-            <b>Arrow keys</b> nudge by grid · <b>Shift+Arrow</b> nudge 1px.
+            <b>Arrow keys</b> nudge by grid · <b>Shift+Arrow</b> nudge 1px · <b>Ctrl+Z/⇧Z</b> undo/redo.
           </div>
         </aside>
       )}
@@ -263,6 +266,9 @@ export default function PidFullView() {
                 {t === 'select' ? '⬉' : t === 'connect' ? '⎯' : '✋'}
               </button>
             ))}
+            <span style={{ width: 1, background: 'var(--line2)', margin: '4px 2px' }} />
+            <button style={{ ...tbtn, opacity: p.canUndo ? 1 : 0.35 }} title="Undo (Ctrl+Z)" disabled={!p.canUndo} onClick={p.undo}>↶</button>
+            <button style={{ ...tbtn, opacity: p.canRedo ? 1 : 0.35 }} title="Redo (Ctrl+Shift+Z)" disabled={!p.canRedo} onClick={p.redo}>↷</button>
           </div>
         )}
 

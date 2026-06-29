@@ -89,6 +89,12 @@ interface ProjectCtx {
   distributeSelection: (axis: 'h' | 'v') => void;
 
   // engine actions
+  // undo / redo (canvas + project edits)
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+
   loadMaster: () => void;
   loadLayout: (template: TemplateItem[], pipes: PipeSeg[]) => number;
   importAEMP: (config?: AempConfig) => Promise<boolean>;
@@ -150,6 +156,55 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     saveTimer.current = setTimeout(() => autosave(project), 400);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [project]);
+
+  // ---- undo / redo history (coalesces bursts like a drag into one step) ----
+  const past = useRef<Project[]>([]);
+  const future = useRef<Project[]>([]);
+  const baseline = useRef<Project>(project);
+  const timeTravel = useRef(false);
+  const sealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [, setHistVer] = useState(0);
+
+  const sealNow = useCallback(() => {
+    if (sealTimer.current) { clearTimeout(sealTimer.current); sealTimer.current = null; }
+    if (project !== baseline.current) {
+      past.current.push(baseline.current);
+      if (past.current.length > 100) past.current.shift();
+      future.current = [];
+      baseline.current = project;
+      setHistVer((v) => v + 1);
+    }
+  }, [project]);
+
+  useEffect(() => {
+    if (timeTravel.current) { timeTravel.current = false; baseline.current = project; return; }
+    if (sealTimer.current) clearTimeout(sealTimer.current);
+    sealTimer.current = setTimeout(sealNow, 350);
+    return () => { if (sealTimer.current) clearTimeout(sealTimer.current); };
+  }, [project, sealNow]);
+
+  const undo = useCallback(() => {
+    sealNow();
+    if (!past.current.length) return;
+    const prev = past.current.pop()!;
+    future.current.push(baseline.current);
+    baseline.current = prev;
+    timeTravel.current = true;
+    setSelectedIds([]);
+    setProject(prev);
+    setHistVer((v) => v + 1);
+  }, [sealNow]);
+
+  const redo = useCallback(() => {
+    if (!future.current.length) return;
+    const next = future.current.pop()!;
+    past.current.push(baseline.current);
+    baseline.current = next;
+    timeTravel.current = true;
+    setSelectedIds([]);
+    setProject(next);
+    setHistVer((v) => v + 1);
+  }, []);
 
   const refDate = useMemo(() => {
     const d = new Date(project.meta.date + 'T00:00');
@@ -442,6 +497,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     clipboardCount: clipboard.length, copySelection, cutSelection, pasteClipboard,
     deleteSelection, duplicateSelection, rotateSelection, flipSelection, scaleSelection, moveMany,
     alignSelection, distributeSelection,
+    undo, redo, canUndo: past.current.length > 0 || project !== baseline.current, canRedo: future.current.length > 0,
     loadMaster, loadLayout, importAEMP, buildBop, setProject,
     saveProject, openProject, updateMeta,
     showOnboard, setShowOnboard, completeOnboarding,
