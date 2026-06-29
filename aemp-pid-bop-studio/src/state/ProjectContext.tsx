@@ -6,7 +6,7 @@
 //  touching the views.
 // ============================================================================
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Component, Edge, Project } from '../types';
+import type { Component, Edge, PipeSeg, Project, TemplateItem } from '../types';
 import { buildMaster, importFromAEMP, type AempConfig } from '../lib/aemp';
 import { buildBopStack, type HoleSection } from '../lib/bop';
 import { SYM, type SymbolKey } from '../lib/symbols';
@@ -68,6 +68,7 @@ interface ProjectCtx {
 
   // engine actions
   loadMaster: () => void;
+  loadLayout: (template: TemplateItem[], pipes: PipeSeg[]) => number;
   importAEMP: (config?: AempConfig) => Promise<boolean>;
   buildBop: (section: HoleSection) => void;
   setProject: (p: Project) => void;
@@ -139,6 +140,13 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     const { nodes, pipes } = buildMaster();
     setSelectedId(null);
     setProject((p) => bump(p, { nodes, pipes, edges: [] }));
+  }, []);
+
+  const loadLayout = useCallback((template: TemplateItem[], pipes: PipeSeg[]) => {
+    const { nodes } = buildMaster(template, RIG303_EQUIPMENT);
+    setSelectedId(null);
+    setProject((p) => bump(p, { nodes, pipes, edges: [] }));
+    return nodes.length;
   }, []);
 
   const importAEMP = useCallback(async (config?: AempConfig) => {
@@ -285,7 +293,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const value: ProjectCtx = {
     project, refDate, mode, setMode, selectedId, setSelectedId, selected,
-    loadMaster, importAEMP, buildBop, setProject,
+    loadMaster, loadLayout, importAEMP, buildBop, setProject,
     saveProject, openProject, updateMeta,
     showOnboard, setShowOnboard, completeOnboarding,
     cloudEnabled: isSupabaseConfigured, cloudId, saveCloud, listCloud, loadCloud,

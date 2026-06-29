@@ -14,6 +14,7 @@ import {
   box, edgeNodes, fitView, innerTransform, isoDepth, isoPlacement, pickNode,
   proj, routeEdge, screenToWorld, snap, type View,
 } from '../lib/geometry';
+import { parseDrawing } from '../lib/layoutImport';
 import type { Component } from '../types';
 
 type Tool = 'select' | 'connect' | 'pan';
@@ -32,6 +33,7 @@ export default function PidFullView() {
   const { project, refDate, mode } = p;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragRef = useRef<Drag | null>(null);
+  const drawingRef = useRef<HTMLInputElement | null>(null);
   const [view, setView] = useState<View>({ x: 60, y: 60, k: 1 });
   const [tool, setTool] = useState<Tool>('select');
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
@@ -144,6 +146,16 @@ export default function PidFullView() {
   const approve = () => setPendingId(null);
   const cancelPending = () => { if (pendingId) p.deleteNode(pendingId); setPendingId(null); };
 
+  async function onImportDrawing(file: File) {
+    try {
+      const { template, pipes, source } = parseDrawing(await file.text());
+      const n = p.loadLayout(template, pipes);
+      alert(`Imported ${n} items + ${pipes.length} pipe runs (${source}). Equipment was matched to library symbols; review tags before saving.`);
+    } catch (e) {
+      alert(`Could not import drawing: ${(e as Error).message}`);
+    }
+  }
+
   const showPalette = mode === 'admin' && !iso;
   const hasNodes = project.nodes.length > 0;
   const pendingNode = project.nodes.find((n) => n.id === pendingId) ?? null;
@@ -154,6 +166,9 @@ export default function PidFullView() {
         <aside style={paletteStyle}>
           <button style={primaryBtn} onClick={p.loadMaster}>Build Full P&amp;ID</button>
           <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => p.importAEMP()}>Import from AEMP</button>
+          <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => drawingRef.current?.click()}>Import drawing…</button>
+          <input ref={drawingRef} type="file" accept=".html,.htm,.json,.js,text/html,application/json" style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportDrawing(f); e.target.value = ''; }} />
           {SYM_ORDER.map((cat) => (
             <div key={cat}>
               <div style={palHead}>{cat}</div>
