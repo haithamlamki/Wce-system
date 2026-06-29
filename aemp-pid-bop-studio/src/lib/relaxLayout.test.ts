@@ -15,6 +15,11 @@ describe('relaxOverlaps via buildMaster', () => {
     expect(overlaps.length).toBe(0);
   });
 
+  it('has no validation issues at all (overlaps cleared, BOP stack tagged)', () => {
+    const { nodes, pipes } = buildMaster();
+    expect(validate(projOf(nodes, pipes))).toHaveLength(0);
+  });
+
   it('keeps every component visible (scale not collapsed)', () => {
     const { nodes } = buildMaster();
     expect(nodes.every((n) => (n.scale ?? 1) >= 0.4)).toBe(true);
