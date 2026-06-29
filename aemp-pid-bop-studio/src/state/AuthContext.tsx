@@ -16,9 +16,13 @@ interface AuthCtx {
   user: User | null;
   role: Role | null;
   fullName: string;
+  /** The user's assigned rig (per-rig authorization). null = unassigned. */
+  rig: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ needsConfirmation: boolean }>;
   signOut: () => Promise<void>;
+  /** Update the caller's assigned rig (writes profiles.rig). */
+  updateRig: (rig: string) => Promise<void>;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -28,12 +32,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<Role | null>(null);
   const [fullName, setFullName] = useState('');
+  const [rig, setRig] = useState<string | null>(null);
 
   const loadProfile = useCallback(async (uid: string, fallbackName: string) => {
     if (!supabase) return;
-    const { data } = await supabase.from('profiles').select('role, full_name').eq('id', uid).single();
+    const { data } = await supabase.from('profiles').select('role, full_name, rig').eq('id', uid).single();
     setRole((data?.role as Role) ?? 'field');
     setFullName(data?.full_name || fallbackName);
+    setRig(data?.rig ?? null);
   }, []);
 
   useEffect(() => {
@@ -46,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       if (s) loadProfile(s.user.id, s.user.email ?? '');
-      else { setRole(null); setFullName(''); }
+      else { setRole(null); setFullName(''); setRig(null); }
     });
     return () => sub.subscription.unsubscribe();
   }, [loadProfile]);
@@ -66,9 +72,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => { await supabase?.auth.signOut(); }, []);
 
+  const updateRig = useCallback(async (newRig: string) => {
+    if (!supabase || !session) return;
+    const { error } = await supabase.from('profiles').update({ rig: newRig }).eq('id', session.user.id);
+    if (error) throw new Error(error.message);
+    setRig(newRig);
+  }, [session]);
+
   const value: AuthCtx = {
     enabled: isSupabaseConfigured, loading, session, user: session?.user ?? null,
-    role, fullName, signIn, signUp, signOut,
+    role, fullName, rig, signIn, signUp, signOut, updateRig,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

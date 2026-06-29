@@ -54,12 +54,22 @@ update public.profiles set role = 'admin' where email = 'you@example.com';
 Verified: the anon key now sees **0** equipment rows and project inserts are
 rejected by RLS.
 
+### Per-rig authorization (migration `0003`)
+Field users are scoped to their assigned `profiles.rig`; **admins & managers see
+all rigs**. SECURITY DEFINER helpers `my_role()`, `my_rig()`, `is_privileged()`
+back the policies:
+- `projects` read/insert/update scoped to the user's rig (delete = owner only).
+- `equipment` read scoped to the user's rig; writes admin-only.
+- UI: the header account chip has a **rig selector** that writes `profiles.rig`
+  (`AuthContext.updateRig`). Privileged users see "All rigs".
+
 ### Still required for production
 1. Replace email/password with **AEMP SSO** (JWT from AEMP → Supabase) — PRD §7.2.
-2. Add **per-rig** authorisation to the policies (not just per-role).
-3. Seed `equipment` with a **service-role** key in CI, not the anon key.
-4. If email confirmation is enabled on the project, either confirm via email or
+2. Seed `equipment` with a **service-role** key in CI, not the anon key.
+3. If email confirmation is enabled on the project, either confirm via email or
    disable it in Supabase → Auth settings for internal use.
+4. Consider multi-rig assignments (a join table) if crews cover several rigs;
+   current model is one rig per profile.
 
 ### Server-side data model (Prisma)
 `prisma/schema.prisma` mirrors the DB and binds to the provided

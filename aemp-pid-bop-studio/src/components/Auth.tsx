@@ -53,12 +53,25 @@ export function LoginScreen({ onSkip }: { onSkip: () => void }) {
   );
 }
 
-/** Header account chip with role + sign out. */
+const KNOWN_RIGS = ['Rig 303', 'Rig 305'];
+
+/** Header account chip with role, per-rig selector, and sign out. */
 export function AccountChip() {
-  const { user, role, fullName, signOut } = useAuth();
+  const { user, role, fullName, rig, updateRig, signOut } = useAuth();
   if (!user) return null;
+  const privileged = role === 'admin' || role === 'manager';
+  const options = Array.from(new Set([...(rig ? [rig] : []), ...KNOWN_RIGS]));
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <select
+        value={rig ?? ''}
+        onChange={(e) => updateRig(e.target.value).catch((err) => alert(err.message))}
+        title={privileged ? 'Your rig (you can see all rigs)' : 'Your assigned rig — scopes what you can see'}
+        style={{ background: 'var(--panel2)', border: '1px solid var(--line2)', color: 'var(--ink)', borderRadius: 7, padding: '6px 8px', fontSize: 11.5, fontFamily: 'var(--mono)' }}
+      >
+        <option value="">{privileged ? 'All rigs' : 'Set rig…'}</option>
+        {options.map((r) => <option key={r} value={r}>{r}</option>)}
+      </select>
       <span style={{ display: 'grid', textAlign: 'right', lineHeight: 1.2 }}>
         <span style={{ fontSize: 12, fontWeight: 600 }}>{fullName || user.email}</span>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--faint)', textTransform: 'uppercase' }}>{role ?? '—'}</span>
