@@ -1,6 +1,7 @@
 // Login / sign-up gate + header account chip (PRD §7.2).
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../state/AuthContext';
+import { aempSsoEnabled, readInboundAempToken, signInWithAemp } from '../lib/aempSso';
 
 /** Full-screen gate shown when cloud is enabled and nobody is signed in. */
 export function LoginScreen({ onSkip }: { onSkip: () => void }) {
@@ -11,6 +12,19 @@ export function LoginScreen({ onSkip }: { onSkip: () => void }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+
+  async function aempSignIn() {
+    setBusy(true); setMsg('');
+    try { await signInWithAemp(); }
+    catch (err) { setMsg((err as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  // If AEMP handed us a token (embedded launch), attempt SSO automatically.
+  useEffect(() => {
+    if (aempSsoEnabled && readInboundAempToken()) aempSignIn();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,6 +56,14 @@ export function LoginScreen({ onSkip }: { onSkip: () => void }) {
         <input style={inp} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
         {msg && <div style={{ fontSize: 12, color: 'var(--amber)', margin: '10px 0 0' }}>{msg}</div>}
         <button style={primary} disabled={busy} type="submit">{busy ? '…' : mode === 'in' ? 'Sign in' : 'Create account'}</button>
+        {aempSsoEnabled && (
+          <>
+            <div style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 11, margin: '12px 0 8px' }}>— or —</div>
+            <button type="button" style={{ ...primary, marginTop: 0, background: 'var(--accent2)' }} disabled={busy} onClick={aempSignIn}>
+              Sign in with AEMP
+            </button>
+          </>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, fontSize: 12.5 }}>
           <button type="button" style={link} onClick={() => { setMode(mode === 'in' ? 'up' : 'in'); setMsg(''); }}>
             {mode === 'in' ? 'Create an account' : 'Have an account? Sign in'}
