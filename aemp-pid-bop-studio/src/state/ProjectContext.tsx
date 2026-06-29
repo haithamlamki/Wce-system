@@ -62,9 +62,26 @@ interface ProjectCtx {
   refDate: Date;
   mode: Mode;
   setMode: (m: Mode) => void;
-  selectedId: string | null;
+  selectedId: string | null;            // primary (last) selection — for single-edit
   setSelectedId: (id: string | null) => void;
-  selected: Component | null;
+  selected: Component | null;            // the node when exactly one is selected
+  selectedIds: string[];                 // full multi-selection
+  setSelectedIds: (ids: string[]) => void;
+  toggleSelect: (id: string) => void;    // shift-click add/remove
+  clearSelection: () => void;
+  selectAll: () => void;
+
+  // clipboard + group ops (copy / cut / paste / multi-transform)
+  clipboardCount: number;
+  copySelection: () => void;
+  cutSelection: () => void;
+  pasteClipboard: (dx?: number, dy?: number) => void;
+  deleteSelection: () => void;
+  duplicateSelection: () => void;
+  rotateSelection: (applyToType?: boolean) => void;
+  flipSelection: () => void;
+  scaleSelection: (scale: number) => void;
+  moveMany: (updates: Array<{ id: string; x: number; y: number }>) => void;
 
   // engine actions
   loadMaster: () => void;
@@ -111,10 +128,15 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [restored] = useState(() => restore());
   const [project, setProject] = useState<Project>(() => restored ?? emptyProject());
   const [mode, setMode] = useState<Mode>('admin');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [clipboard, setClipboard] = useState<Component[]>([]);
   // first open (nothing autosaved) → show the date-first onboarding modal (FR-1)
   const [showOnboard, setShowOnboard] = useState(() => restored === null);
   const [cloudId, setCloudId] = useState<string | null>(null);
+
+  // primary selection (last) for single-target convenience + back-compat
+  const selectedId = selectedIds.length ? selectedIds[selectedIds.length - 1] : null;
+  const setSelectedId = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
 
   // debounced autosave on every project change (FR-58)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,8 +152,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [project.meta.date]);
 
   const selected = useMemo(
-    () => project.nodes.find((n) => n.id === selectedId) ?? null,
-    [project.nodes, selectedId],
+    () => (selectedIds.length === 1 ? project.nodes.find((n) => n.id === selectedIds[0]) ?? null : null),
+    [project.nodes, selectedIds],
   );
 
   const bump = (p: Project, patch: Partial<Project>): Project => ({ ...p, ...patch, revision: (p.revision ?? 0) + 1 });
@@ -183,7 +205,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       nodes: p.nodes.filter((n) => n.id !== id),
       edges: p.edges.filter((e) => e.from !== id && e.to !== id),
     }));
-    setSelectedId((cur) => (cur === id ? null : cur));
+    setSelectedIds((ids) => ids.filter((x) => x !== id));
   }, []);
 
   const duplicateNode = useCallback((id: string) => {
@@ -257,6 +279,79 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // ---- multi-selection -------------------------------------------------------
+  const toggleSelect = useCallback((id: string) =>
+    setSelectedIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])), []);
+  const clearSelection = useCallback(() => setSelectedIds([]), []);
+  const selectAll = useCallback(() => setSelectedIds(project.nodes.map((n) => n.id)), [project.nodes]);
+
+  const moveMany = useCallback((updates: Array<{ id: string; x: number; y: number }>) => {
+    if (!updates.length) return;
+    const map = new Map(updates.map((u) => [u.id, u]));
+    setProject((p) => ({ ...p, nodes: p.nodes.map((n) => { const u = map.get(n.id); return u ? { ...n, x: u.x, y: u.y } : n; }) }));
+  }, []);
+
+  // ---- clipboard + group transforms -----------------------------------------
+  const copySelection = useCallback(() => {
+    const sel = new Set(selectedIds);
+    setClipboard(project.nodes.filter((n) => sel.has(n.id)).map((n) => ({ ...n })));
+  }, [project.nodes, selectedIds]);
+
+  const deleteSelection = useCallback(() => {
+    setSelectedIds((ids) => {
+      if (!ids.length) return ids;
+      const set = new Set(ids);
+      setProject((p) => ({
+        ...p,
+        nodes: p.nodes.filter((n) => !set.has(n.id)),
+        edges: p.edges.filter((e) => !set.has(e.from) && !set.has(e.to)),
+      }));
+      return [];
+    });
+  }, []);
+
+  const cutSelection = useCallback(() => { copySelection(); deleteSelection(); }, [copySelection, deleteSelection]);
+
+  const pasteClipboard = useCallback((dx = 24, dy = 24) => {
+    if (!clipboard.length) return;
+    const newIds: string[] = [];
+    setProject((p) => {
+      const copies = clipboard.map((c) => { const id = nextId('n'); newIds.push(id); return { ...c, id, x: c.x + dx, y: c.y + dy }; });
+      return { ...p, nodes: [...p.nodes, ...copies] };
+    });
+    setSelectedIds(newIds);
+  }, [clipboard]);
+
+  const duplicateSelection = useCallback(() => {
+    setSelectedIds((ids) => {
+      if (!ids.length) return ids;
+      const set = new Set(ids);
+      const newIds: string[] = [];
+      setProject((p) => {
+        const copies = p.nodes.filter((n) => set.has(n.id)).map((n) => { const id = nextId('n'); newIds.push(id); return { ...n, id, x: n.x + 24, y: n.y + 24 }; });
+        return { ...p, nodes: [...p.nodes, ...copies] };
+      });
+      return newIds;
+    });
+  }, []);
+
+  const rotateSelection = useCallback((applyToType = false) => {
+    setProject((p) => {
+      const set = new Set(selectedIds);
+      const types = new Set(p.nodes.filter((n) => set.has(n.id)).map((n) => n.type));
+      return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) || (applyToType && types.has(n.type)) ? { ...n, rot: ((n.rot || 0) + 90) % 360 } : n)) };
+    });
+  }, [selectedIds]);
+
+  const flipSelection = useCallback(() => {
+    setProject((p) => { const set = new Set(selectedIds); return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, flip: !n.flip } : n)) }; });
+  }, [selectedIds]);
+
+  const scaleSelection = useCallback((scale: number) => {
+    const s = Math.max(0.4, Math.min(2.4, scale));
+    setProject((p) => { const set = new Set(selectedIds); return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, scale: s } : n)) }; });
+  }, [selectedIds]);
+
   const saveProject = useCallback(() => saveToFile(project), [project]);
   const openProject = useCallback(async (file: File) => {
     const loaded = await openFromFile(file);
@@ -293,6 +388,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const value: ProjectCtx = {
     project, refDate, mode, setMode, selectedId, setSelectedId, selected,
+    selectedIds, setSelectedIds, toggleSelect, clearSelection, selectAll,
+    clipboardCount: clipboard.length, copySelection, cutSelection, pasteClipboard,
+    deleteSelection, duplicateSelection, rotateSelection, flipSelection, scaleSelection, moveMany,
     loadMaster, loadLayout, importAEMP, buildBop, setProject,
     saveProject, openProject, updateMeta,
     showOnboard, setShowOnboard, completeOnboarding,

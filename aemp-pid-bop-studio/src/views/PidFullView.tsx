@@ -5,7 +5,7 @@
 //  Field: pan-and-read; click toggles installed/removed; hover tooltips.
 //  Pan / wheel-zoom / fit-to-view, title block + legend overlay, 3D iso view.
 // ============================================================================
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProject } from '../state/ProjectContext';
 import PropertiesPanel from '../components/PropertiesPanel';
 import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
@@ -19,7 +19,15 @@ import { printPid } from '../lib/printExport';
 import type { Component } from '../types';
 
 type Tool = 'select' | 'connect' | 'pan';
-interface Drag { kind: 'pan' | 'node'; sx: number; sy: number; view0?: View; nodeId?: string; nx0?: number; ny0?: number }
+interface Drag {
+  kind: 'pan' | 'node' | 'marquee';
+  sx: number; sy: number;
+  moved?: boolean;
+  view0?: View;
+  starts?: Array<{ id: string; x: number; y: number }>; // group-drag origins
+  base?: string[]; // selection to union with (shift-marquee)
+}
+interface Marquee { x0: number; y0: number; x1: number; y1: number }
 interface Hover { n: Component; x: number; y: number }
 
 const PIPE_LEGEND = [
@@ -42,8 +50,10 @@ export default function PidFullView() {
   const [iso, setIso] = useState(false);
   const [showTitle, setShowTitle] = useState(true);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [marquee, setMarquee] = useState<Marquee | null>(null);
 
   const editable = mode === 'admin' && !iso;
+  const selSet = useMemo(() => new Set(p.selectedIds), [p.selectedIds]);
 
   const local = (e: { clientX: number; clientY: number }) => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -61,11 +71,19 @@ export default function PidFullView() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
-      if (!editable || !p.selectedId) return;
-      if (e.key === 'Delete' || e.key === 'Backspace') p.deleteNode(p.selectedId);
-      else if (e.key === 'r' || e.key === 'R') p.rotateNode(p.selectedId, e.shiftKey);
-      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); p.duplicateNode(p.selectedId); }
-      else if (e.key === 'f' || e.key === 'F') p.flipNode(p.selectedId);
+      if (!editable) return;
+      const mod = e.ctrlKey || e.metaKey;
+      // clipboard + select-all work on the whole selection
+      if (mod && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); p.copySelection(); return; }
+      if (mod && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); p.cutSelection(); return; }
+      if (mod && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); p.pasteClipboard(); return; }
+      if (mod && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); p.selectAll(); return; }
+      if (e.key === 'Escape') { p.clearSelection(); setConnectFrom(null); return; }
+      if (!p.selectedIds.length) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); p.deleteSelection(); }
+      else if (e.key === 'r' || e.key === 'R') p.rotateSelection(e.shiftKey);
+      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); p.duplicateSelection(); }
+      else if (e.key === 'f' || e.key === 'F') p.flipSelection();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -89,12 +107,21 @@ export default function PidFullView() {
         p.setSelectedId(hit.id);
         return;
       }
-      p.setSelectedId(hit.id);
-      dragRef.current = { kind: 'node', sx: px, sy: py, nodeId: hit.id, nx0: hit.x, ny0: hit.y };
+      // shift-click toggles membership without starting a drag
+      if (e.shiftKey) { p.toggleSelect(hit.id); return; }
+      // clicking an unselected node selects only it; clicking within a multi-
+      // selection keeps the group (so you can drag them all together)
+      const groupIds = selSet.has(hit.id) && p.selectedIds.length > 1 ? p.selectedIds : [hit.id];
+      if (!selSet.has(hit.id) || p.selectedIds.length <= 1) p.setSelectedId(hit.id);
+      const starts = project.nodes.filter((n) => groupIds.includes(n.id)).map((n) => ({ id: n.id, x: n.x, y: n.y }));
+      dragRef.current = { kind: 'node', sx: px, sy: py, starts };
       return;
     }
-    if (mode === 'admin' && tool === 'select') p.setSelectedId(null);
-    dragRef.current = { kind: 'pan', sx: px, sy: py, view0: { ...view } };
+    // empty space — select tool drags a marquee; pan tool pans
+    if (tool === 'pan') { dragRef.current = { kind: 'pan', sx: px, sy: py, view0: { ...view } }; return; }
+    dragRef.current = { kind: 'marquee', sx: px, sy: py, base: e.shiftKey ? p.selectedIds : [] };
+    if (!e.shiftKey) p.clearSelection();
+    setMarquee({ x0: w.x, y0: w.y, x1: w.x, y1: w.y });
   }
 
   function onPointerMove(e: React.PointerEvent) {
@@ -107,14 +134,32 @@ export default function PidFullView() {
       setHover(hit ? { n: hit, x: e.clientX, y: e.clientY } : null);
       return;
     }
+    d.moved = true;
     if (d.kind === 'pan') setView((v) => ({ ...v, x: d.view0!.x + (px - d.sx), y: d.view0!.y + (py - d.sy) }));
-    else if (d.kind === 'node' && d.nodeId) {
+    else if (d.kind === 'node' && d.starts) {
       const dx = (px - d.sx) / view.k;
       const dy = (py - d.sy) / view.k;
-      p.moveNode(d.nodeId, snap(d.nx0! + dx), snap(d.ny0! + dy));
+      p.moveMany(d.starts.map((s) => ({ id: s.id, x: snap(s.x + dx), y: snap(s.y + dy) })));
+    } else if (d.kind === 'marquee') {
+      const w = screenToWorld(px, py, view);
+      setMarquee((m) => (m ? { ...m, x1: w.x, y1: w.y } : m));
     }
   }
-  function onPointerUp() { dragRef.current = null; }
+
+  function onPointerUp() {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (d?.kind === 'marquee' && marquee) {
+      const xMin = Math.min(marquee.x0, marquee.x1), xMax = Math.max(marquee.x0, marquee.x1);
+      const yMin = Math.min(marquee.y0, marquee.y1), yMax = Math.max(marquee.y0, marquee.y1);
+      const inside = project.nodes.filter((n) => {
+        const b = box(n);
+        return n.x < xMax && n.x + b.w > xMin && n.y < yMax && n.y + b.h > yMin;
+      }).map((n) => n.id);
+      p.setSelectedIds(Array.from(new Set([...(d.base ?? []), ...inside])));
+      setMarquee(null);
+    }
+  }
 
   function onWheel(e: React.WheelEvent) {
     const { px, py } = local(e);
@@ -189,7 +234,8 @@ export default function PidFullView() {
           ))}
           <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.6, padding: '12px 4px', borderTop: '1px solid var(--line)', marginTop: 12 }}>
             Click a symbol to place &amp; approve, or drag it onto the canvas.<br />
-            <b>R</b> rotate (⇧R all) · <b>D</b> duplicate · <b>F</b> flip · <b>Del</b> remove.
+            <b>Shift-click</b> or <b>drag a box</b> to multi-select · <b>Ctrl+A</b> all · <b>Esc</b> clear.<br />
+            <b>Ctrl+C/X/V</b> copy/cut/paste · <b>R</b> rotate (⇧R type) · <b>D</b> duplicate · <b>F</b> flip · <b>Del</b> remove.
           </div>
         </aside>
       )}
@@ -263,9 +309,14 @@ export default function PidFullView() {
             })}
             {/* nodes */}
             {(iso ? [...project.nodes].sort((x, y) => isoDepth(x) - isoDepth(y)) : project.nodes).map((n) => (
-              <NodeG key={n.id} n={n} selected={p.selectedId === n.id} connecting={connectFrom === n.id}
+              <NodeG key={n.id} n={n} selected={selSet.has(n.id)} connecting={connectFrom === n.id}
                 pending={pendingId === n.id} refDate={refDate} iso={iso} />
             ))}
+            {marquee && (
+              <rect x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)}
+                width={Math.abs(marquee.x1 - marquee.x0)} height={Math.abs(marquee.y1 - marquee.y0)}
+                fill="color-mix(in srgb, var(--accent) 10%, transparent)" stroke="var(--accent)" strokeWidth={1 / view.k} strokeDasharray={`${4 / view.k} ${3 / view.k}`} />
+            )}
           </g>
         </svg>
 

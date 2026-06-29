@@ -8,13 +8,44 @@ import type { Component } from '../types';
 const SECTIONS = ['BOP/Kill/Choke', 'Well Control', 'Choke Manifold', 'Koomey Unit', 'Mud Pumps', 'Mud System', 'Standpipe Manifold', 'Cement Lines', 'Instruments'];
 
 export default function PropertiesPanel() {
-  const { selected, refDate, updateNode, rotateNode, flipNode, scaleNode, duplicateNode, deleteNode } = useProject();
+  const {
+    selected, selectedIds, refDate, updateNode, rotateNode, flipNode, scaleNode, duplicateNode, deleteNode,
+    rotateSelection, flipSelection, duplicateSelection, deleteSelection, scaleSelection, copySelection,
+  } = useProject();
+
+  // multi-selection: show group actions instead of the single-item editor
+  if (selectedIds.length > 1) {
+    return (
+      <aside style={panel}>
+        <div style={{ padding: '15px 16px', borderBottom: '1px solid var(--line2)' }}>
+          <div style={{ fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 15 }}>{selectedIds.length} items selected</div>
+          <div style={{ fontSize: 11.5, color: 'var(--dim)' }}>Group edit · ⌘/Ctrl+C copy · ⌘/Ctrl+V paste</div>
+        </div>
+        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 11 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button style={ctlBtn} title="Rotate all 90° (R)" onClick={() => rotateSelection()}>⟳</button>
+            <button style={ctlBtn} title="Flip all (F)" onClick={flipSelection}>⇄</button>
+            <button style={ctlBtn} title="Duplicate all (D)" onClick={duplicateSelection}>⧉</button>
+            <button style={ctlBtn} title="Copy (Ctrl+C)" onClick={copySelection}>⧉C</button>
+            <button style={{ ...ctlBtn, color: 'var(--red)' }} title="Delete all (Del)" onClick={deleteSelection}>🗑</button>
+          </div>
+          <Field label="Scale all">
+            <input type="range" min={0.4} max={2.4} step={0.1} defaultValue={1} onChange={(e) => scaleSelection(+e.target.value)} style={{ width: '100%' }} />
+          </Field>
+          <div style={{ fontSize: 11.5, color: 'var(--faint)', lineHeight: 1.6 }}>
+            Rotate / flip / scale / duplicate / delete apply to all selected items. Select one item to edit its details.
+          </div>
+        </div>
+      </aside>
+    );
+  }
 
   if (!selected) {
     return (
       <aside style={panel}>
         <div style={{ padding: '44px 24px', color: 'var(--faint)', textAlign: 'center', fontSize: 13, lineHeight: 1.7 }}>
           Select an item to edit its tag, inspection dates and symbol, or drag a symbol from the palette.
+          <div style={{ marginTop: 12, fontSize: 11.5 }}>Shift-click or drag a box to multi-select.</div>
         </div>
       </aside>
     );
