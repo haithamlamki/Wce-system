@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { useProject } from '../state/ProjectContext';
 import { SECTION_NAMES, stackMetrics, toFeet, toMetres, type HoleSection } from '../lib/bop';
+import { printBop } from '../lib/printExport';
 import { SYM, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import type { BopItem } from '../types';
@@ -161,6 +162,10 @@ export default function BopSchemeView() {
           onClick={() => buildBop((document.getElementById('section') as HTMLSelectElement).value as HoleSection)}>
           AI-build BOP stack
         </button>
+        {bop.items.length > 0 && (
+          <button style={{ ...inp, width: '100%', cursor: 'pointer', fontWeight: 600, marginTop: 8 }}
+            onClick={() => printBop(project)} title="Print / Save as PDF">⎙ Print / PDF</button>
+        )}
 
         {bop.items.length > 0 && (
           <>

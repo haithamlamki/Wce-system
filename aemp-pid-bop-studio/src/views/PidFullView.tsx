@@ -15,6 +15,7 @@ import {
   proj, routeEdge, screenToWorld, snap, type View,
 } from '../lib/geometry';
 import { parseDrawing } from '../lib/layoutImport';
+import { printPid } from '../lib/printExport';
 import type { Component } from '../types';
 
 type Tool = 'select' | 'connect' | 'pan';
@@ -210,6 +211,7 @@ export default function PidFullView() {
         <div style={viewControls}>
           <button style={{ ...pill, ...(iso ? pillActive : {}) }} onClick={() => { setIso((v) => !v); setConnectFrom(null); }}>3D</button>
           <button style={{ ...pill, ...(showTitle ? pillActive : {}) }} onClick={() => setShowTitle((v) => !v)}>Title</button>
+          <button style={pill} title="Print / Save as PDF" onClick={() => printPid(project, refDate)}>⎙ PDF</button>
         </div>
 
         {mode === 'field' && !iso && <div style={modebar}>Field mode · click items to mark installed / removed</div>}
