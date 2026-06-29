@@ -59,6 +59,15 @@ export default function PidFullView() {
   const editable = mode === 'admin' && !iso;
   const selSet = useMemo(() => new Set(p.selectedIds), [p.selectedIds]);
 
+  // selection bounding box (world) → for the floating mini-toolbar
+  const selBounds = useMemo(() => {
+    const sel = project.nodes.filter((n) => selSet.has(n.id));
+    if (!sel.length) return null;
+    let minX = 1e9, minY = 1e9, maxX = -1e9;
+    for (const n of sel) { const b = box(n); minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); maxX = Math.max(maxX, n.x + b.w); }
+    return { cx: (minX + maxX) / 2, top: minY };
+  }, [project.nodes, selSet]);
+
   const local = (e: { clientX: number; clientY: number }) => {
     const r = svgRef.current!.getBoundingClientRect();
     return { px: e.clientX - r.left, py: e.clientY - r.top };
@@ -122,8 +131,8 @@ export default function PidFullView() {
         p.setSelectedId(hit.id);
         return;
       }
-      // shift-click toggles membership without starting a drag
-      if (e.shiftKey) { p.toggleSelect(hit.id); return; }
+      // Shift- or Ctrl/⌘-click toggles membership without starting a drag
+      if (e.shiftKey || e.ctrlKey || e.metaKey) { p.toggleSelect(hit.id); return; }
       // clicking an unselected node selects only it; clicking within a multi-
       // selection keeps the group (so you can drag them all together)
       const groupIds = selSet.has(hit.id) && p.selectedIds.length > 1 ? p.selectedIds : [hit.id];
@@ -134,8 +143,9 @@ export default function PidFullView() {
     }
     // empty space — select tool drags a marquee; pan tool pans
     if (tool === 'pan') { dragRef.current = { kind: 'pan', sx: px, sy: py, view0: { ...view } }; return; }
-    dragRef.current = { kind: 'marquee', sx: px, sy: py, base: e.shiftKey ? p.selectedIds : [] };
-    if (!e.shiftKey) p.clearSelection();
+    const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+    dragRef.current = { kind: 'marquee', sx: px, sy: py, base: additive ? p.selectedIds : [] };
+    if (!additive) p.clearSelection();
     setMarquee({ x0: w.x, y0: w.y, x1: w.x, y1: w.y });
   }
 
@@ -339,6 +349,30 @@ export default function PidFullView() {
           </g>
         </svg>
 
+        {/* floating selection mini-toolbar */}
+        {editable && selBounds && !marquee && p.selectedIds.length > 0 && (() => {
+          const sx = selBounds.cx * view.k + view.x;
+          const sy = selBounds.top * view.k + view.y;
+          const above = sy > 52;
+          const multi = p.selectedIds.length > 1;
+          return (
+            <div style={{ position: 'absolute', left: sx, top: above ? sy - 46 : sy + 16, transform: 'translateX(-50%)', zIndex: 18, display: 'flex', gap: 3, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 9, padding: 4, boxShadow: 'var(--shadow)' }}>
+              <button style={miniBtn} title="Rotate 90° (R)" onClick={() => p.rotateSelection()}>⟳</button>
+              <button style={miniBtn} title="Flip (F)" onClick={() => p.flipSelection()}>⇄</button>
+              <button style={miniBtn} title="Duplicate (D)" onClick={() => p.duplicateSelection()}>⧉</button>
+              <button style={miniBtn} title="Copy (Ctrl+C)" onClick={() => p.copySelection()}>⎘</button>
+              {multi && <>
+                <span style={{ width: 1, background: 'var(--line2)', margin: '2px 1px' }} />
+                <button style={miniBtn} title="Align left" onClick={() => p.alignSelection('left')}>⤙</button>
+                <button style={miniBtn} title="Align top" onClick={() => p.alignSelection('top')}>⤒</button>
+                {p.selectedIds.length > 2 && <button style={miniBtn} title="Distribute horizontally" onClick={() => p.distributeSelection('h')}>↔</button>}
+              </>}
+              <span style={{ width: 1, background: 'var(--line2)', margin: '2px 1px' }} />
+              <button style={{ ...miniBtn, color: 'var(--red)' }} title="Delete (Del)" onClick={() => p.deleteSelection()}>🗑</button>
+            </div>
+          );
+        })()}
+
         {/* zoom controls */}
         <div style={zoombar}>
           <button style={zbtn} onClick={() => setView((v) => ({ ...v, k: Math.max(0.2, v.k / 1.2) }))}>−</button>
@@ -451,6 +485,7 @@ const palHead: React.CSSProperties = { fontFamily: 'var(--mono)', fontSize: 9.5,
 const palCard: React.CSSProperties = { background: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 4px 7px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: 'grab' };
 const toolbar: React.CSSProperties = { position: 'absolute', left: 16, top: 16, display: 'flex', gap: 5, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: 5, zIndex: 10, boxShadow: 'var(--shadow)' };
 const tbtn: React.CSSProperties = { width: 36, height: 36, border: 0, background: 'transparent', borderRadius: 7, color: 'var(--dim)', fontSize: 16, cursor: 'pointer' };
+const miniBtn: React.CSSProperties = { width: 28, height: 28, border: 0, background: 'transparent', borderRadius: 6, color: 'var(--ink)', fontSize: 14, cursor: 'pointer', display: 'grid', placeItems: 'center' };
 const tbtnActive: React.CSSProperties = { background: 'var(--accent)', color: '#fff' };
 const viewControls: React.CSSProperties = { position: 'absolute', right: 16, top: 16, display: 'flex', gap: 6, zIndex: 12 };
 const pill: React.CSSProperties = { padding: '7px 12px', borderRadius: 8, border: '1px solid var(--line2)', background: 'var(--panel)', color: 'var(--dim)', fontWeight: 600, fontSize: 12, cursor: 'pointer', boxShadow: 'var(--shadow)' };
