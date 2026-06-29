@@ -10,6 +10,7 @@ import type { AempAsset, Component, PipeSeg, TemplateItem } from '../types';
 import { RIG303_EQUIPMENT } from './data/rig303-equipment';
 import { RIG305_TEMPLATE, RIG305_PIPES } from './data/rig305-layout';
 import { SYM, type SymbolKey } from './symbols';
+import { relaxOverlaps } from './relaxLayout';
 import { fetchEquipmentCloud, isSupabaseConfigured } from './cloud';
 
 export interface AempConfig {
@@ -115,5 +116,7 @@ export function buildMaster(
     };
   });
 
-  return { nodes, pipes: RIG305_PIPES };
+  // Shrink/relax symbols that collide in dense manifolds so the illustrated
+  // glyphs fit the source spacing without moving equipment off its piping.
+  return { nodes: relaxOverlaps(nodes), pipes: RIG305_PIPES };
 }
