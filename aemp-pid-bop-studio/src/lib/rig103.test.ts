@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RIG103_EQUIPMENT, RIG103_TEMPLATE } from './data/rig103-equipment';
 import { SYM } from './symbols';
-import { buildMaster, rigData } from './aemp';
+import { buildFromRegister, rigData } from './aemp';
 
 describe('Rig 103 dataset (extracted from Excel)', () => {
   it('has 131 equipment rows + matching placements', () => {
@@ -22,10 +22,18 @@ describe('Rig 103 dataset (extracted from Excel)', () => {
   it('tags items with their P&ID number', () => {
     expect(RIG103_EQUIPMENT.some((e) => e.tag === '38' && /annular/i.test(e.description))).toBe(true);
   });
-  it('builds the Rig 103 master (no Rig 305 piping carried over)', () => {
+  it('builds the Rig 103 master 1:1 from the register (no piping, per-item data kept)', () => {
     const d = rigData('Rig 103');
-    const { nodes, pipes } = buildMaster(d.template, d.register, d.pipes);
+    expect(d.byRegister).toBe(true);
+    const { nodes, pipes } = buildFromRegister(d.register, d.template);
     expect(nodes.length).toBe(131);
     expect(pipes.length).toBe(0);
+    // each item keeps its OWN section/rwp (no tag-graft collision on blank tags)
+    const annular = nodes.find((n) => n.tag === '38')!;
+    expect(annular.section).toBe('BOP, KILL AND CHOKE LINE');
+    expect(annular.rwp).toBe('5000');
+    // untagged items aren't all collapsed onto one register entry's data
+    const sections = new Set(nodes.map((n) => n.section));
+    expect(sections.size).toBeGreaterThanOrEqual(6);
   });
 });

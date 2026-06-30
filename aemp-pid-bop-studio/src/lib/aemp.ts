@@ -132,10 +132,12 @@ export function sectionForTag(tag: string): string {
  * AEMP inspection data by tag (FR-8/37). Returns the placed component nodes;
  * piping comes from RIG305_PIPES.
  */
-/** Per-rig master sources (layout template + equipment register + piping). */
-export const RIGS: Record<string, { template: TemplateItem[]; register: AempAsset[]; pipes: PipeSeg[] }> = {
+/** Per-rig master sources (layout template + equipment register + piping).
+ *  `byRegister` = template[i] and register[i] are the SAME extracted item
+ *  (build 1:1, not by tag-graft — avoids collisions on shared/blank tags). */
+export const RIGS: Record<string, { template: TemplateItem[]; register: AempAsset[]; pipes: PipeSeg[]; byRegister?: boolean }> = {
   'Rig 305': { template: RIG305_TEMPLATE, register: RIG303_EQUIPMENT, pipes: RIG305_PIPES },
-  'Rig 103': { template: RIG103_TEMPLATE, register: RIG103_EQUIPMENT, pipes: [] },
+  'Rig 103': { template: RIG103_TEMPLATE, register: RIG103_EQUIPMENT, pipes: [], byRegister: true },
 };
 
 /** Resolve a rig's master sources (defaults to Rig 305). */
@@ -183,4 +185,28 @@ export function buildMaster(
   // Shrink/relax symbols that collide in dense manifolds so the illustrated
   // glyphs fit the source spacing without moving equipment off its piping.
   return { nodes: relaxOverlaps(nodes), pipes };
+}
+
+/**
+ * Build nodes 1:1 from a register + parallel placements (each register[i] sits
+ * at placements[i]). Used when the layout and register come from the same
+ * extraction (e.g. Rig 103), so each item keeps its OWN data — no tag-graft.
+ */
+export function buildFromRegister(register: AempAsset[], placements: TemplateItem[]): { nodes: Component[]; pipes: PipeSeg[] } {
+  let nid = 1;
+  const nodes: Component[] = register.map((r, i) => {
+    const tp = (SYM[r.type as SymbolKey] ? r.type : 'gate') as SymbolKey;
+    const s = SYM[tp];
+    const p = placements[i] ?? { x: 80 + (i % 8) * 120, y: 80 + Math.floor(i / 8) * 120 };
+    return {
+      id: 'n' + nid++, type: tp,
+      x: Math.round((p.x - s.w / 2) / 2) * 2, y: Math.round((p.y - s.h / 2) / 2) * 2,
+      rot: 0, scale: 1, flip: false,
+      tag: r.tag || '', description: r.description || s.name, section: r.section || sectionForTag(r.tag),
+      rwp: r.rwp || '', size: r.size || '', manufacturer: r.manufacturer || '', serial: r.serial || '',
+      int_last: r.int_last || '', int_due: r.int_due || '', maj_last: r.maj_last || '', maj_due: r.maj_due || '',
+      removed: false, installed: true,
+    };
+  });
+  return { nodes: relaxOverlaps(nodes), pipes: [] };
 }
