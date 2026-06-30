@@ -86,9 +86,10 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
     <>
       <header className="appbar">
         <div className="brand">
-          <div className="logo">AEP</div>
+          <img className="logo" src="/brand/abraj-mark.png" alt="Abraj" />
           <div>
             <h1>P&amp;ID · BOP Studio</h1>
+            <div className="sub">Abraj Energy Services</div>
           </div>
         </div>
         <ProjectChip />

@@ -42,11 +42,10 @@ header.appbar {
 .brand { display: flex; align-items: center; gap: 11px; }
 .brand .logo {
   width: 34px; height: 34px; border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  display: grid; place-items: center; color: #fff; font-weight: 700;
-  font-family: var(--disp); font-size: 15px;
+  object-fit: contain; padding: 2px; display: block;
 }
 .brand h1 { font-family: var(--disp); font-weight: 700; font-size: 16px; margin: 0; }
+.brand .sub { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1px; color: var(--faint); text-transform: uppercase; }
 .tabs { display: flex; gap: 3px; background: var(--sunk); padding: 3px; border-radius: 9px; border: 1px solid var(--line); }
 .tabs a {
   text-decoration: none; color: var(--dim); padding: 7px 14px; border-radius: 6px;

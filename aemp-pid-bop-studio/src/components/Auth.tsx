@@ -42,10 +42,8 @@ export function LoginScreen({ onSkip }: { onSkip: () => void }) {
   return (
     <div style={wrap}>
       <form style={card} onSubmit={submit}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 4 }}>
-          <div className="logo" style={{ width: 34, height: 34, borderRadius: 8, background: 'linear-gradient(135deg,var(--accent),var(--accent2))', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 700, fontFamily: 'var(--disp)' }}>AEP</div>
-          <div style={{ fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 18 }}>P&amp;ID · BOP Studio</div>
-        </div>
+        <img src="/brand/abraj-logo.png" alt="Abraj" style={{ height: 38, display: 'block', marginBottom: 12, objectFit: 'contain' }} />
+        <div style={{ fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 18, marginBottom: 4 }}>P&amp;ID · BOP Studio</div>
         <p style={{ color: 'var(--dim)', fontSize: 13, margin: '0 0 14px' }}>
           {mode === 'in' ? 'Sign in to access cloud projects.' : 'Create an account (you’ll start as a Field user).'}
         </p>
