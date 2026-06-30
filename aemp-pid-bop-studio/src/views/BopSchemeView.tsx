@@ -46,14 +46,49 @@ export default function BopSchemeView() {
   const pxPerUnit = (H - PAD_T - PAD_B) / (drawMax - drawMin);
   const y = (elev: number) => PAD_T + (drawMax - elev) * pxPerUnit;
 
-  // cumulative band elevations (item 0 sits on the datum)
+  // cumulative band elevations (item 0 sits on the datum) — main stack only
   let acc = bop.datum;
-  const bands = bop.items.map((it) => {
+  const bands = bop.items.filter((it) => !it.side).map((it) => {
     const bottom = acc;
     const topE = acc + it.height;
     acc = topE;
     return { it, bottom, topE };
   });
+
+  // side outlet branches (choke / kill) attach at the mud-cross outlet elevation
+  const crossBand = bands.find((b) => b.it.type === 'cross') ?? bands[Math.floor(bands.length / 2)];
+  const outletElev = crossBand ? (crossBand.bottom + crossBand.topE) / 2 : (bop.datum + m.topOfStack) / 2;
+  const sideItems = bop.items.filter((it) => it.side);
+  const sortBranch = (sd: 'choke' | 'kill') => sideItems.filter((it) => it.side === sd).sort((a, b) => (a.branchOrder ?? 0) - (b.branchOrder ?? 0));
+
+  function Branch({ items, dir, label }: { items: BopItem[]; dir: 1 | -1; label: string }) {
+    if (!items.length) return null;
+    const oy = y(outletElev);
+    const spacing = 66;
+    const startX = STACK_CX + dir * 64;
+    const endX = startX + dir * (items.length - 1) * spacing;
+    return (
+      <g>
+        <line x1={STACK_CX} y1={oy} x2={endX} y2={oy} stroke="var(--line2)" strokeWidth={2} />
+        <text x={endX + dir * 8} y={oy - 26} textAnchor={dir > 0 ? 'end' : 'start'} style={{ font: '600 9px var(--mono)', fill: 'var(--faint)' }}>{label}</text>
+        {items.map((it, i) => {
+          const s = SYM[it.type as SymbolKey];
+          const sc = Math.min(42 / s.w, 36 / s.h);
+          const cx = startX + dir * i * spacing;
+          const dw = s.w * sc, dh = s.h * sc;
+          const st = statusOf(it, refDate);
+          return (
+            <g key={it.id} onPointerMove={(e) => setHover({ it, x: e.clientX, y: e.clientY })} onPointerLeave={() => setHover(null)} style={{ cursor: 'default' }}>
+              <circle cx={cx} cy={oy} r={3} fill="var(--line2)" />
+              <g transform={`translate(${cx - dw / 2},${oy - dh - 6}) scale(${sc})`} style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
+              <circle cx={cx + dw / 2 - 2} cy={oy - dh - 8} r={4} fill="var(--panel)" stroke={STATUS_COLOR[st]} strokeWidth={2} />
+              <text x={cx} y={oy + 14} textAnchor="middle" style={{ font: '8.5px var(--mono)', fill: 'var(--ink)' }}>{it.tag}</text>
+            </g>
+          );
+        })}
+      </g>
+    );
+  }
 
   // axis ticks
   const step = niceStep((drawMax - drawMin) / 7);
@@ -130,6 +165,10 @@ export default function BopSchemeView() {
                 </g>
               );
             })}
+
+            {/* choke / kill side valve branches */}
+            <Branch items={sortBranch('choke')} dir={1} label="CHOKE" />
+            <Branch items={sortBranch('kill')} dir={-1} label="KILL" />
 
             {/* top-of-stack marker */}
             <line x1={STACK_CX - 70} y1={y(m.topOfStack)} x2={STACK_CX + 70} y2={y(m.topOfStack)} stroke="var(--accent)" strokeWidth={1.2} strokeDasharray="3 3" />

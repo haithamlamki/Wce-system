@@ -50,27 +50,45 @@ export function buildBopStack(section: HoleSection, register: AempAsset[] = []):
   if (full) seq.push(['sram', 'B3', 'Single / Shear Ram']);
   seq.push(['dram', 'B2', 'Double Ram Preventer'], ['annular', 'B1', 'Annular Preventer']);
 
+  // Side outlet valves off the stack (FR — choke & kill manifold valves).
+  const sides: Array<[SymbolKey, string, string, 'choke' | 'kill', number]> = [
+    ['gate', 'CK-MGV', 'Choke manual gate valve', 'choke', 0],
+    ['hcr', 'CK-HCR', 'Choke hydraulic (HCR) valve', 'choke', 1],
+    ['choke', 'CK-ADJ', 'Adjustable choke', 'choke', 2],
+    ['gate', 'KL-MGV', 'Kill line manual gate valve', 'kill', 0],
+    ['hcr', 'KL-HCR', 'Hydraulic kill valve (HCR)', 'kill', 1],
+    ['check', 'KL-NRV', 'Hydraulic kill valve NRV (check)', 'kill', 2],
+  ];
+
   const byTag: Record<string, AempAsset> = {};
   for (const it of register) if (it.tag) byTag[it.tag] = it;
+  const graft = (tag: string) => byTag[tag] ?? ({} as Partial<AempAsset>);
 
-  return seq.map(([type, tag, description]) => {
-    const ref = byTag[tag] ?? ({} as Partial<AempAsset>);
+  const main: BopItem[] = seq.map(([type, tag, description]) => {
+    const ref = graft(tag);
     return {
-      id: 'b' + bopSeq++,
-      type,
-      tag,
-      description,
+      id: 'b' + bopSeq++, type, tag, description,
       height: SYM[type]?.bopHeight ?? BOPH[type] ?? 0.5,
-      serial: ref.serial ?? '',
-      int_due: ref.int_due ?? '',
-      maj_due: ref.maj_due ?? '',
+      serial: ref.serial ?? '', int_due: ref.int_due ?? '', maj_due: ref.maj_due ?? '',
     };
   });
+
+  const side: BopItem[] = sides.map(([type, tag, description, sd, order]) => {
+    const ref = graft(tag);
+    return {
+      id: 'b' + bopSeq++, type, tag, description,
+      height: BOPH[type] ?? 0.4, side: sd, branchOrder: order,
+      serial: ref.serial ?? '', int_due: ref.int_due ?? '', maj_due: ref.maj_due ?? '',
+    };
+  });
+
+  return [...main, ...side];
 }
 
-/** Total stack height and top-of-stack / clearance-to-RT (FR-34). */
+/** Total stack height and top-of-stack / clearance-to-RT (FR-34).
+ *  Side-branch valves don't add to the vertical height. */
 export function stackMetrics(scheme: BopScheme) {
-  const total = scheme.items.reduce((sum, it) => sum + it.height, 0);
+  const total = scheme.items.filter((it) => !it.side).reduce((sum, it) => sum + it.height, 0);
   const topOfStack = scheme.datum + total;
   const clearanceToRT = scheme.rt - topOfStack;
   return { total, topOfStack, clearanceToRT };

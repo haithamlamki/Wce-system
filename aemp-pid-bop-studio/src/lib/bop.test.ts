@@ -3,11 +3,11 @@ import { buildBopStack, stackMetrics, toFeet, toMetres } from './bop';
 
 describe('buildBopStack', () => {
   it('builds a surface-section stack without a shear ram', () => {
-    const tags = buildBopStack('26').map((b) => b.tag);
+    const tags = buildBopStack('26').filter((b) => !b.side).map((b) => b.tag);
     expect(tags).toEqual(['WH', 'B4', 'B2', 'B1']);
   });
   it('adds a shear ram for production/reservoir sections', () => {
-    const tags = buildBopStack('12.25').map((b) => b.tag);
+    const tags = buildBopStack('12.25').filter((b) => !b.side).map((b) => b.tag);
     expect(tags).toContain('B3');
     expect(tags).toEqual(['WH', 'B4', 'B3', 'B2', 'B1']);
   });
@@ -18,6 +18,20 @@ describe('buildBopStack', () => {
     expect(annular.height).toBe(1.5);
     expect(dram.height).toBe(1.8);
   });
+  it('adds choke + kill side-valve branches', () => {
+    const items = buildBopStack('26');
+    const choke = items.filter((b) => b.side === 'choke');
+    const kill = items.filter((b) => b.side === 'kill');
+    expect(choke.map((b) => b.type)).toEqual(['gate', 'hcr', 'choke']);
+    expect(kill.map((b) => b.type)).toEqual(['gate', 'hcr', 'check']);
+    expect(kill.some((b) => /NRV/i.test(b.description))).toBe(true);
+  });
+  it('excludes side branches from the vertical stack height', () => {
+    const items = buildBopStack('26');
+    const mainHeight = items.filter((b) => !b.side).reduce((s, b) => s + b.height, 0);
+    expect(stackMetrics({ datum: 0, rt: 99, unit: 'm', items }).total).toBe(mainHeight);
+  });
+
   it('grafts serial/dates from the register by tag', () => {
     const reg = [{ type: 'annular', section: '', description: '', tag: 'B1', rwp: '', size: '', manufacturer: '', serial: 'SN-1', int_last: '', int_due: '2027-01-01', maj_last: '', maj_due: '' }];
     const annular = buildBopStack('26', reg).find((b) => b.tag === 'B1')!;
