@@ -30,7 +30,7 @@ export async function saveProjectCloud(project: Project, id?: string, note?: str
     reference_date: project.meta.date || null,
     inspector: project.meta.who || null,
     revision: project.revision ?? 0,
-    data: project,
+    data: project, // full doc incl. status/publishedAt (queried via data->>status)
   };
   const { data, error } = await supabase.from('projects').upsert(row).select('id').single();
   if (error) throw new Error(error.message);
@@ -96,6 +96,18 @@ export async function loadProjectCloud(id: string): Promise<Project | null> {
   const { data, error } = await supabase.from('projects').select('data').eq('id', id).single();
   if (error) throw new Error(error.message);
   return (data?.data as Project) ?? null;
+}
+
+/** Load the latest PUBLISHED final sheet for a rig (end-user view, FR §7).
+ *  Status lives in the project JSONB, queried via `data->>status` (no schema change). */
+export async function fetchLatestPublished(rig?: string): Promise<Project | null> {
+  if (!supabase) return null;
+  let q = supabase.from('projects').select('data, updated_at').eq('data->>status', 'published');
+  if (rig) q = q.eq('rig_name', rig);
+  const { data, error } = await q.order('updated_at', { ascending: false }).limit(1);
+  if (error) throw new Error(error.message);
+  const row = (data ?? [])[0] as { data?: Project } | undefined;
+  return row?.data ?? null;
 }
 
 /** Fetch the AEMP-equivalent equipment register from Supabase (FR-36). */

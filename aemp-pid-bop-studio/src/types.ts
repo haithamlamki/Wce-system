@@ -108,6 +108,10 @@ export interface BopItem {
   serial?: string;
   int_due?: string;
   maj_due?: string;
+  /** Side outlet branch this item belongs to (undefined = main vertical stack). */
+  side?: 'choke' | 'kill';
+  /** Order outward along the side branch (0 = nearest the stack). */
+  branchOrder?: number;
 }
 export interface BopScheme {
   datum: number;
@@ -140,5 +144,9 @@ export interface Project {
   annotations?: Annotation[];
   /** User-drawn symbols added via the Symbol Drawer (keyed by symbol key). */
   customSymbols?: Record<string, SymbolDef>;
+  /** Publish workflow: draft (admin WIP) vs published (final, read-only for field). */
+  status?: 'draft' | 'published';
+  /** ISO timestamp set when an admin publishes the final sheet. */
+  publishedAt?: string;
   revision?: number;
 }

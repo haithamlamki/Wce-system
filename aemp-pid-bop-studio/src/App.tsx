@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { ProjectProvider, useProject } from './state/ProjectContext';
 import { AuthProvider, useAuth } from './state/AuthContext';
@@ -6,6 +6,7 @@ import { AccountChip, LoginScreen } from './components/Auth';
 import { OnboardModal, ProjectChip } from './components/Onboarding';
 import AssistantPanel from './components/AssistantPanel';
 import CloudPanel from './components/CloudPanel';
+import FileMenu from './components/FileMenu';
 import PidFullView from './views/PidFullView';
 import BopSchemeView from './views/BopSchemeView';
 import RegisterView from './views/RegisterView';
@@ -54,24 +55,21 @@ function ModeToggle() {
   );
 }
 
-function SaveOpen() {
-  const { saveProject, openProject } = useProject();
-  const fileRef = useRef<HTMLInputElement | null>(null);
+const hdrBtn: React.CSSProperties = { border: '1px solid var(--line2)', background: 'var(--panel)', color: 'var(--ink)', padding: '7px 11px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' };
+
+/** Draft / Final badge so end users can see they're viewing a published sheet. */
+function StatusChip() {
+  const { project } = useProject();
+  const st = project.status;
+  if (!st) return null;
+  const pub = st === 'published';
   return (
-    <div style={{ display: 'flex', gap: 6 }}>
-      <button style={hdrBtn} onClick={saveProject} title="Save project as .json">Save</button>
-      <button style={hdrBtn} onClick={() => fileRef.current?.click()} title="Open a .json project">Open</button>
-      <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) openProject(f).catch((err) => alert(`Could not open project: ${err.message}`));
-          e.target.value = '';
-        }} />
-    </div>
+    <span title={pub && project.publishedAt ? `Published ${new Date(project.publishedAt).toLocaleString()}` : 'Draft (not yet published)'}
+      style={{ fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 700, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--line2)', background: pub ? 'color-mix(in srgb, var(--green) 16%, var(--panel))' : 'var(--sunk)', color: pub ? 'var(--green)' : 'var(--dim)' }}>
+      {pub ? '● FINAL' : 'DRAFT'}
+    </span>
   );
 }
-
-const hdrBtn: React.CSSProperties = { border: '1px solid var(--line2)', background: 'var(--panel)', color: 'var(--ink)', padding: '7px 11px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' };
 
 function CloudButton({ onOpen }: { onOpen: () => void }) {
   const { cloudEnabled } = useProject();
@@ -92,6 +90,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
           </div>
         </div>
         <ProjectChip />
+        <StatusChip />
         <nav className="tabs">
           {TABS.map((t) => (
             <NavLink key={t.to} to={t.to} className={({ isActive }) => (isActive ? 'active' : '')}>
@@ -102,7 +101,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
         <div className="spacer" />
         <button style={{ ...hdrBtn, borderColor: aiOpen ? 'var(--accent)' : 'var(--line2)', color: aiOpen ? 'var(--accent)' : 'var(--ink)' }} onClick={() => setAiOpen((v) => !v)} title="AI assistant (preview)">✦ AI</button>
         <CloudButton onOpen={() => setCloudOpen(true)} />
-        <SaveOpen />
+        <FileMenu />
         <ModeToggle />
         <button className="tabs" onClick={cycleTheme} title={`Theme: ${theme}`} style={{ cursor: 'pointer' }}>
           <a>Theme: {theme}</a>

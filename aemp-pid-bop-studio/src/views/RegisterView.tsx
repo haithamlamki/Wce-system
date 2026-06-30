@@ -10,6 +10,8 @@ import { SYM, type SymbolKey } from '../lib/symbols';
 import { parseCsv, pick } from '../lib/csv';
 import { parseXlsx } from '../lib/xlsx';
 import { replaceRigEquipment, type EquipmentInput } from '../lib/cloud';
+import { exportEquipmentCsv } from '../lib/exporters';
+import { exportWorkbook } from '../lib/xlsxExport';
 import ImportDialog, { type DupMode } from '../components/ImportDialog';
 import type { MappedRow } from '../lib/importMap';
 import type { Component, InspectionStatus } from '../types';
@@ -17,7 +19,7 @@ import type { Component, InspectionStatus } from '../types';
 const nz = (v: string) => (v && v.trim() ? v : null);
 
 export default function RegisterView() {
-  const { project, refDate, importAEMP, addComponents, updateNode, requestFocus } = useProject();
+  const { project, refDate, importAEMP, addComponents, updateNode, requestFocus, canEdit, toggleRemoved, deleteNode } = useProject();
   const { enabled: cloudEnabled, role, rig } = useAuth();
   const navigate = useNavigate();
   const [importData, setImportData] = useState<{ rows: Record<string, string>[]; headers: string[] } | null>(null);
@@ -121,22 +123,9 @@ export default function RegisterView() {
 
   const counts = useMemo(() => summarize(project.nodes, refDate), [project.nodes, refDate]);
 
-  function exportCsv() {
-    const head = ['tag', 'description', 'system', 'rwp', 'size', 'manufacturer', 'serial', 'int_due', 'maj_due', 'status', 'removed'];
-    const lines = [head.join(',')];
-    for (const { n, status } of rows) {
-      lines.push(
-        [n.tag, n.description, n.section, n.rwp, n.size, n.manufacturer, n.serial, n.int_due, n.maj_due, STATUS_LABEL[status], n.removed ? 'removed' : 'installed']
-          .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
-          .join(','),
-      );
-    }
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${project.meta.rig.replace(/\s+/g, '_')}_register.csv`;
-    a.click();
-  }
+  // export the currently-filtered rows (shared builder)
+  const exportCsv = () => exportEquipmentCsv(project, rows.map((r) => r.n), refDate);
+  const exportXlsx = () => exportWorkbook(project, refDate).catch((e) => alert(`Excel export failed: ${(e as Error).message}`));
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
@@ -158,9 +147,10 @@ export default function RegisterView() {
           <option value="untag">Untagged</option>
         </select>
         <span className="spacer" style={{ flex: 1 }} />
-        <button style={btn} onClick={() => importAEMP()}>Import from AEMP</button>
-        <button style={btn} onClick={() => fileRef.current?.click()}>Import CSV/XLSX</button>
+        {canEdit && <button style={btn} onClick={() => importAEMP()}>Import from AEMP</button>}
+        {canEdit && <button style={btn} onClick={() => fileRef.current?.click()}>Import CSV/XLSX</button>}
         <button style={btn} onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
+        <button style={btn} onClick={exportXlsx} disabled={!rows.length}>Export Excel</button>
         {canPushCloud && (
           <button style={{ ...btn, borderColor: 'var(--accent2)', color: 'var(--accent2)' }} onClick={() => cloudFileRef.current?.click()}
             title="Admin: replace this rig's shared equipment register from a CSV">Push CSV → Cloud</button>
@@ -198,8 +188,17 @@ export default function RegisterView() {
                 <td style={td}>{n.int_due || '—'}</td>
                 <td style={td}>{n.maj_due || '—'}</td>
                 <td style={{ ...td, color: STATUS_COLOR[status], fontWeight: 600 }}>{STATUS_LABEL[status]}</td>
-                <td style={{ ...td, textAlign: 'right' }}>
+                <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {canEdit && (
+                    <button style={actBtn} title={n.removed ? 'Mark installed (show)' : 'Mark removed (hide on diagram)'} onClick={() => toggleRemoved(n.id)}>
+                      {n.removed ? 'show' : 'hide'}
+                    </button>
+                  )}
                   <button style={viewBtn} title="Show this item on the diagram" onClick={() => viewOnDiagram(n.id)}>view ▸</button>
+                  {canEdit && (
+                    <button style={{ ...actBtn, color: 'var(--red)' }} title="Permanently delete this equipment"
+                      onClick={() => { if (confirm(`Delete "${n.tag || n.description || 'this item'}" permanently?`)) deleteNode(n.id); }}>del</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -234,3 +233,4 @@ const btn: React.CSSProperties = { ...inp, cursor: 'pointer', fontWeight: 600 };
 const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid var(--line2)', color: 'var(--faint)', fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', position: 'sticky', top: 0, background: 'var(--bg)' };
 const td: React.CSSProperties = { padding: '7px 10px', borderBottom: '1px solid var(--line)' };
 const viewBtn: React.CSSProperties = { background: 'transparent', border: '1px solid var(--line2)', color: 'var(--accent)', padding: '3px 8px', borderRadius: 6, fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' };
+const actBtn: React.CSSProperties = { background: 'transparent', border: '1px solid var(--line2)', color: 'var(--dim)', padding: '3px 7px', borderRadius: 6, fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, cursor: 'pointer', marginRight: 5 };

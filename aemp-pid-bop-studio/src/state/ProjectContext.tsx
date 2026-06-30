@@ -18,7 +18,8 @@ import { validate, type Issue } from '../lib/validation';
 export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vmiddle' | 'bottom';
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
 import { autosave, openFromFile, restore, saveToFile } from '../lib/persistence';
-import { isSupabaseConfigured, listProjectsCloud, listProjectVersions, loadProjectCloud, loadProjectVersion, saveProjectCloud, type ProjectSummary, type ProjectVersionSummary } from '../lib/cloud';
+import { fetchLatestPublished, isSupabaseConfigured, listProjectsCloud, listProjectVersions, loadProjectCloud, loadProjectVersion, saveProjectCloud, type ProjectSummary, type ProjectVersionSummary } from '../lib/cloud';
+import { useAuth } from './AuthContext';
 
 export type Mode = 'admin' | 'field';
 
@@ -124,6 +125,12 @@ interface ProjectCtx {
   listVersions: (projectId: string) => Promise<ProjectVersionSummary[]>;
   restoreVersion: (versionId: string) => Promise<void>;
 
+  // role + draft/publish workflow
+  canEdit: boolean;
+  saveAsDraft: (note?: string) => Promise<string | null>;
+  publishFinal: (note?: string) => Promise<string | null>;
+  clearCanvas: () => void;
+
   // node CRUD (admin) / as-built (field)
   addNode: (type: SymbolKey, x: number, y: number) => string;
   updateNode: (id: string, patch: Partial<Component>) => void;
@@ -170,6 +177,9 @@ interface ProjectCtx {
 const Ctx = createContext<ProjectCtx | null>(null);
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
+  const { role, rig, enabled: authEnabled } = useAuth();
+  // End users (field role) are read-only; admin/manager/offline can edit.
+  const canEdit = role !== 'field';
   const [restored] = useState(() => { const r = restore(); mergeCustomSymbols(r?.customSymbols); return r; });
   const [project, setProject] = useState<Project>(() => restored ?? emptyProject());
   const [mode, setMode] = useState<Mode>('admin');
@@ -580,6 +590,37 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     if (loaded) { setSelectedId(null); setProject(loaded); }
   }, []);
 
+  // ---- draft / publish workflow ---------------------------------------------
+  const saveWithStatus = useCallback(async (status: 'draft' | 'published', note?: string) => {
+    const stamped: Project = {
+      ...project,
+      status,
+      publishedAt: status === 'published' ? new Date().toISOString() : project.publishedAt,
+    };
+    setProject(stamped);
+    const id = await saveProjectCloud(stamped, cloudId ?? undefined, note);
+    if (id) setCloudId(id);
+    return id;
+  }, [project, cloudId]);
+  const saveAsDraft = useCallback((note?: string) => saveWithStatus('draft', note), [saveWithStatus]);
+  const publishFinal = useCallback((note?: string) => saveWithStatus('published', note), [saveWithStatus]);
+
+  // ---- clear canvas (removes nodes AND piping/edges/annotations) -------------
+  const clearCanvas = useCallback(() => {
+    setSelectedIds([]);
+    setProject((p) => bump(p, { nodes: [], pipes: [], edges: [], annotations: [] }));
+  }, []);
+
+  // End users load their rig's latest PUBLISHED final sheet (read-only).
+  useEffect(() => {
+    if (role !== 'field' || !authEnabled || !rig) return;
+    let active = true;
+    fetchLatestPublished(rig)
+      .then((p) => { if (active && p) { setSelectedId(null); setProject(p); } })
+      .catch(() => { /* no published sheet yet */ });
+    return () => { active = false; };
+  }, [role, rig, authEnabled]);
+
   // FR-27: select a node + signal the canvas to re-center on it
   const requestFocus = useCallback((id: string) => {
     setSelectedId(id);
@@ -665,6 +706,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     saveProject, openProject, updateMeta,
     showOnboard, setShowOnboard, completeOnboarding,
     cloudEnabled: isSupabaseConfigured, cloudId, saveCloud, listCloud, loadCloud, listVersions, restoreVersion,
+    canEdit, saveAsDraft, publishFinal, clearCanvas,
     addNode, updateNode, moveNode, deleteNode, duplicateNode, changeType,
     rotateNode, flipNode, scaleNode, toggleRemoved, addEdge, addComponents,
     focusId, focusSeq, requestFocus, issues,

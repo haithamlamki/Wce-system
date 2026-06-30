@@ -164,7 +164,7 @@ export default function PidFullView() {
     const hit = pickNode(project.nodes, w.x, w.y);
 
     if (hit) {
-      if (mode === 'field') { p.toggleRemoved(hit.id); return; }
+      if (mode === 'field') return; // end users are read-only (no as-built edits)
       if (tool === 'connect') {
         const port = portAt(hit, w, 12 / view.k);
         if (!connectFrom) setConnectFrom({ id: hit.id, port });
@@ -296,6 +296,8 @@ export default function PidFullView() {
           <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => p.importAEMP()}>Import from AEMP</button>
           <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => drawingRef.current?.click()}>Import drawing…</button>
           <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => setShowLibrary(true)}>⊞ Symbol library</button>
+          <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--red)' }}
+            onClick={() => { if (confirm('Clear the entire canvas — all equipment, piping and annotations?')) p.clearCanvas(); }}>Clear canvas</button>
           <input ref={drawingRef} type="file" accept=".html,.htm,.json,.js,text/html,application/json" style={{ display: 'none' }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportDrawing(f); e.target.value = ''; }} />
           <input placeholder="Search symbols…" value={palQuery} onChange={(e) => setPalQuery(e.target.value)} style={palSearch} />
@@ -393,7 +395,7 @@ export default function PidFullView() {
           </div>
         )}
 
-        {mode === 'field' && !iso && <div style={modebar}>Field mode · click items to mark installed / removed</div>}
+        {mode === 'field' && !iso && <div style={modebar}>Field mode · read-only (pan &amp; hover)</div>}
         {iso && <div style={{ ...modebar, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>3D presentation · pan &amp; hover (editing disabled)</div>}
         {connectFrom && <div style={{ ...modebar, top: 56, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>Click a second item to connect…</div>}
 
