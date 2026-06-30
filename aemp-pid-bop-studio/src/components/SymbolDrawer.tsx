@@ -5,7 +5,7 @@
 // ============================================================================
 import { useReducer, useRef, useState } from 'react';
 import { useProject } from '../state/ProjectContext';
-import type { DrawShape } from '../lib/symbols';
+import { SYM, type DrawShape } from '../lib/symbols';
 import { allCategories, serializeShapes } from '../lib/customSymbols';
 
 type Tool = 'select' | 'rect' | 'ellipse' | 'line' | 'poly';
@@ -14,7 +14,9 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 export default function SymbolDrawer({ editKey, onClose, onSaved }: { editKey?: string | null; onClose: () => void; onSaved: () => void }) {
   const { project, addCustomSymbol, updateCustomSymbol } = useProject();
-  const editing = editKey ? project.customSymbols?.[editKey] : undefined;
+  // When editing, prefer a project override; fall back to the built-in def so
+  // built-in symbols can be edited too (their artwork is kept unless redrawn).
+  const editing = editKey ? (project.customSymbols?.[editKey] ?? SYM[editKey]) : undefined;
 
   const shapesRef = useRef<DrawShape[]>(editing?.shapes ? JSON.parse(JSON.stringify(editing.shapes)) : []);
   const selRef = useRef(-1);
@@ -107,7 +109,7 @@ export default function SymbolDrawer({ editKey, onClose, onSaved }: { editKey?: 
     <div style={backdrop} onClick={onClose}>
       <div style={modal} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div style={{ fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 18 }}>Symbol drawer</div>
+          <div style={{ fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 18 }}>{editKey ? 'Edit symbol' : 'Symbol drawer'}</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button style={ghost} onClick={onClose}>Cancel</button>
             <button style={primary} onClick={save}>Save symbol</button>
@@ -159,6 +161,9 @@ export default function SymbolDrawer({ editKey, onClose, onSaved }: { editKey?: 
             <Field label="Identity color"><input type="color" value={color} onChange={(e) => setColor(e.target.value)} style={{ width: '100%' }} /></Field>
             <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.6 }}>
               Drag for rectangle / ellipse / line. For a polygon, click points then double-click to close. Use Select to move or delete a shape.
+              {editKey && !editing?.shapes && (
+                <> This symbol has no editable shapes — change its name / size / colour here, draw new shapes to replace the artwork, or use <b>Upload</b> in the library to swap in an SVG.</>
+              )}
             </div>
           </div>
         </div>

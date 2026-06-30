@@ -303,8 +303,9 @@ export default function PidFullView() {
           <input placeholder="Search symbols…" value={palQuery} onChange={(e) => setPalQuery(e.target.value)} style={palSearch} />
           {(() => {
             const q = palQuery.trim().toLowerCase();
+            const hidden = new Set(p.project.hiddenSymbols ?? []);
             return SYM_ORDER.map((cat) => {
-              const items = Object.entries(SYM).filter(([key, s]) => s.cat === cat && (!q || s.name.toLowerCase().includes(q) || key.includes(q)));
+              const items = Object.entries(SYM).filter(([key, s]) => s.cat === cat && !hidden.has(key) && (!q || s.name.toLowerCase().includes(q) || key.includes(q)));
               if (!items.length) return null;
               const collapsed = !q && palCollapsed.has(cat);
               return (

@@ -142,8 +142,12 @@ export interface Project {
   bop: BopScheme;
   rewards: RewardsState;
   annotations?: Annotation[];
-  /** User-drawn symbols added via the Symbol Drawer (keyed by symbol key). */
+  /** User-drawn symbols added via the Symbol Drawer (keyed by symbol key).
+   *  Entries whose key matches a built-in override that built-in's artwork. */
   customSymbols?: Record<string, SymbolDef>;
+  /** Built-in symbol keys the user removed from the library/palette (hidden,
+   *  not deleted — keeps already-placed nodes rendering; restorable). */
+  hiddenSymbols?: string[];
   /** Publish workflow: draft (admin WIP) vs published (final, read-only for field). */
   status?: 'draft' | 'published';
   /** ISO timestamp set when an admin publishes the final sheet. */

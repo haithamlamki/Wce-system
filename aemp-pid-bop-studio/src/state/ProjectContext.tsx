@@ -169,6 +169,10 @@ interface ProjectCtx {
   addCustomSymbol: (def: SymbolDef) => string;
   updateCustomSymbol: (key: string, def: SymbolDef) => void;
   deleteCustomSymbol: (key: string) => void;
+  /** Hide a built-in symbol from the library/palette (drops any override). */
+  hideSymbol: (key: string) => void;
+  /** Un-hide a previously removed built-in symbol. */
+  restoreSymbol: (key: string) => void;
 
   // rewards redemption (FR-55)
   redeemReward: (id: string) => void;
@@ -696,6 +700,21 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Hide a built-in (keep SYM[key] so placed nodes still render) and drop any
+  // per-project override of it. Reversible via restoreSymbol.
+  const hideSymbol = useCallback((key: string) => {
+    setProject((p) => {
+      const custom = { ...(p.customSymbols ?? {}) };
+      delete custom[key];
+      const hidden = p.hiddenSymbols ?? [];
+      return { ...p, customSymbols: custom, hiddenSymbols: hidden.includes(key) ? hidden : [...hidden, key] };
+    });
+  }, []);
+
+  const restoreSymbol = useCallback((key: string) => {
+    setProject((p) => ({ ...p, hiddenSymbols: (p.hiddenSymbols ?? []).filter((k) => k !== key) }));
+  }, []);
+
   // FR-55: redeem a reward if affordable; persists in project.rewards
   const redeemReward = useCallback((id: string) => {
     const item = REWARDS.find((r) => r.id === id);
@@ -725,7 +744,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     focusId, focusSeq, requestFocus, issues,
     addAnnotation, updateAnnotation, deleteAnnotation,
     groupSelection, ungroupSelection, toggleLockSelection,
-    addCustomSymbol, updateCustomSymbol, deleteCustomSymbol,
+    addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol,
     redeemReward,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
