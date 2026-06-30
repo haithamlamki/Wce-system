@@ -18,7 +18,7 @@ import { validate, type Issue } from '../lib/validation';
 export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vmiddle' | 'bottom';
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
 import { autosave, openFromFile, restore, saveToFile } from '../lib/persistence';
-import { isSupabaseConfigured, listProjectsCloud, loadProjectCloud, saveProjectCloud, type ProjectSummary } from '../lib/cloud';
+import { isSupabaseConfigured, listProjectsCloud, listProjectVersions, loadProjectCloud, loadProjectVersion, saveProjectCloud, type ProjectSummary, type ProjectVersionSummary } from '../lib/cloud';
 
 export type Mode = 'admin' | 'field';
 
@@ -117,9 +117,12 @@ interface ProjectCtx {
   // cloud persistence via Supabase (FR-59)
   cloudEnabled: boolean;
   cloudId: string | null;
-  saveCloud: () => Promise<string | null>;
+  saveCloud: (note?: string) => Promise<string | null>;
   listCloud: () => Promise<ProjectSummary[]>;
   loadCloud: (id: string) => Promise<void>;
+  // revision history (FR-59)
+  listVersions: (projectId: string) => Promise<ProjectVersionSummary[]>;
+  restoreVersion: (versionId: string) => Promise<void>;
 
   // node CRUD (admin) / as-built (field)
   addNode: (type: SymbolKey, x: number, y: number) => string;
@@ -561,8 +564,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const saveCloud = useCallback(async () => {
-    const id = await saveProjectCloud(project, cloudId ?? undefined);
+  const saveCloud = useCallback(async (note?: string) => {
+    const id = await saveProjectCloud(project, cloudId ?? undefined, note);
     if (id) setCloudId(id);
     return id;
   }, [project, cloudId]);
@@ -570,6 +573,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const loadCloud = useCallback(async (id: string) => {
     const loaded = await loadProjectCloud(id);
     if (loaded) { setSelectedId(null); setCloudId(id); setProject(loaded); }
+  }, []);
+  const listVersions = useCallback((projectId: string) => listProjectVersions(projectId), []);
+  const restoreVersion = useCallback(async (versionId: string) => {
+    const loaded = await loadProjectVersion(versionId);
+    if (loaded) { setSelectedId(null); setProject(loaded); }
   }, []);
 
   // FR-27: select a node + signal the canvas to re-center on it
@@ -656,7 +664,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     loadMaster, loadLayout, importAEMP, buildBop, setProject,
     saveProject, openProject, updateMeta,
     showOnboard, setShowOnboard, completeOnboarding,
-    cloudEnabled: isSupabaseConfigured, cloudId, saveCloud, listCloud, loadCloud,
+    cloudEnabled: isSupabaseConfigured, cloudId, saveCloud, listCloud, loadCloud, listVersions, restoreVersion,
     addNode, updateNode, moveNode, deleteNode, duplicateNode, changeType,
     rotateNode, flipNode, scaleNode, toggleRemoved, addEdge, addComponents,
     focusId, focusSeq, requestFocus, issues,

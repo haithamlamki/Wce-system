@@ -16,8 +16,13 @@ export interface ProjectSummary {
 
 const d = (v: string | null) => v ?? '';
 
-/** Upsert the current project; returns the row id (or null if cloud is off). */
-export async function saveProjectCloud(project: Project, id?: string): Promise<string | null> {
+/**
+ * Upsert the current project AND append an immutable version snapshot to
+ * project_versions for revision history (FR-59). Returns the project row id.
+ * The version insert is best-effort so saving still works on databases that
+ * predate migration 0005.
+ */
+export async function saveProjectCloud(project: Project, id?: string, note?: string): Promise<string | null> {
   if (!supabase) return null;
   const row = {
     ...(id ? { id } : {}),
@@ -29,7 +34,49 @@ export async function saveProjectCloud(project: Project, id?: string): Promise<s
   };
   const { data, error } = await supabase.from('projects').upsert(row).select('id').single();
   if (error) throw new Error(error.message);
-  return data?.id ?? null;
+  const newId = data?.id ?? null;
+  if (newId) {
+    try {
+      await supabase.from('project_versions').insert({
+        project_id: newId,
+        revision: project.revision ?? 0,
+        rig_name: project.meta.rig,
+        reference_date: project.meta.date || null,
+        inspector: project.meta.who || null,
+        note: note || null,
+        data: project,
+      });
+    } catch { /* project_versions is optional (pre-0005) */ }
+  }
+  return newId;
+}
+
+export interface ProjectVersionSummary {
+  id: string;
+  revision: number;
+  note: string | null;
+  created_at: string;
+}
+
+/** List a project's version snapshots, newest first (FR-59). */
+export async function listProjectVersions(projectId: string): Promise<ProjectVersionSummary[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('project_versions')
+    .select('id, revision, note, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error) throw new Error(error.message);
+  return (data as ProjectVersionSummary[]) ?? [];
+}
+
+/** Load a specific version's project document (FR-59). */
+export async function loadProjectVersion(versionId: string): Promise<Project | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('project_versions').select('data').eq('id', versionId).single();
+  if (error) throw new Error(error.message);
+  return (data?.data as Project) ?? null;
 }
 
 /** List saved projects (most-recent first). */
