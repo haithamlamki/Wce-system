@@ -107,6 +107,31 @@ export interface ComplianceRow {
   maj_due: string;
 }
 
+export interface LeaderRow {
+  id: string;
+  full_name: string;
+  points: number;
+  rig: string | null;
+}
+
+/** Write the caller's current steward points to their profile (FR-54). */
+export async function upsertMyScore(points: number): Promise<void> {
+  if (!supabase) return;
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return;
+  const { error } = await supabase.from('profiles').update({ points }).eq('id', data.user.id);
+  if (error) throw new Error(error.message);
+}
+
+/** Fetch the crew leaderboard, ranked by points (FR-54). Uses a SECURITY
+ *  DEFINER RPC that exposes only name/points/rig (not email/role). */
+export async function fetchLeaderboard(): Promise<LeaderRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('leaderboard');
+  if (error) throw new Error(error.message);
+  return ((data as LeaderRow[]) ?? []).map((r) => ({ id: r.id, full_name: r.full_name || '—', points: r.points ?? 0, rig: r.rig ?? null }));
+}
+
 /** Pull minimal equipment rows across all rigs the caller can see (FR §13). */
 export async function fetchComplianceRows(): Promise<ComplianceRow[]> {
   if (!supabase) return [];
