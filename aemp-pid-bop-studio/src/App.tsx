@@ -12,6 +12,7 @@ import BopSchemeView from './views/BopSchemeView';
 import RegisterView from './views/RegisterView';
 import AccountView from './views/AccountView';
 import DashboardView from './views/DashboardView';
+import HelpView from './views/HelpView';
 
 type ThemeMode = 'auto' | 'light' | 'dark';
 
@@ -31,6 +32,7 @@ const TABS = [
   { to: '/register', label: 'Equipment Sheet' },
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/account', label: 'Account' },
+  { to: '/help', label: 'Help' },
 ];
 
 function ModeToggle() {
@@ -117,6 +119,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
           <Route path="/register" element={<RegisterView />} />
           <Route path="/dashboard" element={<DashboardView />} />
           <Route path="/account" element={<AccountView />} />
+          <Route path="/help" element={<HelpView />} />
         </Routes>
       </main>
       <AssistantPanel open={aiOpen} onClose={() => setAiOpen(false)} />

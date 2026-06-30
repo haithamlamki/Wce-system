@@ -205,4 +205,52 @@ export async function fetchComplianceRows(): Promise<ComplianceRow[]> {
   }));
 }
 
+// ---- Rig manuals (Supabase Storage, admin upload / everyone download) -------
+
+export interface ManualRow {
+  id: string;
+  rig_name: string | null;
+  title: string;
+  path: string;
+  mime: string | null;
+  created_at: string;
+}
+
+/** List uploaded manuals (newest first). */
+export async function listManuals(): Promise<ManualRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('manuals')
+    .select('id, rig_name, title, path, mime, created_at')
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data as ManualRow[]) ?? [];
+}
+
+/** Upload a manual file to Storage + record it (admin-only via RLS). */
+export async function uploadManual(file: File, title: string, rig: string | null): Promise<void> {
+  if (!supabase) throw new Error('Cloud not configured');
+  const path = `${Date.now()}-${file.name.replace(/[^\w.\-]+/g, '_')}`;
+  const up = await supabase.storage.from('manuals').upload(path, file, { upsert: false, contentType: file.type || undefined });
+  if (up.error) throw new Error(up.error.message);
+  const ins = await supabase.from('manuals').insert({ title, path, rig_name: rig, mime: file.type || null, size: file.size });
+  if (ins.error) throw new Error(ins.error.message);
+}
+
+/** Delete a manual (object + row) — admin-only via RLS. */
+export async function deleteManual(id: string, path: string): Promise<void> {
+  if (!supabase) return;
+  await supabase.storage.from('manuals').remove([path]);
+  const { error } = await supabase.from('manuals').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+/** Signed download URL for a manual (private bucket, ~1h). */
+export async function getManualUrl(path: string): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.storage.from('manuals').createSignedUrl(path, 3600);
+  if (error) throw new Error(error.message);
+  return data?.signedUrl ?? null;
+}
+
 export { isSupabaseConfigured };
