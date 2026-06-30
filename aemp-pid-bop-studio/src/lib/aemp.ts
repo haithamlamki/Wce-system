@@ -9,6 +9,7 @@
 import type { AempAsset, Component, PipeSeg, TemplateItem } from '../types';
 import { RIG303_EQUIPMENT } from './data/rig303-equipment';
 import { RIG305_TEMPLATE, RIG305_PIPES } from './data/rig305-layout';
+import { RIG103_EQUIPMENT, RIG103_TEMPLATE } from './data/rig103-equipment';
 import { AEMP_MOCK_FIELDMAP, AEMP_MOCK_RECORDS } from './data/aemp-mock';
 import { SYM, type SymbolKey } from './symbols';
 import { relaxOverlaps } from './relaxLayout';
@@ -131,9 +132,21 @@ export function sectionForTag(tag: string): string {
  * AEMP inspection data by tag (FR-8/37). Returns the placed component nodes;
  * piping comes from RIG305_PIPES.
  */
+/** Per-rig master sources (layout template + equipment register + piping). */
+export const RIGS: Record<string, { template: TemplateItem[]; register: AempAsset[]; pipes: PipeSeg[] }> = {
+  'Rig 305': { template: RIG305_TEMPLATE, register: RIG303_EQUIPMENT, pipes: RIG305_PIPES },
+  'Rig 103': { template: RIG103_TEMPLATE, register: RIG103_EQUIPMENT, pipes: [] },
+};
+
+/** Resolve a rig's master sources (defaults to Rig 305). */
+export function rigData(rig?: string) {
+  return (rig && RIGS[rig]) || RIGS['Rig 305'];
+}
+
 export function buildMaster(
   template: TemplateItem[] = RIG305_TEMPLATE,
   register: AempAsset[] = RIG303_EQUIPMENT,
+  pipes: PipeSeg[] = RIG305_PIPES,
 ): { nodes: Component[]; pipes: PipeSeg[] } {
   const byTag: Record<string, AempAsset> = {};
   for (const it of register) if (it.tag) byTag[it.tag] = it;
@@ -169,5 +182,5 @@ export function buildMaster(
 
   // Shrink/relax symbols that collide in dense manifolds so the illustrated
   // glyphs fit the source spacing without moving equipment off its piping.
-  return { nodes: relaxOverlaps(nodes), pipes: RIG305_PIPES };
+  return { nodes: relaxOverlaps(nodes), pipes };
 }

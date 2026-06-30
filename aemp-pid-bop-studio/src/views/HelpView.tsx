@@ -83,10 +83,21 @@ function RigManuals({ canEdit, cloudEnabled, rig }: { canEdit: boolean; cloudEna
     finally { setBusy(false); }
   }
 
-  if (!cloudEnabled) return <div style={doc}>Connect the cloud (Supabase) to store and download rig manuals.</div>;
+  const builtIn = (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--panel)', border: '1px solid var(--accent)', borderRadius: 8, marginBottom: 10 }}>
+      <div>
+        <div style={{ fontWeight: 600 }}>Rig 103 — original P&amp;ID (Excel)</div>
+        <div style={{ fontSize: 11, color: 'var(--faint)', fontFamily: 'var(--mono)' }}>Rig 103 · hand-drawn source register + diagram</div>
+      </div>
+      <a href="refs/rig103-pid-source.xlsx" download style={{ ...btn, textDecoration: 'none', color: 'var(--accent)' }}>Download</a>
+    </div>
+  );
+
+  if (!cloudEnabled) return <div style={{ maxWidth: 760 }}>{builtIn}<div style={doc}>Connect the cloud (Supabase) to store and download additional rig manuals.</div></div>;
 
   return (
     <div style={{ maxWidth: 760 }}>
+      {builtIn}
       {canEdit && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: 12 }}>
           <input style={inp} placeholder="Manual title" value={title} onChange={(e) => setTitle(e.target.value)} />

@@ -75,7 +75,7 @@ export function LoginScreen({ onSkip }: { onSkip: () => void }) {
   );
 }
 
-const KNOWN_RIGS = ['Rig 303', 'Rig 305'];
+const KNOWN_RIGS = ['Rig 103', 'Rig 303', 'Rig 305'];
 
 /** Header account chip with role, per-rig selector, and sign out. */
 export function AccountChip() {

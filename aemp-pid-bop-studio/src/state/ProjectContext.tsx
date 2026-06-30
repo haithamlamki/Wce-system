@@ -7,7 +7,7 @@
 // ============================================================================
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Annotation, Component, Edge, PipeSeg, PortName, Project, TemplateItem } from '../types';
-import { buildMaster, importFromAEMP, type AempConfig } from '../lib/aemp';
+import { buildMaster, importFromAEMP, rigData, type AempConfig } from '../lib/aemp';
 import { buildBopStack, type HoleSection } from '../lib/bop';
 import { box } from '../lib/geometry';
 import { SYM, type SymbolDef, type SymbolKey } from '../lib/symbols';
@@ -272,10 +272,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const bump = (p: Project, patch: Partial<Project>): Project => ({ ...p, ...patch, revision: (p.revision ?? 0) + 1 });
 
   const loadMaster = useCallback(() => {
-    const { nodes, pipes } = buildMaster();
+    const d = rigData(project.meta.rig);
+    const { nodes, pipes } = buildMaster(d.template, d.register, d.pipes);
     setSelectedId(null);
     setProject((p) => bump(p, { nodes, pipes, edges: [] }));
-  }, []);
+  }, [project.meta.rig]);
 
   const loadLayout = useCallback((template: TemplateItem[], pipes: PipeSeg[]) => {
     const { nodes } = buildMaster(template, RIG303_EQUIPMENT);
@@ -567,7 +568,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       const next = { ...p, meta: { ...p.meta, ...meta } };
       // FR-4: starting on an empty canvas auto-loads the rig master
       if (!p.nodes.length) {
-        const { nodes, pipes } = buildMaster();
+        const d = rigData(meta.rig);
+        const { nodes, pipes } = buildMaster(d.template, d.register, d.pipes);
         return { ...next, nodes, pipes, revision: (p.revision ?? 0) + 1 };
       }
       return next;
