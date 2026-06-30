@@ -20,8 +20,10 @@ import AnnotationLayer from '../components/AnnotationLayer';
 import SymbolLibrary from '../components/SymbolLibrary';
 import type { Component, PortName } from '../types';
 
-type Tool = 'select' | 'connect' | 'pan';
 interface PortRef { id: string; port?: PortName }
+interface ConnectState { from: PortRef; to: { x: number; y: number }; target?: PortRef }
+/** Screen-px grab radius for a node's connection handles. */
+const PORT_TOL = 11;
 
 /** Nearest N/E/S/W port to a world point, within tolerance (else undefined). */
 function portAt(n: Component, w: { x: number; y: number }, tol: number): PortName | undefined {
@@ -35,12 +37,14 @@ function portAt(n: Component, w: { x: number; y: number }, tol: number): PortNam
   return best;
 }
 interface Drag {
-  kind: 'pan' | 'node' | 'marquee';
+  kind: 'pan' | 'node' | 'marquee' | 'connect';
   sx: number; sy: number;
   moved?: boolean;
   view0?: View;
   starts?: Array<{ id: string; x: number; y: number }>; // group-drag origins
   base?: string[]; // selection to union with (shift-marquee)
+  from?: PortRef;   // connect: source port
+  target?: PortRef; // connect: current target port (resolved during the drag)
 }
 interface Marquee { x0: number; y0: number; x1: number; y1: number }
 interface Hover { n: Component; x: number; y: number }
@@ -63,8 +67,7 @@ export default function PidFullView() {
   const dragRef = useRef<Drag | null>(null);
   const drawingRef = useRef<HTMLInputElement | null>(null);
   const [view, setView] = useState<View>({ x: 60, y: 60, k: 1 });
-  const [tool, setTool] = useState<Tool>('select');
-  const [connectFrom, setConnectFrom] = useState<PortRef | null>(null);
+  const [connect, setConnect] = useState<ConnectState | null>(null);
   const [portHover, setPortHover] = useState<PortRef | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
   const [iso, setIso] = useState(false);
@@ -134,7 +137,7 @@ export default function PidFullView() {
       if (mod && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); p.cutSelection(); return; }
       if (mod && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); p.pasteClipboard(); return; }
       if (mod && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); p.selectAll(); return; }
-      if (e.key === 'Escape') { p.clearSelection(); setConnectFrom(null); setPortHover(null); return; }
+      if (e.key === 'Escape') { p.clearSelection(); setConnect(null); setPortHover(null); return; }
       if (!p.selectedIds.length) return;
       const arrow = ARROW_DELTA[e.key];
       if (arrow) {
@@ -153,30 +156,39 @@ export default function PidFullView() {
     return () => window.removeEventListener('keydown', onKey);
   }, [editable, p]);
 
-  // ---- pointer interactions -------------------------------------------------
+  // ---- pointer interactions (one unified mode) ------------------------------
+  //  • hover an item       → its N/E/S/W connection handles appear
+  //  • drag from a handle  → draw a connection (snaps to a target item's port)
+  //  • drag an item body   → move it (+ group / multi-select)
+  //  • drag empty space    → marquee select
+  //  • middle-mouse drag   → pan the canvas (any mode); wheel still zooms
   function onPointerDown(e: React.PointerEvent) {
     const { px, py } = local(e);
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    // iso = presentation: pan + hover only
-    if (iso) { dragRef.current = { kind: 'pan', sx: px, sy: py, view0: { ...view } }; return; }
-
     const w = screenToWorld(px, py, view);
+
+    // Middle mouse always pans (so left-drag stays free for connect/move/marquee)
+    if (e.button === 1) { e.preventDefault(); setHover(null); setPortHover(null); dragRef.current = { kind: 'pan', sx: px, sy: py, view0: { ...view } }; return; }
+
+    // 3D presentation or Field role = read-only: left-drag pans, hover only
+    if (iso || mode === 'field') { dragRef.current = { kind: 'pan', sx: px, sy: py, view0: { ...view } }; return; }
+
+    if (e.button !== 0) return; // admin 2D edits are left-button only
+
     const hit = pickNode(project.nodes, w.x, w.y);
+    // Press on (or right next to) a connection handle → start a connection
+    const cand = hit ?? hover?.n ?? null;
+    const fromPort = cand ? portAt(cand, w, PORT_TOL / view.k) : undefined;
+    if (cand && fromPort) {
+      const from: PortRef = { id: cand.id, port: fromPort };
+      dragRef.current = { kind: 'connect', sx: px, sy: py, from };
+      setConnect({ from, to: w });
+      setPortHover(from);
+      return;
+    }
 
     if (hit) {
-      if (mode === 'field') return; // end users are read-only (no as-built edits)
-      if (tool === 'connect') {
-        const port = portAt(hit, w, 12 / view.k);
-        if (!connectFrom) setConnectFrom({ id: hit.id, port });
-        else {
-          p.addEdge(connectFrom.id, hit.id, { fromPort: connectFrom.port, toPort: port });
-          setConnectFrom(null);
-          setPortHover(null);
-        }
-        p.setSelectedId(hit.id);
-        return;
-      }
-      // Shift- or Ctrl/⌘-click toggles membership without starting a drag
+      // Shift / Ctrl / ⌘ click toggles membership without starting a drag
       if (e.shiftKey || e.ctrlKey || e.metaKey) { p.toggleSelect(hit.id); return; }
       // a grouped node selects its whole group; clicking within a multi-
       // selection keeps the group (so you can drag them all together)
@@ -186,12 +198,14 @@ export default function PidFullView() {
         if (groupMates.length > 1) p.setSelectedIds(groupMates); else p.setSelectedId(hit.id);
       }
       const starts = project.nodes.filter((n) => groupIds.includes(n.id)).map((n) => ({ id: n.id, x: n.x, y: n.y }));
+      setHover(null); setPortHover(null); // hide handles while moving the body
       dragRef.current = { kind: 'node', sx: px, sy: py, starts };
       return;
     }
-    // empty space — select tool drags a marquee; pan tool pans
-    if (tool === 'pan') { dragRef.current = { kind: 'pan', sx: px, sy: py, view0: { ...view } }; return; }
+
+    // empty space → marquee select
     const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+    setHover(null); setPortHover(null);
     dragRef.current = { kind: 'marquee', sx: px, sy: py, base: additive ? p.selectedIds : [] };
     if (!additive) p.clearSelection();
     setMarquee({ x0: w.x, y0: w.y, x1: w.x, y1: w.y });
@@ -205,9 +219,8 @@ export default function PidFullView() {
       const w = screenToWorld(px, py, view);
       const hit = pickNode(project.nodes, w.x, w.y);
       setHover(hit ? { n: hit, x: e.clientX, y: e.clientY } : null);
-      if (tool === 'connect' && mode === 'admin') {
-        setPortHover(hit ? { id: hit.id, port: portAt(hit, w, 12 / view.k) } : null);
-      }
+      // admin: light up the handle nearest the cursor on the hovered item
+      if (mode === 'admin') setPortHover(hit ? { id: hit.id, port: portAt(hit, w, PORT_TOL / view.k) } : null);
       return;
     }
     d.moved = true;
@@ -219,6 +232,15 @@ export default function PidFullView() {
     } else if (d.kind === 'marquee') {
       const w = screenToWorld(px, py, view);
       setMarquee((m) => (m ? { ...m, x1: w.x, y1: w.y } : m));
+    } else if (d.kind === 'connect') {
+      const w = screenToWorld(px, py, view);
+      const hit = pickNode(project.nodes, w.x, w.y);
+      // over another item → snap to its nearest port (and reveal its handles)
+      const target = hit && hit.id !== d.from!.id ? { id: hit.id, port: portAt(hit, w, 1e6) } : undefined;
+      d.target = target;
+      setHover(hit ? { n: hit, x: e.clientX, y: e.clientY } : null);
+      setPortHover(target ?? null);
+      setConnect((c) => (c ? { ...c, to: w, target } : c));
     }
   }
 
@@ -234,6 +256,13 @@ export default function PidFullView() {
       }).map((n) => n.id);
       p.setSelectedIds(Array.from(new Set([...(d.base ?? []), ...inside])));
       setMarquee(null);
+    }
+    if (d?.kind === 'connect') {
+      // complete only when released on another item's port
+      if (d.from && d.target && d.target.id !== d.from.id) {
+        p.addEdge(d.from.id, d.target.id, { fromPort: d.from.port, toPort: d.target.port });
+      }
+      setConnect(null); setPortHover(null); setHover(null);
     }
   }
 
@@ -336,6 +365,8 @@ export default function PidFullView() {
           })()}
           <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.6, padding: '12px 4px', borderTop: '1px solid var(--line)', marginTop: 12 }}>
             Click a symbol to place &amp; approve, or drag it onto the canvas.<br />
+            <b>Hover an item</b> for its connection handles · <b>drag a handle</b> to another item to connect.<br />
+            <b>Drag the body</b> to move · <b>middle-mouse drag</b> to pan · <b>wheel</b> to zoom.<br />
             <b>Shift-click</b> or <b>drag a box</b> to multi-select · <b>Ctrl+A</b> all · <b>Esc</b> clear.<br />
             <b>Ctrl+C/X/V</b> copy/cut/paste · <b>R</b> rotate (⇧R type) · <b>D</b> duplicate · <b>F</b> flip · <b>Del</b> remove.<br />
             <b>Arrow keys</b> nudge by grid · <b>Shift+Arrow</b> nudge 1px · <b>Ctrl+Z/⇧Z</b> undo/redo.
@@ -347,13 +378,6 @@ export default function PidFullView() {
         {/* left toolbar (admin, 2D) */}
         {editable && (
           <div style={toolbar}>
-            {(['select', 'connect', 'pan'] as Tool[]).map((t) => (
-              <button key={t} style={{ ...tbtn, ...(tool === t ? tbtnActive : {}) }} title={t}
-                onClick={() => { setTool(t); setConnectFrom(null); setPortHover(null); }}>
-                {t === 'select' ? '⬉' : t === 'connect' ? '⎯' : '✋'}
-              </button>
-            ))}
-            <span style={{ width: 1, background: 'var(--line2)', margin: '4px 2px' }} />
             <button style={tbtn} title="Add text note" onClick={addNote}>✎</button>
             <span style={{ width: 1, background: 'var(--line2)', margin: '4px 2px' }} />
             <button style={{ ...tbtn, opacity: p.canUndo ? 1 : 0.35 }} title="Undo (Ctrl+Z)" disabled={!p.canUndo} onClick={p.undo}>↶</button>
@@ -369,7 +393,7 @@ export default function PidFullView() {
               ⚠ {p.issues.length}
             </button>
           )}
-          <button style={{ ...pill, ...(iso ? pillActive : {}) }} onClick={() => { setIso((v) => !v); setConnectFrom(null); setPortHover(null); }}>3D</button>
+          <button style={{ ...pill, ...(iso ? pillActive : {}) }} onClick={() => { setIso((v) => !v); setConnect(null); setPortHover(null); }}>3D</button>
           <button style={{ ...pill, ...(showTitle ? pillActive : {}) }} onClick={() => setShowTitle((v) => !v)}>Title</button>
           <button style={pill} title="Export / Print (PDF, PNG, SVG)" onClick={() => setShowExport(true)}>⎙ Export</button>
         </div>
@@ -398,7 +422,7 @@ export default function PidFullView() {
 
         {mode === 'field' && !iso && <div style={modebar}>Field mode · read-only (pan &amp; hover)</div>}
         {iso && <div style={{ ...modebar, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>3D presentation · pan &amp; hover (editing disabled)</div>}
-        {connectFrom && <div style={{ ...modebar, top: 56, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>Click a second item to connect…</div>}
+        {connect && <div style={{ ...modebar, top: 56, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>Drag to a handle on another item — release to connect</div>}
 
         {/* approve bar (click-to-place) */}
         {pendingNode && (
@@ -413,7 +437,7 @@ export default function PidFullView() {
         )}
 
         <svg ref={svgRef} width="100%" height="100%"
-          style={{ position: 'absolute', inset: 0, cursor: iso || tool === 'pan' || mode === 'field' ? 'grab' : 'default', touchAction: 'none' }}
+          style={{ position: 'absolute', inset: 0, cursor: iso || mode === 'field' ? 'grab' : connect || portHover?.port ? 'crosshair' : 'default', touchAction: 'none' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
           onPointerLeave={() => { onPointerUp(); setHover(null); }}
           onWheel={onWheel} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
@@ -447,27 +471,41 @@ export default function PidFullView() {
               }
               return <path key={e.id} d={routeEdge(pr.a, pr.b, e, project.nodes)} fill="none" stroke={e.color || 'var(--accent2)'} strokeWidth={2.2} opacity={0.7} />;
             })}
-            {/* connection ports (connect mode) — dots on the source + hovered node */}
-            {tool === 'connect' && !iso && (() => {
+            {/* connection handles — auto-shown on the hovered item, the connection
+                source, and the current target (no mode switch needed) */}
+            {!iso && mode === 'admin' && (() => {
               const ids = new Set<string>();
-              if (connectFrom) ids.add(connectFrom.id);
               if (hover) ids.add(hover.n.id);
+              if (connect) { ids.add(connect.from.id); if (connect.target) ids.add(connect.target.id); }
               return [...ids].map((id) => {
                 const n = project.nodes.find((x) => x.id === id);
                 if (!n) return null;
                 const ps = ports(n);
                 return (['N', 'E', 'S', 'W'] as PortName[]).map((k) => {
-                  const lit = (portHover?.id === id && portHover.port === k) || (connectFrom?.id === id && connectFrom.port === k);
-                  return <circle key={`${id}${k}`} cx={ps[k].x} cy={ps[k].y} r={lit ? 5.5 : 4}
-                    fill={lit ? 'var(--accent2)' : 'var(--panel)'} stroke="var(--accent2)" strokeWidth={1.6} />;
+                  const lit = (portHover?.id === id && portHover.port === k)
+                    || (connect?.from.id === id && connect.from.port === k)
+                    || (connect?.target?.id === id && connect.target.port === k);
+                  return <circle key={`${id}${k}`} cx={ps[k].x} cy={ps[k].y} r={(lit ? 6 : 4.5) / view.k}
+                    fill={lit ? 'var(--accent2)' : 'var(--panel)'} stroke="var(--accent2)" strokeWidth={1.6 / view.k}
+                    style={{ cursor: 'crosshair' }} />;
                 });
               });
             })()}
             {/* nodes */}
             {(iso ? [...project.nodes].sort((x, y) => isoDepth(x) - isoDepth(y)) : project.nodes).map((n) => (
-              <NodeG key={n.id} n={n} selected={selSet.has(n.id)} connecting={connectFrom?.id === n.id}
+              <NodeG key={n.id} n={n} selected={selSet.has(n.id)} connecting={connect?.from.id === n.id}
                 pending={pendingId === n.id} flagged={flagged.has(n.id)} shadow={shadow} refDate={refDate} iso={iso} />
             ))}
+            {/* live connection rubber-band (from the source port to the cursor / snapped target port) */}
+            {connect && !iso && (() => {
+              const fromN = project.nodes.find((x) => x.id === connect.from.id);
+              if (!fromN) return null;
+              const a = ports(fromN)[connect.from.port as PortName];
+              let b = connect.to;
+              if (connect.target) { const tn = project.nodes.find((x) => x.id === connect.target!.id); if (tn) b = ports(tn)[connect.target.port as PortName]; }
+              return <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--accent2)" strokeWidth={2.2 / view.k}
+                strokeDasharray={`${6 / view.k} ${4 / view.k}`} opacity={0.95} pointerEvents="none" />;
+            })()}
             {marquee && (
               <rect x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)}
                 width={Math.abs(marquee.x1 - marquee.x0)} height={Math.abs(marquee.y1 - marquee.y0)}
@@ -542,7 +580,7 @@ export default function PidFullView() {
       </div>
 
       {mode === 'admin' && !iso && <PropertiesPanel />}
-      {hover && !iso && <Tooltip h={hover} refDate={refDate} />}
+      {hover && !iso && !connect && <Tooltip h={hover} refDate={refDate} />}
       {showExport && <ExportDialog project={project} refDate={refDate} onClose={() => setShowExport(false)} />}
       {showLibrary && <SymbolLibrary onClose={() => setShowLibrary(false)} />}
       {showPalette && palHover && SYM[palHover] && (
@@ -636,7 +674,6 @@ const palCard: React.CSSProperties = { background: 'var(--panel2)', border: '1px
 const toolbar: React.CSSProperties = { position: 'absolute', left: 16, top: 16, display: 'flex', gap: 5, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: 5, zIndex: 10, boxShadow: 'var(--shadow)' };
 const tbtn: React.CSSProperties = { width: 36, height: 36, border: 0, background: 'transparent', borderRadius: 7, color: 'var(--dim)', fontSize: 16, cursor: 'pointer' };
 const miniBtn: React.CSSProperties = { width: 28, height: 28, border: 0, background: 'transparent', borderRadius: 6, color: 'var(--ink)', fontSize: 14, cursor: 'pointer', display: 'grid', placeItems: 'center' };
-const tbtnActive: React.CSSProperties = { background: 'var(--accent)', color: '#fff' };
 const viewControls: React.CSSProperties = { position: 'absolute', right: 16, top: 16, display: 'flex', gap: 6, zIndex: 12 };
 const pill: React.CSSProperties = { padding: '7px 12px', borderRadius: 8, border: '1px solid var(--line2)', background: 'var(--panel)', color: 'var(--dim)', fontWeight: 600, fontSize: 12, cursor: 'pointer', boxShadow: 'var(--shadow)' };
 const pillActive: React.CSSProperties = { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' };
