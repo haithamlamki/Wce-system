@@ -11,7 +11,7 @@ import { buildFromRegister, buildMaster, importFromAEMP, rigData, type AempConfi
 import { buildBopStack, type HoleSection } from '../lib/bop';
 import { box } from '../lib/geometry';
 import { SYM, type SymbolDef, type SymbolKey } from '../lib/symbols';
-import { mergeCustomSymbols, newCustomKey, unregisterSymbol } from '../lib/customSymbols';
+import { mergeCustomSymbols, newCustomKey, registerBuiltins, unregisterSymbol } from '../lib/customSymbols';
 import { REWARDS, rewardStats } from '../lib/rewards';
 import { validate, type Issue } from '../lib/validation';
 
@@ -268,6 +268,17 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // keep the shared SYM registry in sync with the project's custom symbols
   // (covers open/load/cloud-restore; live edits also mutate SYM directly)
   useEffect(() => { mergeCustomSymbols(project.customSymbols); }, [project.customSymbols]);
+
+  // lazy-load the Rig 103 symbol pack (incl. logos + P&ID reference) as built-ins
+  // on startup — kept out of the initial bundle (it's a large chunk).
+  const [, bumpSyms] = useState(0);
+  useEffect(() => {
+    let active = true;
+    import('../lib/data/rig103-symbols')
+      .then((m) => { if (active && registerBuiltins(m.RIG103_SYMBOLS)) bumpSyms((v) => v + 1); })
+      .catch(() => { /* optional pack */ });
+    return () => { active = false; };
+  }, []);
 
   const bump = (p: Project, patch: Partial<Project>): Project => ({ ...p, ...patch, revision: (p.revision ?? 0) + 1 });
 

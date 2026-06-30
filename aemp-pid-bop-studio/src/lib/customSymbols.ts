@@ -42,6 +42,17 @@ export function unregisterSymbol(key: string): void {
   delete SYM[key];
 }
 
+/** Register built-in symbol additions (e.g. lazy-loaded Rig 103 set) into SYM.
+ *  Unlike custom symbols these carry no `custom` flag. Returns how many were new. */
+export function registerBuiltins(map: Record<string, SymbolDef>): number {
+  let added = 0;
+  for (const [k, d] of Object.entries(map)) {
+    if (!SYM[k]) { SYM[k] = d; added++; }
+    if (!SYM_ORDER.includes(d.cat)) SYM_ORDER.push(d.cat);
+  }
+  return added;
+}
+
 let seq = 0;
 /** Deterministic-enough unique key for a new custom symbol. */
 export function newCustomKey(existing: Record<string, unknown>): string {
