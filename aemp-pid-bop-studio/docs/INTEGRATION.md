@@ -24,11 +24,13 @@ Schema: see `supabase/migrations/0001_initial_schema.sql` (already applied).
 | Table | Purpose | Key columns |
 |---|---|---|
 | `projects` | Saved P&ID projects (FR-59). Full document stored as JSONB. | `id`, `rig_name`, `reference_date`, `inspector`, `revision`, `data jsonb`, `updated_at` |
+| `project_versions` | Append-only revision snapshots (FR-59, migration `0005`). Authenticated read+insert only. | `id`, `project_id` (FK→projects, cascade), `revision`, `note`, `data jsonb`, `created_by`, `created_at` |
 | `equipment` | AEMP-equivalent WCE register; read model for import (FR-36/37). Seeded with the 172-row Rig 303 dataset (10 systems). | `rig_name`, `tag`, `type`, `section`, `description`, `rwp`, `size`, `manufacturer`, `serial`, `int_last`, `int_due`, `maj_last`, `maj_due` |
+| `profiles.points` + `leaderboard()` RPC | Crew leaderboard (FR-54, migration `0004`). SECURITY DEFINER RPC returns name/points/rig only. | `profiles.points`, `public.leaderboard()` |
 
 ### Code paths
 - `src/lib/cloud.ts` — `saveProjectCloud`, `listProjectsCloud`, `loadProjectCloud`, `fetchEquipmentCloud`.
-- `src/lib/aemp.ts` `importFromAEMP()` priority: **live endpoint → Supabase `equipment` → embedded cache.**
+- `src/lib/aemp.ts` `importFromAEMP()` priority: **mock → live endpoint → Supabase `equipment` → embedded cache** (live/mock mapped via `mapAempRecords` + field map; see §B).
 - UI: header **☁ Cloud** panel (save/open), **Import from AEMP** pulls from Supabase.
 
 ### Seeding
@@ -85,13 +87,29 @@ npm run db:generate   # generate the typed client
 
 ## B. AEMP API contract still required (blocker — PRD §16.1)
 
-The live `window.AEMP_ENDPOINT` path in `importFromAEMP()` is a **stub**. To go
-live against `einspection.abrajenergy.com`, the AEMP team must provide:
+The client adapter is now **built and configurable** — `importFromAEMP()`
+priority is **mock → live endpoint → Supabase `equipment` → embedded cache**, and
+live/mock records are passed through a **field map** (`mapAempRecords`) so AEMP's
+own field names need not match ours. What remains is for the AEMP team to supply
+the endpoint, auth, and (if names differ) the field map. Configure via env:
+
+```
+VITE_AEMP_ENDPOINT=https://einspection.abrajenergy.com/api/equipment   # live URL
+VITE_AEMP_TOKEN=<bearer token>                                         # or via SSO
+VITE_AEMP_FIELDMAP={"tag":"equipmentTag","serial":"serialNo",...}      # source→internal
+VITE_AEMP_MOCK=true                                                    # exercise the live path offline
+```
+
+The endpoint may return a bare array or a `{ items|equipment|data: [...] }`
+envelope. **Try it today:** set `VITE_AEMP_MOCK=true` and click **Import from
+AEMP** — the bundled mock (`src/lib/data/aemp-mock.ts`, deliberately foreign
+field names) flows through the adapter, proving the mapping. See `aemp.test.ts`.
 
 ### B1. Equipment read endpoint (FR-36)
 - **URL** + method (e.g. `GET /api/equipment?rig=305`).
 - **Auth:** SSO/token scheme and header (`Authorization: Bearer …`?), per-rig authorisation.
-- **Payload schema** — the frontend `AempAsset` shape it must map to:
+- **Payload schema** — the frontend `AempAsset` shape records are mapped to
+  (supply `VITE_AEMP_FIELDMAP` if AEMP's names differ):
 
 ```ts
 interface AempAsset {

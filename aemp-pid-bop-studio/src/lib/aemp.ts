@@ -9,9 +9,14 @@
 import type { AempAsset, Component, PipeSeg, TemplateItem } from '../types';
 import { RIG303_EQUIPMENT } from './data/rig303-equipment';
 import { RIG305_TEMPLATE, RIG305_PIPES } from './data/rig305-layout';
+import { AEMP_MOCK_FIELDMAP, AEMP_MOCK_RECORDS } from './data/aemp-mock';
 import { SYM, type SymbolKey } from './symbols';
 import { relaxOverlaps } from './relaxLayout';
 import { fetchEquipmentCloud, isSupabaseConfigured } from './cloud';
+
+/** Maps an internal AempAsset field → the source field name in AEMP's payload.
+ *  Unmapped fields fall back to the same name (FR-39 field mapping). */
+export type AempFieldMap = Partial<Record<keyof AempAsset, string>>;
 
 export interface AempConfig {
   /** Equipment endpoint, e.g. https://einspection.abrajenergy.com/api/equipment */
@@ -20,9 +25,44 @@ export interface AempConfig {
   token?: string;
   /** Optional rig filter for the Supabase equipment table. */
   rig?: string;
+  /** Use the bundled mock AEMP payload (exercises the live mapping path offline). */
+  mock?: boolean;
+  /** Source→internal field-name mapping applied to live/mock records (FR-39). */
+  fieldMap?: AempFieldMap;
 }
 
-export type ImportSource = 'live' | 'supabase' | 'cache';
+export type ImportSource = 'live' | 'mock' | 'supabase' | 'cache';
+
+const ASSET_KEYS: Array<keyof AempAsset> = [
+  'type', 'section', 'description', 'tag', 'rwp', 'size', 'manufacturer', 'serial',
+  'int_last', 'int_due', 'maj_last', 'maj_due', 'assetId',
+];
+
+/** Transform raw AEMP records into AempAssets via a field map (FR-39). */
+export function mapAempRecords(raw: Array<Record<string, unknown>>, fieldMap: AempFieldMap = {}): AempAsset[] {
+  return raw.map((r) => {
+    const out = {} as Record<keyof AempAsset, string>;
+    for (const k of ASSET_KEYS) {
+      const src = fieldMap[k] ?? k;
+      const v = r[src];
+      out[k] = v == null ? '' : String(v);
+    }
+    return out as unknown as AempAsset;
+  });
+}
+
+/** Read AEMP integration config from Vite env (host-supplied, FR-39). */
+function envConfig(): AempConfig {
+  let fieldMap: AempFieldMap | undefined;
+  const raw = import.meta.env.VITE_AEMP_FIELDMAP as string | undefined;
+  if (raw) { try { fieldMap = JSON.parse(raw); } catch { /* ignore malformed map */ } }
+  return {
+    endpoint: import.meta.env.VITE_AEMP_ENDPOINT as string | undefined,
+    token: import.meta.env.VITE_AEMP_TOKEN as string | undefined,
+    mock: import.meta.env.VITE_AEMP_MOCK === 'true',
+    fieldMap,
+  };
+}
 export interface ImportResult {
   assets: AempAsset[];
   source: ImportSource;
@@ -37,17 +77,28 @@ export interface ImportResult {
  *   3. the embedded Rig 303 offline cache.
  */
 export async function importFromAEMP(config: AempConfig = {}): Promise<ImportResult> {
-  if (config.endpoint) {
+  const cfg: AempConfig = { ...envConfig(), ...config };
+
+  // Mock source: exercises the live mapping path with no backend (FR-36 prep).
+  if (cfg.mock) {
+    return { assets: mapAempRecords(AEMP_MOCK_RECORDS, AEMP_MOCK_FIELDMAP), source: 'mock', live: true };
+  }
+
+  if (cfg.endpoint) {
     try {
-      const res = await fetch(config.endpoint, {
+      const res = await fetch(cfg.endpoint, {
         headers: {
           Accept: 'application/json',
-          ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}),
+          ...(cfg.token ? { Authorization: `Bearer ${cfg.token}` } : {}),
         },
       });
       if (res.ok) {
-        const data = (await res.json()) as AempAsset[];
-        if (Array.isArray(data) && data.length) return { assets: data, source: 'live', live: true };
+        const data = (await res.json()) as unknown;
+        // accept a bare array or a wrapped { items|equipment|data: [...] } envelope
+        const arr = (Array.isArray(data) ? data : ((data as Record<string, unknown>)?.items ?? (data as Record<string, unknown>)?.equipment ?? (data as Record<string, unknown>)?.data)) as Array<Record<string, unknown>> | undefined;
+        if (Array.isArray(arr) && arr.length) {
+          return { assets: mapAempRecords(arr, cfg.fieldMap), source: 'live', live: true };
+        }
       }
     } catch {
       /* fall through */
@@ -55,7 +106,7 @@ export async function importFromAEMP(config: AempConfig = {}): Promise<ImportRes
   }
   if (isSupabaseConfigured) {
     try {
-      const rows = await fetchEquipmentCloud(config.rig);
+      const rows = await fetchEquipmentCloud(cfg.rig);
       if (rows.length) return { assets: rows, source: 'supabase', live: true };
     } catch {
       /* fall through */
