@@ -3,8 +3,26 @@
 //  Ported from the prototype's box()/ports() and node render transform so the
 //  React canvas places, rotates, scales and connects items identically.
 // ============================================================================
-import type { Component, Edge, PortName as TPortName } from '../types';
+import type { Component, Edge, PipeKind, PortName as TPortName } from '../types';
 import { SYM, type SymbolKey } from './symbols';
+
+// ---- piping line taxonomy --------------------------------------------------
+
+export interface PipeKindDef { key: PipeKind; label: string; color: string }
+
+/** The four selectable piping line types (label + fixed colour). Single source
+ *  of truth for the connect picker, the edge colour, and the canvas legend. */
+export const PIPE_KINDS: PipeKindDef[] = [
+  { key: 'interconnect', label: 'Section Interconnect', color: '#16a6e0' }, // blue
+  { key: 'check',        label: 'Check Line',           color: '#ed1c24' }, // red
+  { key: 'section',      label: 'Section Line',         color: '#1f9d57' }, // green
+  { key: 'discharge',    label: 'Discharge Line',       color: '#8957d6' }, // purple
+];
+
+/** Resolve a stored pipe line-type to its colour (undefined if none set). */
+export function pipeColor(kind?: PipeKind): string | undefined {
+  return kind ? PIPE_KINDS.find((k) => k.key === kind)?.color : undefined;
+}
 
 export interface View {
   x: number;
@@ -145,6 +163,128 @@ export function routeEdge(a: Component, b: Component, edge?: Edge, obstacles?: C
     .filter((n) => n.id !== a.id && n.id !== b.id && !n.removed)
     .map(rectOf);
   return crossings(vhv, rects) < crossings(hvh, rects) ? polyline(vhv) : polyline(hvh);
+}
+
+/**
+ * Route a logical edge to an ordered list of vertices (world space). Same
+ * port/waypoint/obstacle logic as routeEdge, but returns the points so the
+ * pipe renderer can draw straight segments + elbows at each bend. Points that
+ * are coincident or collinear are collapsed, so a straight run yields exactly
+ * two points (one pipe, no elbows) and every remaining interior point is a
+ * genuine direction change (an elbow).
+ */
+export function routeEdgePoints(a: Component, b: Component, edge?: Edge): Pt[] {
+  const pa = ports(a);
+  const pb = ports(b);
+  const fromPort = edge?.fromPort as TPortName | undefined;
+  const toPort = edge?.toPort as TPortName | undefined;
+  const from = fromPort ? pa[fromPort] : nearestPort(pa, center(b));
+  const to = toPort ? pb[toPort] : nearestPort(pb, center(a));
+
+  if (edge?.waypoints?.length) return simplifyPath([from, ...edge.waypoints, to]);
+
+  // Deterministic elbow: leave the source along its port normal (E/W → go
+  // horizontal first, N/S → vertical first), else fall back to the dominant
+  // axis. The route depends ONLY on the two endpoints + their ports, so adding
+  // or dragging *other* items never re-routes an existing pipe — it moves only
+  // when its own source/target moves.
+  const horizontalFirst =
+    fromPort === 'E' || fromPort === 'W' ? true
+      : fromPort === 'N' || fromPort === 'S' ? false
+        : toPort === 'E' || toPort === 'W' ? false
+          : toPort === 'N' || toPort === 'S' ? true
+            : Math.abs(to.x - from.x) >= Math.abs(to.y - from.y);
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2;
+  const pts: Pt[] = horizontalFirst
+    ? [from, { x: midX, y: from.y }, { x: midX, y: to.y }, to]
+    : [from, { x: from.x, y: midY }, { x: to.x, y: midY }, to];
+  return simplifyPath(pts);
+}
+
+const EPS = 1e-6;
+
+/** Drop coincident points, then collinear interior points (so aligned runs
+ *  collapse to a straight two-point line with no false elbows). */
+function simplifyPath(pts: Pt[]): Pt[] {
+  const deduped: Pt[] = [];
+  for (const p of pts) {
+    const last = deduped[deduped.length - 1];
+    if (last && Math.abs(last.x - p.x) < EPS && Math.abs(last.y - p.y) < EPS) continue;
+    deduped.push(p);
+  }
+  const out: Pt[] = [];
+  for (let i = 0; i < deduped.length; i++) {
+    const a = deduped[i - 1], b = deduped[i], c = deduped[i + 1];
+    if (a && c) {
+      const collinear = (Math.abs(a.x - b.x) < EPS && Math.abs(b.x - c.x) < EPS)
+        || (Math.abs(a.y - b.y) < EPS && Math.abs(b.y - c.y) < EPS);
+      if (collinear) continue;
+    }
+    out.push(b);
+  }
+  return out.length >= 2 ? out : deduped;
+}
+
+/**
+ * SVG path for a pipe run: straight segments joined by quarter-round elbows at
+ * every bend. `radius` is clamped to half the shorter adjacent segment so tight
+ * corners still render cleanly.
+ */
+export function roundedPipePath(pts: Pt[], radius = 9): string {
+  if (pts.length < 2) return '';
+  if (pts.length === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
+    const r = Math.min(radius, dist(p0, p1) / 2, dist(p1, p2) / 2);
+    const a = toward(p1, p0, r);
+    const b = toward(p1, p2, r);
+    d += ` L ${a.x} ${a.y} Q ${p1.x} ${p1.y} ${b.x} ${b.y}`;
+  }
+  const end = pts[pts.length - 1];
+  d += ` L ${end.x} ${end.y}`;
+  return d;
+}
+
+const dist = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
+/** A point `r` away from `p` heading toward `q`. */
+function toward(p: Pt, q: Pt, r: number): Pt {
+  const d = dist(p, q) || 1;
+  return { x: p.x + ((q.x - p.x) / d) * r, y: p.y + ((q.y - p.y) / d) * r };
+}
+
+/** A rounded elbow fitting: the quarter-arc `a → (corner) → b`, plus the two
+ *  cut points where it meets the adjoining straight pipe segments. */
+export interface Elbow { a: Pt; corner: Pt; b: Pt }
+export interface PipeParts { segments: Array<[Pt, Pt]>; elbows: Elbow[] }
+
+/**
+ * Split a pipe route into straight segments and discrete elbow fittings. Each
+ * interior bend is trimmed back by `radius` on both sides, leaving a gap in the
+ * straight run where a separate elbow fitting sits — so the pipe reads as
+ * "segment → elbow → segment" rather than one continuous line.
+ */
+export function pipeParts(pts: Pt[], radius = 13): PipeParts {
+  const segments: Array<[Pt, Pt]> = [];
+  const elbows: Elbow[] = [];
+  if (pts.length < 2) return { segments, elbows };
+  if (pts.length === 2) { segments.push([pts[0], pts[1]]); return { segments, elbows }; }
+
+  const n = pts.length - 1; // last index; interior corners are 1..n-1
+  const aCut: Pt[] = []; // point where segment before corner k stops
+  const bCut: Pt[] = []; // point where segment after corner k starts
+  for (let k = 1; k <= n - 1; k++) {
+    const p0 = pts[k - 1], p1 = pts[k], p2 = pts[k + 1];
+    const r = Math.min(radius, dist(p0, p1) / 2, dist(p1, p2) / 2);
+    aCut[k] = toward(p1, p0, r);
+    bCut[k] = toward(p1, p2, r);
+    elbows.push({ a: aCut[k], corner: p1, b: bCut[k] });
+  }
+  segments.push([pts[0], aCut[1]]);
+  for (let k = 1; k <= n - 2; k++) segments.push([bCut[k], aCut[k + 1]]);
+  segments.push([bCut[n - 1], pts[n]]);
+  return { segments, elbows };
 }
 
 function nearestPort(p: Ports, target: { x: number; y: number }) {

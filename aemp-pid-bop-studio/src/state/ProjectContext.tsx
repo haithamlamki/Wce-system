@@ -6,10 +6,10 @@
 //  touching the views.
 // ============================================================================
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Annotation, Component, Edge, PipeSeg, PortName, Project, TemplateItem } from '../types';
+import type { Annotation, Component, Edge, PipeKind, PipeSeg, PortName, Project, TemplateItem } from '../types';
 import { buildFromRegister, buildMaster, importFromAEMP, rigData, type AempConfig } from '../lib/aemp';
 import { buildBopStack, type HoleSection } from '../lib/bop';
-import { box } from '../lib/geometry';
+import { box, snap } from '../lib/geometry';
 import { SYM, type SymbolDef, type SymbolKey } from '../lib/symbols';
 import { mergeCustomSymbols, newCustomKey, registerBuiltins, unregisterSymbol } from '../lib/customSymbols';
 import { REWARDS, rewardStats } from '../lib/rewards';
@@ -18,7 +18,8 @@ import { validate, type Issue } from '../lib/validation';
 export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vmiddle' | 'bottom';
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
 import { autosave, openFromFile, restore, saveToFile } from '../lib/persistence';
-import { fetchLatestPublished, isSupabaseConfigured, listProjectsCloud, listProjectVersions, loadProjectCloud, loadProjectVersion, saveProjectCloud, type ProjectSummary, type ProjectVersionSummary } from '../lib/cloud';
+import { addUnit as cloudAddUnit, deleteUnit as cloudDeleteUnit, fetchLatestProject, fetchLatestPublished, isSupabaseConfigured, listProjectsCloud, listProjectVersions, listUnits, loadProjectCloud, loadProjectVersion, renameUnit as cloudRenameUnit, saveProjectCloud, type ProjectSummary, type ProjectVersionSummary } from '../lib/cloud';
+import { RIGS } from '../lib/aemp';
 import { useAuth } from './AuthContext';
 
 export type Mode = 'admin' | 'field';
@@ -131,6 +132,16 @@ interface ProjectCtx {
   publishFinal: (note?: string) => Promise<string | null>;
   clearCanvas: () => void;
 
+  // units (user-manageable rigs) — each unit owns a page/drawing
+  units: string[];
+  refreshUnits: () => Promise<void>;
+  switchUnit: (name: string) => Promise<void>;
+  addUnit: (name: string) => Promise<void>;
+  renameUnit: (oldName: string, newName: string) => Promise<void>;
+  removeUnit: (name: string) => Promise<void>;
+  showUnits: boolean;
+  setShowUnits: (b: boolean) => void;
+
   // node CRUD (admin) / as-built (field)
   addNode: (type: SymbolKey, x: number, y: number) => string;
   updateNode: (id: string, patch: Partial<Component>) => void;
@@ -143,7 +154,15 @@ interface ProjectCtx {
   flipNode: (id: string, applyToType?: boolean) => void;
   scaleNode: (id: string, scale: number, applyToType?: boolean) => void;
   toggleRemoved: (id: string) => void;
-  addEdge: (from: string, to: string, opts?: { fromPort?: PortName; toPort?: PortName }) => void;
+  addEdge: (from: string, to: string, opts?: { fromPort?: PortName; toPort?: PortName; lineType?: PipeKind; color?: string }) => void;
+  /** Remove a single pipe connection (leaves its equipment in place). */
+  deleteEdge: (id: string) => void;
+  /** Re-assign a connection's pipe line type + colour. */
+  setEdgeType: (id: string, lineType: PipeKind, color: string) => void;
+  /** Insert a node on a pipe at world point `at`, splitting A→B into A→J and
+   *  J→B (both keep the original type/colour). Returns the new node id. Used for
+   *  inline-equipment and branch-tee insertion. */
+  splitEdgeAt: (edgeId: string, type: SymbolKey, at: { x: number; y: number }) => string | null;
   /** Bulk-add components (e.g. from CSV import); grid-places them. Returns count. */
   addComponents: (rows: Array<Partial<Component> & { type?: SymbolKey }>) => number;
 
@@ -437,13 +456,44 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return rows.length;
   }, []);
 
-  const addEdge = useCallback((from: string, to: string, opts?: { fromPort?: PortName; toPort?: PortName }) => {
+  const addEdge = useCallback((from: string, to: string, opts?: { fromPort?: PortName; toPort?: PortName; lineType?: PipeKind; color?: string }) => {
     if (from === to) return;
     setProject((p) => {
       if (p.edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from))) return p;
-      const edge: Edge = { id: nextId('e'), from, to, color: 'var(--accent2)', fromPort: opts?.fromPort, toPort: opts?.toPort };
+      const edge: Edge = {
+        id: nextId('e'), from, to,
+        color: opts?.color ?? 'var(--accent2)',
+        lineType: opts?.lineType,
+        fromPort: opts?.fromPort, toPort: opts?.toPort,
+      };
       return { ...p, edges: [...p.edges, edge] };
     });
+  }, []);
+
+  const deleteEdge = useCallback((id: string) => {
+    setProject((p) => ({ ...p, edges: p.edges.filter((e) => e.id !== id) }));
+  }, []);
+
+  const setEdgeType = useCallback((id: string, lineType: PipeKind, color: string) => {
+    setProject((p) => ({ ...p, edges: p.edges.map((e) => (e.id === id ? { ...e, lineType, color } : e)) }));
+  }, []);
+
+  const splitEdgeAt = useCallback((edgeId: string, type: SymbolKey, at: { x: number; y: number }) => {
+    const s = SYM[type];
+    if (!s) return null;
+    const j = newNode(type, snap(at.x - s.w / 2), snap(at.y - s.h / 2));
+    setProject((p) => {
+      const e = p.edges.find((x) => x.id === edgeId);
+      if (!e) return p;
+      // A→J keeps A's port; J→B keeps B's port. The junction ends auto-pick
+      // their nearest port so both halves re-route cleanly (and stay attached
+      // to the original equipment at the far ends).
+      const eA: Edge = { id: nextId('e'), from: e.from, to: j.id, color: e.color, lineType: e.lineType, fromPort: e.fromPort };
+      const eB: Edge = { id: nextId('e'), from: j.id, to: e.to, color: e.color, lineType: e.lineType, toPort: e.toPort };
+      return { ...p, nodes: [...p.nodes, j], edges: [...p.edges.filter((x) => x.id !== edgeId), eA, eB] };
+    });
+    setSelectedId(j.id);
+    return j.id;
   }, []);
 
   // ---- multi-selection -------------------------------------------------------
@@ -628,6 +678,65 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setProject((p) => bump(p, { nodes: [], pipes: [], edges: [], annotations: [] }));
   }, []);
 
+  // ---- units (user-manageable rigs) -----------------------------------------
+  // Each unit owns a page/drawing (a `projects` row keyed by rig_name). The list
+  // comes from the cloud `units` table (admin-managed), merged with the built-in
+  // rigs so their master templates stay available; falls back to built-ins when
+  // the cloud is off or migration 0008 hasn't been applied.
+  const [units, setUnits] = useState<string[]>(() => Object.keys(RIGS));
+  const [showUnits, setShowUnits] = useState(false);
+
+  const refreshUnits = useCallback(async () => {
+    const builtins = Object.keys(RIGS);
+    if (!isSupabaseConfigured) { setUnits(builtins); return; }
+    try {
+      const names = await listUnits();
+      setUnits(Array.from(new Set([...names, ...builtins])).sort());
+    } catch { setUnits(builtins); }
+  }, []);
+  useEffect(() => { refreshUnits(); }, [refreshUnits]);
+
+  // Switch the active unit and load its drawing: field users see the latest
+  // PUBLISHED sheet; privileged users get the latest saved row (so Save upserts
+  // it), or a fresh master if the unit has no drawing yet.
+  const switchUnit = useCallback(async (name: string) => {
+    setSelectedId(null);
+    if (role === 'field') {
+      let pub: Project | null = null;
+      try { pub = await fetchLatestPublished(name); } catch { /* none yet */ }
+      setCloudId(null);
+      setProject((p) => pub ?? { ...p, meta: { ...p.meta, rig: name }, nodes: [], pipes: [], edges: [], annotations: [] });
+      return;
+    }
+    let row: { id: string; data: Project } | null = null;
+    try { row = await fetchLatestProject(name); } catch { /* none yet */ }
+    if (row) { setCloudId(row.id); setProject(row.data); return; }
+    // no saved drawing — start this unit's page from its master (known rig) or empty
+    setCloudId(null);
+    setProject((p) => {
+      const meta = { ...p.meta, rig: name };
+      if (RIGS[name]) {
+        const d = rigData(name);
+        const { nodes, pipes } = d.byRegister ? buildFromRegister(d.register, d.template) : buildMaster(d.template, d.register, d.pipes);
+        return { ...p, meta, nodes, pipes, edges: [], annotations: [], status: 'draft', publishedAt: undefined, revision: (p.revision ?? 0) + 1 };
+      }
+      return { ...p, meta, nodes: [], pipes: [], edges: [], annotations: [], status: 'draft', publishedAt: undefined };
+    });
+  }, [role]);
+
+  const addUnit = useCallback(async (name: string) => {
+    const n = name.trim(); if (!n) return;
+    await cloudAddUnit(n); await refreshUnits();
+  }, [refreshUnits]);
+  const renameUnit = useCallback(async (oldName: string, newName: string) => {
+    const n = newName.trim(); if (!n || n === oldName) return;
+    await cloudRenameUnit(oldName, n); await refreshUnits();
+    setProject((p) => (p.meta.rig === oldName ? { ...p, meta: { ...p.meta, rig: n } } : p));
+  }, [refreshUnits]);
+  const removeUnit = useCallback(async (name: string) => {
+    await cloudDeleteUnit(name); await refreshUnits();
+  }, [refreshUnits]);
+
   // End users load their rig's latest PUBLISHED final sheet (read-only).
   useEffect(() => {
     if (role !== 'field' || !authEnabled || !rig) return;
@@ -739,8 +848,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     showOnboard, setShowOnboard, completeOnboarding,
     cloudEnabled: isSupabaseConfigured, cloudId, saveCloud, listCloud, loadCloud, listVersions, restoreVersion,
     canEdit, saveAsDraft, publishFinal, clearCanvas,
+    units, refreshUnits, switchUnit, addUnit, renameUnit, removeUnit, showUnits, setShowUnits,
     addNode, updateNode, moveNode, deleteNode, duplicateNode, changeType,
-    rotateNode, flipNode, scaleNode, toggleRemoved, addEdge, addComponents,
+    rotateNode, flipNode, scaleNode, toggleRemoved, addEdge, deleteEdge, setEdgeType, splitEdgeAt, addComponents,
     focusId, focusSeq, requestFocus, issues,
     addAnnotation, updateAnnotation, deleteAnnotation,
     groupSelection, ungroupSelection, toggleLockSelection,

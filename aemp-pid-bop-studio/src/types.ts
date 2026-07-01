@@ -46,12 +46,18 @@ export type PipeSeg = [number, number, number, number, string];
 /** Cardinal connection-port name. */
 export type PortName = 'N' | 'E' | 'S' | 'W';
 
+/** Piping line taxonomy — the pipe type the user picks when connecting two
+ *  items. Each kind carries a fixed colour (see PIPE_KINDS in lib/geometry). */
+export type PipeKind = 'interconnect' | 'check' | 'section' | 'discharge';
+
 /** Logical connection between two components (optional / derived). */
 export interface Edge {
   id: string;
   from: string;
   to: string;
   color?: string;
+  /** Selected piping line type — persisted with the connection. */
+  lineType?: PipeKind;
   // explicit attach ports + intermediate route bends (report §2.2)
   fromPort?: PortName;
   toPort?: PortName;

@@ -12,7 +12,8 @@ import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import {
   box, edgeNodes, fitView, GRID, innerTransform, isoDepth, isoPlacement, pickNode,
-  ports, proj, routeEdge, screenToWorld, snap, type View,
+  PIPE_KINDS, pipeColor, pipeParts, ports, proj, routeEdgePoints,
+  screenToWorld, snap, type PipeKindDef, type View,
 } from '../lib/geometry';
 import { parseDrawing } from '../lib/layoutImport';
 import ExportDialog from '../components/ExportDialog';
@@ -53,12 +54,15 @@ const ARROW_DELTA: Record<string, [number, number]> = {
   ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
 };
 
-const PIPE_LEGEND = [
-  ['#16a6e0', 'Suction / interconnect'],
-  ['#ed1c24', 'Choke line'],
-  ['#1f9d57', 'Suction line'],
-  ['#8957d6', 'Discharge line'],
-];
+// canvas legend mirrors the selectable piping line types (single source of truth)
+const PIPE_LEGEND = PIPE_KINDS.map((k) => [k.color, k.label] as const);
+
+/** A completed connection awaiting the user's pipe-type choice. `sx`/`sy` are
+ *  the picker's screen position (container-relative). */
+interface PipeMenu { from: PortRef; to: PortRef; sx: number; sy: number }
+/** Double-click edit menu for an existing pipe. `wx`/`wy` = world point clicked
+ *  (where a junction is inserted); `sx`/`sy` = screen position of the menu. */
+interface PipeEdit { edgeId: string; wx: number; wy: number; sx: number; sy: number }
 
 export default function PidFullView() {
   const p = useProject();
@@ -68,6 +72,9 @@ export default function PidFullView() {
   const drawingRef = useRef<HTMLInputElement | null>(null);
   const [view, setView] = useState<View>({ x: 60, y: 60, k: 1 });
   const [connect, setConnect] = useState<ConnectState | null>(null);
+  const [pipeMenu, setPipeMenu] = useState<PipeMenu | null>(null);
+  const [pipeEdit, setPipeEdit] = useState<PipeEdit | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [portHover, setPortHover] = useState<PortRef | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
   const [iso, setIso] = useState(false);
@@ -137,7 +144,11 @@ export default function PidFullView() {
       if (mod && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); p.cutSelection(); return; }
       if (mod && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); p.pasteClipboard(); return; }
       if (mod && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); p.selectAll(); return; }
-      if (e.key === 'Escape') { p.clearSelection(); setConnect(null); setPortHover(null); return; }
+      if (e.key === 'Escape') { p.clearSelection(); setConnect(null); setPortHover(null); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(null); return; }
+      // a selected pipe (no node selection) can be deleted with Del/Backspace
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdgeId && !p.selectedIds.length) {
+        e.preventDefault(); p.deleteEdge(selectedEdgeId); setSelectedEdgeId(null); return;
+      }
       if (!p.selectedIds.length) return;
       const arrow = ARROW_DELTA[e.key];
       if (arrow) {
@@ -154,7 +165,7 @@ export default function PidFullView() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editable, p]);
+  }, [editable, p, selectedEdgeId]);
 
   // ---- pointer interactions (one unified mode) ------------------------------
   //  • hover an item       → its N/E/S/W connection handles appear
@@ -165,6 +176,9 @@ export default function PidFullView() {
   function onPointerDown(e: React.PointerEvent) {
     const { px, py } = local(e);
     (e.target as Element).setPointerCapture?.(e.pointerId);
+    // any new canvas action dismisses pipe pickers / deselects a pipe (pipe
+    // clicks stopPropagation before here, so this only fires on node/empty clicks)
+    setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(null);
     const w = screenToWorld(px, py, view);
 
     // Middle mouse always pans (so left-drag stays free for connect/move/marquee)
@@ -258,12 +272,58 @@ export default function PidFullView() {
       setMarquee(null);
     }
     if (d?.kind === 'connect') {
-      // complete only when released on another item's port
+      // complete only when released on another item's port → offer the pipe-type
+      // picker (positioned at the mid-point of the new run, in screen space)
       if (d.from && d.target && d.target.id !== d.from.id) {
-        p.addEdge(d.from.id, d.target.id, { fromPort: d.from.port, toPort: d.target.port });
+        const fromN = project.nodes.find((n) => n.id === d.from!.id);
+        const toN = project.nodes.find((n) => n.id === d.target!.id);
+        if (fromN && toN) {
+          const fp = ports(fromN)[d.from.port as PortName];
+          const tp = ports(toN)[d.target.port as PortName];
+          const mx = (fp.x + tp.x) / 2, my = (fp.y + tp.y) / 2;
+          setPipeMenu({ from: d.from, to: d.target, sx: mx * view.k + view.x, sy: my * view.k + view.y });
+        }
       }
       setConnect(null); setPortHover(null); setHover(null);
     }
+  }
+
+  /** Commit the pending connection with the chosen pipe type + colour. */
+  function choosePipe(kind: PipeKindDef) {
+    if (!pipeMenu) return;
+    p.addEdge(pipeMenu.from.id, pipeMenu.to.id, {
+      fromPort: pipeMenu.from.port, toPort: pipeMenu.to.port,
+      lineType: kind.key, color: kind.color,
+    });
+    setPipeMenu(null);
+  }
+
+  // ---- pipe editing (select / double-click to insert or branch) -------------
+  function selectEdge(id: string) { p.clearSelection(); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(id); }
+  function openPipeEdit(e: React.MouseEvent, edgeId: string) {
+    const { px, py } = local(e);
+    const w = screenToWorld(px, py, view);
+    p.clearSelection(); setPipeMenu(null); setSelectedEdgeId(edgeId);
+    setPipeEdit({ edgeId, wx: w.x, wy: w.y, sx: px, sy: py });
+  }
+  /** Insert a junction on the pipe at the clicked point (splits A→B into A→J→B).
+   *  `inline` selects the junction for retyping to real equipment; branch leaves
+   *  it as a tee ready to connect a side item. Both keep the pipe type/colour. */
+  function insertOnPipe(inline: boolean) {
+    if (!pipeEdit) return;
+    p.splitEdgeAt(pipeEdit.edgeId, 'junction', { x: pipeEdit.wx, y: pipeEdit.wy });
+    setPipeEdit(null); setSelectedEdgeId(null);
+    void inline; // both paths split; the junction is selected for the next step
+  }
+  function changeEdgeType(kind: PipeKindDef) {
+    if (!pipeEdit) return;
+    p.setEdgeType(pipeEdit.edgeId, kind.key, kind.color);
+    setPipeEdit(null);
+  }
+  function deleteEdgeFromMenu() {
+    if (!pipeEdit) return;
+    p.deleteEdge(pipeEdit.edgeId);
+    setPipeEdit(null); setSelectedEdgeId(null);
   }
 
   function onWheel(e: React.WheelEvent) {
@@ -436,6 +496,61 @@ export default function PidFullView() {
           </div>
         )}
 
+        {/* pipe-type picker — shown only while creating a new connection */}
+        {pipeMenu && (
+          <div style={{ ...pipeMenuBox, left: pipeMenu.sx, top: pipeMenu.sy }}
+            onPointerDown={(e) => e.stopPropagation()}>
+            <div style={pipeMenuHead}>Select pipe line type</div>
+            {PIPE_KINDS.map((k) => (
+              <button key={k.key} style={pipeMenuRow} onClick={() => choosePipe(k)}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <span style={{ width: 24, height: 7, borderRadius: 4, flex: '0 0 auto', background: `linear-gradient(${`color-mix(in srgb, ${k.color} 55%, #000)`}, ${`color-mix(in srgb, ${k.color} 20%, #fff)`} 45%, ${`color-mix(in srgb, ${k.color} 55%, #000)`})` }} />
+                <span>{k.label}</span>
+              </button>
+            ))}
+            <button style={{ ...pipeMenuRow, color: 'var(--faint)', justifyContent: 'center' }}
+              onClick={() => setPipeMenu(null)}>Cancel</button>
+          </div>
+        )}
+
+        {/* pipe edit menu — double-click an existing pipe: insert / branch /
+            change type / delete. Only shown while editing that pipe. */}
+        {pipeEdit && (
+          <div style={{ ...pipeMenuBox, left: pipeEdit.sx, top: pipeEdit.sy }}
+            onPointerDown={(e) => e.stopPropagation()}>
+            <div style={pipeMenuHead}>Edit pipe connection</div>
+            <button style={pipeMenuRow} onClick={() => insertOnPipe(true)}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+              <span style={{ fontSize: 15, width: 18, textAlign: 'center' }}>⊕</span>
+              <span style={{ display: 'grid' }}>Insert equipment here
+                <small style={{ color: 'var(--faint)', fontWeight: 400 }}>Splits pipe: A → new item → B</small></span>
+            </button>
+            <button style={pipeMenuRow} onClick={() => insertOnPipe(false)}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+              <span style={{ fontSize: 15, width: 18, textAlign: 'center' }}>⌥</span>
+              <span style={{ display: 'grid' }}>Add branch point
+                <small style={{ color: 'var(--faint)', fontWeight: 400 }}>Adds a tee — drag from it to a new item</small></span>
+            </button>
+            <div style={{ ...pipeMenuHead, paddingTop: 8 }}>Change line type</div>
+            <div style={{ display: 'flex', gap: 5, padding: '2px 6px 6px' }}>
+              {PIPE_KINDS.map((k) => (
+                <button key={k.key} title={k.label} onClick={() => changeEdgeType(k)}
+                  style={{ flex: 1, height: 16, borderRadius: 4, border: '1px solid var(--line2)', cursor: 'pointer', background: `linear-gradient(${`color-mix(in srgb, ${k.color} 55%, #000)`}, ${`color-mix(in srgb, ${k.color} 20%, #fff)`} 45%, ${`color-mix(in srgb, ${k.color} 55%, #000)`})` }} />
+              ))}
+            </div>
+            <button style={{ ...pipeMenuRow, color: 'var(--red)' }} onClick={deleteEdgeFromMenu}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+              <span style={{ fontSize: 14, width: 18, textAlign: 'center' }}>🗑</span> Delete connection
+            </button>
+            <button style={{ ...pipeMenuRow, color: 'var(--faint)', justifyContent: 'center' }}
+              onClick={() => { setPipeEdit(null); setSelectedEdgeId(null); }}>Cancel</button>
+          </div>
+        )}
+
         <svg ref={svgRef} width="100%" height="100%"
           style={{ position: 'absolute', inset: 0, cursor: iso || mode === 'field' ? 'grab' : connect || portHover?.port ? 'crosshair' : 'default', touchAction: 'none' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
@@ -459,17 +574,36 @@ export default function PidFullView() {
               const b = iso ? proj(x2, y2) : { x: x2, y: y2 };
               return <line key={`p${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={3} strokeLinecap="round" opacity={iso ? 0.55 : 0.9} />;
             })}
-            {/* user connections */}
+            {/* user connections — rendered as real piping: straight pipe when
+                aligned, else pipe segments joined by matching-colour elbows.
+                The route recomputes from live node positions every render, so it
+                follows the items when they move. */}
             {project.edges.map((e) => {
               const pr = edgeNodes(e, project.nodes);
               if (!pr) return null;
+              const color = e.color || pipeColor(e.lineType) || 'var(--accent2)';
               if (iso) {
                 const ba = box(pr.a), bb = box(pr.b);
                 const a = proj(pr.a.x + ba.w / 2, pr.a.y + ba.h / 2);
                 const b = proj(pr.b.x + bb.w / 2, pr.b.y + bb.h / 2);
-                return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={e.color || 'var(--accent2)'} strokeWidth={2.2} opacity={0.55} />;
+                return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={2.2} opacity={0.55} />;
               }
-              return <path key={e.id} d={routeEdge(pr.a, pr.b, e, project.nodes)} fill="none" stroke={e.color || 'var(--accent2)'} strokeWidth={2.2} opacity={0.7} />;
+              const pts = routeEdgePoints(pr.a, pr.b, e);
+              const hitD = pts.map((pt, i) => `${i ? 'L' : 'M'} ${pt.x} ${pt.y}`).join(' ');
+              return (
+                <g key={e.id}>
+                  <Pipe pts={pts} color={color} selected={selectedEdgeId === e.id} />
+                  {/* wide invisible hit-line: click selects the pipe, double-click
+                      opens the edit menu — the pipe itself is never dragged. */}
+                  {mode === 'admin' && (
+                    <path d={hitD} stroke="transparent" strokeWidth={18} fill="none"
+                      strokeLinecap="round" strokeLinejoin="round" pointerEvents="stroke"
+                      style={{ cursor: 'pointer' }}
+                      onPointerDown={(ev) => { ev.stopPropagation(); selectEdge(e.id); }}
+                      onDoubleClick={(ev) => { ev.stopPropagation(); openPipeEdit(ev, e.id); }} />
+                  )}
+                </g>
+              );
             })}
             {/* connection handles — auto-shown on the hovered item, the connection
                 source, and the current target (no mode switch needed) */}
@@ -553,8 +687,8 @@ export default function PidFullView() {
           <div style={legend}>
             <b style={legendHead}>PIPING &amp; LINES</b>
             {PIPE_LEGEND.map(([c, label]) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '3px 0' }}>
-                <span style={{ width: 20, height: 3, borderRadius: 2, background: c }} />{label}
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
+                <span style={{ width: 22, height: 6, borderRadius: 3, background: `linear-gradient(${`color-mix(in srgb, ${c} 55%, #000)`}, ${`color-mix(in srgb, ${c} 20%, #fff)`} 45%, ${`color-mix(in srgb, ${c} 55%, #000)`})` }} />{label}
               </div>
             ))}
           </div>
@@ -593,6 +727,63 @@ export default function PidFullView() {
         </div>
       )}
     </>
+  );
+}
+
+type Pt = { x: number; y: number };
+/** One glossy tube layer set (dark casing → base → sheen → bright core). */
+function tube(d: string, color: string, scale = 1) {
+  const dark = `color-mix(in srgb, ${color} 55%, #000)`;
+  const light = `color-mix(in srgb, ${color} 45%, #fff)`;
+  const core = `color-mix(in srgb, ${color} 12%, #fff)`;
+  return (
+    <>
+      <path d={d} stroke={dark} strokeWidth={9.5 * scale} />
+      <path d={d} stroke={color} strokeWidth={7 * scale} />
+      <path d={d} stroke={light} strokeWidth={3.6 * scale} />
+      <path d={d} stroke={core} strokeWidth={1.4 * scale} opacity={0.9} />
+    </>
+  );
+}
+
+/**
+ * A piping run drawn as real fittings: straight glossy tube segments with a
+ * SEPARATE elbow fitting at each bend. Elbows are trimmed out of the straight
+ * run and drawn on top, slightly larger and flanged, so the pipe reads as
+ * "segment → elbow → segment" (each bend its own visible component) rather than
+ * one continuous line. Every shade derives from the line colour, so the elbow
+ * always matches its pipe's type/colour.
+ */
+function Pipe({ pts, color, selected }: { pts: Pt[]; color: string; selected?: boolean }) {
+  const { segments, elbows } = pipeParts(pts, 14);
+  const dark = `color-mix(in srgb, ${color} 55%, #000)`;
+  const seg = (a: Pt, b: Pt) => `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+  return (
+    <g fill="none">
+      {/* selection glow behind everything */}
+      {selected && [...segments.map(([a, b]) => seg(a, b)),
+        ...elbows.map((e) => `M ${e.a.x} ${e.a.y} Q ${e.corner.x} ${e.corner.y} ${e.b.x} ${e.b.y}`)]
+        .map((d, i) => <path key={`g${i}`} d={d} stroke="var(--accent)" strokeWidth={16} opacity={0.3} strokeLinecap="round" />)}
+
+      {/* straight pipe segments (flat ends so the elbow fitting caps them) */}
+      <g strokeLinecap="butt">
+        {segments.map(([a, b], i) => <g key={`s${i}`}>{tube(seg(a, b), color)}</g>)}
+      </g>
+
+      {/* separate elbow fittings, on top, wider + flanged */}
+      {elbows.map((e, i) => {
+        const d = `M ${e.a.x} ${e.a.y} Q ${e.corner.x} ${e.corner.y} ${e.b.x} ${e.b.y}`;
+        return (
+          <g key={`e${i}`} strokeLinecap="round">
+            <path d={d} stroke={dark} strokeWidth={13.5} />
+            {tube(d, color, 1.28)}
+            {[e.a, e.b].map((c, j) => (
+              <circle key={j} cx={c.x} cy={c.y} r={6} fill="none" stroke={dark} strokeWidth={1.6} opacity={0.9} />
+            ))}
+          </g>
+        );
+      })}
+    </g>
   );
 }
 
@@ -682,6 +873,9 @@ const approveBar: React.CSSProperties = { position: 'absolute', top: 16, left: '
 const primarySm: React.CSSProperties = { background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '7px 12px', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
 const ghostSm: React.CSSProperties = { background: 'var(--panel2)', color: 'var(--ink)', border: '1px solid var(--line2)', borderRadius: 7, padding: '7px 12px', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
 const zoombar: React.CSSProperties = { position: 'absolute', right: 16, bottom: 16, display: 'flex', gap: 6, alignItems: 'center', background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: '5px 8px', zIndex: 10, boxShadow: 'var(--shadow)' };
+const pipeMenuBox: React.CSSProperties = { position: 'absolute', transform: 'translate(-50%, 12px)', zIndex: 40, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: 6, minWidth: 190 };
+const pipeMenuHead: React.CSSProperties = { fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--faint)', padding: '4px 8px 6px', fontWeight: 600 };
+const pipeMenuRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '8px 9px', background: 'transparent', border: 0, borderRadius: 7, cursor: 'pointer', fontSize: 12.5, color: 'var(--ink)', fontWeight: 600 };
 const zbtn: React.CSSProperties = { width: 26, height: 26, border: 0, background: 'var(--sunk)', color: 'var(--ink)', borderRadius: 6, fontSize: 16, cursor: 'pointer' };
 const legend: React.CSSProperties = { position: 'absolute', left: 16, bottom: 16, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: '9px 13px', zIndex: 10, fontSize: 11, color: 'var(--dim)', boxShadow: 'var(--shadow)' };
 const legendHead: React.CSSProperties = { color: 'var(--ink)', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1, display: 'block', marginBottom: 6 };
