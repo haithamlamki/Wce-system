@@ -98,6 +98,54 @@ export async function loadProjectCloud(id: string): Promise<Project | null> {
   return (data?.data as Project) ?? null;
 }
 
+// ---- units (user-manageable rigs, migration 0008) --------------------------
+
+/** List unit names (alphabetical). Returns [] if Supabase isn't configured or
+ *  the `units` table doesn't exist yet (pre-0008) — caller falls back to built-ins. */
+export async function listUnits(): Promise<string[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('units').select('name').order('name');
+  if (error) return []; // table may not exist yet — degrade gracefully
+  return (data ?? []).map((r: { name: string }) => r.name);
+}
+
+/** Create a new unit (admin/manager only — enforced by RLS). */
+export async function addUnit(name: string): Promise<void> {
+  if (!supabase) throw new Error('Cloud not configured.');
+  const { error } = await supabase.from('units').insert({ name });
+  if (error) throw new Error(error.message);
+}
+
+/** Remove a unit (its saved drawings stay in `projects` but are no longer listed). */
+export async function deleteUnit(name: string): Promise<void> {
+  if (!supabase) throw new Error('Cloud not configured.');
+  const { error } = await supabase.from('units').delete().eq('name', name);
+  if (error) throw new Error(error.message);
+}
+
+/** Rename a unit AND re-key its drawings / equipment / manuals so they follow it. */
+export async function renameUnit(oldName: string, newName: string): Promise<void> {
+  if (!supabase) throw new Error('Cloud not configured.');
+  const u = await supabase.from('units').update({ name: newName }).eq('name', oldName);
+  if (u.error) throw new Error(u.error.message);
+  // best-effort re-key of dependent rows (rig_name is a plain string, not an FK)
+  await supabase.from('projects').update({ rig_name: newName }).eq('rig_name', oldName);
+  await supabase.from('equipment').update({ rig_name: newName }).eq('rig_name', oldName);
+  try { await supabase.from('manuals').update({ rig_name: newName }).eq('rig_name', oldName); } catch { /* manuals optional */ }
+}
+
+/** Latest saved project for a unit (any status), with its row id so Save upserts
+ *  the same row. Used by the unit switcher for privileged users. */
+export async function fetchLatestProject(rig: string): Promise<{ id: string; data: Project } | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('projects').select('id, data, updated_at')
+    .eq('rig_name', rig).order('updated_at', { ascending: false }).limit(1);
+  if (error) throw new Error(error.message);
+  const row = (data ?? [])[0] as { id: string; data: Project } | undefined;
+  return row ? { id: row.id, data: row.data } : null;
+}
+
 /** Load the latest PUBLISHED final sheet for a rig (end-user view, FR §7).
  *  Status lives in the project JSONB, queried via `data->>status` (no schema change). */
 export async function fetchLatestPublished(rig?: string): Promise<Project | null> {
