@@ -381,15 +381,18 @@ export default function PidFullView() {
     <>
       {showPalette && (
         <aside style={paletteStyle}>
-          <button style={primaryBtn} onClick={p.loadMaster}>Build Full P&amp;ID</button>
-          <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => p.importAEMP()}>Import from AEMP</button>
-          <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => drawingRef.current?.click()}>Import drawing…</button>
-          <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => setShowLibrary(true)}>⊞ Symbol library</button>
-          <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--red)' }}
-            onClick={() => { if (confirm('Clear the entire canvas — all equipment, piping and annotations?')) p.clearCanvas(); }}>Clear canvas</button>
-          <input ref={drawingRef} type="file" accept=".html,.htm,.json,.js,text/html,application/json" style={{ display: 'none' }}
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportDrawing(f); e.target.value = ''; }} />
-          <input placeholder="Search symbols…" value={palQuery} onChange={(e) => setPalQuery(e.target.value)} style={palSearch} />
+          <div style={palHeader}>
+            <button style={primaryBtn} onClick={p.loadMaster}>Build Full P&amp;ID</button>
+            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => p.importAEMP()}>Import from AEMP</button>
+            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => drawingRef.current?.click()}>Import drawing…</button>
+            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => setShowLibrary(true)}>⊞ Symbol library</button>
+            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--red)', marginBottom: 0 }}
+              onClick={() => { if (confirm('Clear the entire canvas — all equipment, piping and annotations?')) p.clearCanvas(); }}>Clear canvas</button>
+            <input ref={drawingRef} type="file" accept=".html,.htm,.json,.js,text/html,application/json" style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportDrawing(f); e.target.value = ''; }} />
+            <input placeholder="Search symbols…" value={palQuery} onChange={(e) => setPalQuery(e.target.value)} style={palSearch} />
+          </div>
+          <div style={palScroll}>
           {(() => {
             const q = palQuery.trim().toLowerCase();
             const hidden = new Set(p.project.hiddenSymbols ?? []);
@@ -430,6 +433,7 @@ export default function PidFullView() {
             <b>Shift-click</b> or <b>drag a box</b> to multi-select · <b>Ctrl+A</b> all · <b>Esc</b> clear.<br />
             <b>Ctrl+C/X/V</b> copy/cut/paste · <b>R</b> rotate (⇧R type) · <b>D</b> duplicate · <b>F</b> flip · <b>Del</b> remove.<br />
             <b>Arrow keys</b> nudge by grid · <b>Shift+Arrow</b> nudge 1px · <b>Ctrl+Z/⇧Z</b> undo/redo.
+          </div>
           </div>
         </aside>
       )}
@@ -856,7 +860,10 @@ const TBRow = ({ k, v }: { k: string; v: string }) => (
 );
 
 // ---- styles ----------------------------------------------------------------
-const paletteStyle: React.CSSProperties = { width: 230, flex: '0 0 auto', background: 'var(--panel)', borderRight: '1px solid var(--line2)', overflowY: 'auto', padding: 12 };
+const paletteStyle: React.CSSProperties = { width: 230, flex: '0 0 auto', background: 'var(--panel)', borderRight: '1px solid var(--line2)', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 12 };
+// Buttons + search stay pinned; only the symbol list below scrolls.
+const palHeader: React.CSSProperties = { flex: '0 0 auto', paddingBottom: 10, borderBottom: '1px solid var(--line)' };
+const palScroll: React.CSSProperties = { flex: '1 1 auto', overflowY: 'auto', minHeight: 0, marginRight: -6, paddingRight: 6 };
 const primaryBtn: React.CSSProperties = { width: '100%', background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '9px 11px', fontWeight: 600, fontSize: 12, marginBottom: 8, cursor: 'pointer' };
 const palHead: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1.6, color: 'var(--faint)', textTransform: 'uppercase', margin: '15px 4px 8px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' };
 const palSearch: React.CSSProperties = { width: '100%', boxSizing: 'border-box', background: 'var(--panel2)', border: '1px solid var(--line2)', color: 'var(--ink)', padding: '7px 9px', borderRadius: 7, fontSize: 12, margin: '4px 0 4px' };

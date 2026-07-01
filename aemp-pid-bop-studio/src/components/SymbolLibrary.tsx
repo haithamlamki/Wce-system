@@ -9,6 +9,35 @@ import { useProject } from '../state/ProjectContext';
 import { SYM, type SymbolDef } from '../lib/symbols';
 import SymbolDrawer from './SymbolDrawer';
 
+/** True for raster image files we can embed as an <image> (PNG/JPG/GIF/WebP). */
+function isRasterImage(file: File): boolean {
+  return /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name) || file.type.startsWith('image/');
+}
+
+/** Read a raster image into inner-SVG markup wrapping it as an <image> (base64 data URI). */
+function imageFileToSymbol(file: File): Promise<{ svg: string; w: number; h: number }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read the image file.'));
+    reader.onload = () => {
+      const dataUrl = String(reader.result);
+      const img = new Image();
+      img.onerror = () => reject(new Error('That image could not be decoded.'));
+      img.onload = () => {
+        // Normalise the symbol canvas so the longest side is ~100 units.
+        const max = Math.max(img.naturalWidth, img.naturalHeight) || 100;
+        const scale = 100 / max;
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const svg = `<image href="${dataUrl}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>`;
+        resolve({ svg, w, h });
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 /** Pull inner SVG markup + size out of an uploaded .svg or single-symbol .json. */
 function parseSymbolFile(text: string, fileName: string, fallback?: SymbolDef): { svg: string; w: number; h: number } | null {
   let w = fallback?.w ?? 100, h = fallback?.h ?? 70;
@@ -56,6 +85,12 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
 
   async function onImport(file: File) {
     try {
+      if (isRasterImage(file)) {
+        const parsed = await imageFileToSymbol(file);
+        addCustomSymbol({ name: file.name.replace(/\.[^.]+$/, ''), cat: 'Custom', w: parsed.w, h: parsed.h, color: '#3a4654', svg: parsed.svg });
+        refresh();
+        return;
+      }
       const text = await file.text();
       if (file.name.toLowerCase().endsWith('.svg')) {
         const parsed = parseSymbolFile(text, file.name);
@@ -79,7 +114,7 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
   async function onReplace(key: string, file: File) {
     try {
       const cur = SYM[key];
-      const parsed = parseSymbolFile(await file.text(), file.name, cur);
+      const parsed = isRasterImage(file) ? await imageFileToSymbol(file) : parseSymbolFile(await file.text(), file.name, cur);
       if (!parsed) { alert('Could not read symbol artwork from that file.'); return; }
       updateCustomSymbol(key, { name: cur?.name || key, cat: cur?.cat || 'Custom', w: parsed.w, h: parsed.h, color: cur?.color || '#3a4654', svg: parsed.svg });
       refresh();
@@ -109,7 +144,7 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
         <div style={{ fontSize: 9, color: kind === 'built-in' ? 'var(--faint)' : 'var(--accent)', textAlign: 'center', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{kind}</div>
         <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
           <button style={smallBtn} title="Edit name / size / shapes" onClick={() => setDrawer({ key })}>edit</button>
-          <button style={smallBtn} title="Replace artwork with an uploaded SVG" onClick={() => { replaceKey.current = key; replaceRef.current?.click(); }}>upload</button>
+          <button style={smallBtn} title="Replace artwork with an uploaded SVG or PNG image" onClick={() => { replaceKey.current = key; replaceRef.current?.click(); }}>upload</button>
           <button style={{ ...smallBtn, color: 'var(--red)' }} title={key.startsWith('custom_') ? 'Delete symbol' : 'Remove from library'} onClick={() => onDelete(key)}>del</button>
         </div>
       </div>
@@ -134,9 +169,9 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
           {hiddenEntries.length > 0 && (
             <button style={ghost} onClick={() => setShowHidden((v) => !v)}>{showHidden ? 'Hide removed' : `Show hidden (${hiddenEntries.length})`}</button>
           )}
-          <input ref={fileRef} type="file" accept=".json,.svg" style={{ display: 'none' }}
+          <input ref={fileRef} type="file" accept=".json,.svg,.png,.jpg,.jpeg,.gif,.webp,image/*" style={{ display: 'none' }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ''; }} />
-          <input ref={replaceRef} type="file" accept=".json,.svg" style={{ display: 'none' }}
+          <input ref={replaceRef} type="file" accept=".json,.svg,.png,.jpg,.jpeg,.gif,.webp,image/*" style={{ display: 'none' }}
             onChange={(e) => { const f = e.target.files?.[0]; const k = replaceKey.current; if (f && k) onReplace(k, f); replaceKey.current = null; e.target.value = ''; }} />
         </div>
 
