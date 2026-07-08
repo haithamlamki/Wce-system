@@ -42,4 +42,9 @@ describe('applyMap', () => {
     const rows = Array.from({ length: MAX_IMPORT_ROWS + 1 }, (_, i) => ({ tag: `V${i}`, type: '', serial: '', system: '' }));
     expect(() => applyMap(rows, map)).toThrow(`Too many rows to import (max ${MAX_IMPORT_ROWS}).`);
   });
+
+  it('does not throw at exactly the import cap boundary', () => {
+    const rows = Array.from({ length: MAX_IMPORT_ROWS }, (_, i) => ({ tag: `V${i}`, type: '', serial: '', system: '' }));
+    expect(() => applyMap(rows, map)).not.toThrow();
+  });
 });

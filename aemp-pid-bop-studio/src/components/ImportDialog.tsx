@@ -35,7 +35,13 @@ export default function ImportDialog({ rows, headers, existingTags, onCancel, on
   });
   const [dup, setDup] = useState<DupMode>('skip');
 
-  const mapped = useMemo(() => applyMap(rows, map), [rows, map]);
+  const { mapped, mapError } = useMemo(() => {
+    try {
+      return { mapped: applyMap(rows, map), mapError: null as string | null };
+    } catch (e) {
+      return { mapped: [] as MappedRow[], mapError: (e as Error).message };
+    }
+  }, [rows, map]);
   const dupCount = useMemo(
     () => mapped.filter((r) => r.tag && existingTags.has(r.tag)).length,
     [mapped, existingTags],
@@ -55,6 +61,11 @@ export default function ImportDialog({ rows, headers, existingTags, onCancel, on
         </div>
 
         <div style={{ padding: '14px 18px', overflowY: 'auto' }}>
+          {mapError && (
+            <div style={{ marginBottom: 14, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--red)', color: 'var(--red)', fontSize: 12.5 }}>
+              {mapError}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 18px' }}>
             {IMPORT_FIELDS.map((f) => (
               <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

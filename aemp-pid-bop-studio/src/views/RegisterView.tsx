@@ -13,7 +13,7 @@ import { replaceRigEquipment, type EquipmentInput } from '../lib/cloud';
 import { exportEquipmentCsv } from '../lib/exporters';
 import { exportWorkbook } from '../lib/xlsxExport';
 import ImportDialog, { type DupMode } from '../components/ImportDialog';
-import type { MappedRow } from '../lib/importMap';
+import { MAX_IMPORT_ROWS, type MappedRow } from '../lib/importMap';
 import type { Component, InspectionStatus } from '../types';
 
 const nz = (v: string) => (v && v.trim() ? v : null);
@@ -72,6 +72,7 @@ export default function RegisterView() {
         ? await parseXlsx(await file.arrayBuffer())
         : parseCsv(await file.text());
       if (!rows.length) { alert('No rows found in that file.'); return; }
+      if (rows.length > MAX_IMPORT_ROWS) throw new Error(`Too many rows to import (max ${MAX_IMPORT_ROWS}).`);
       const headers = Object.keys(rows[0]);
       setImportData({ rows, headers });
     } catch (e) {

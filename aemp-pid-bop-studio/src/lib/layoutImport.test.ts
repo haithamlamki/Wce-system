@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_IMPORT_ROWS, parseDrawing } from './layoutImport';
+import { MAX_DRAWING_CHARS, MAX_IMPORT_ROWS, parseDrawing } from './layoutImport';
 
 describe('parseDrawing', () => {
   it('throws a clean parse error on malformed JSON, not a raw SyntaxError', () => {
@@ -52,5 +52,10 @@ describe('parseDrawing', () => {
     const tmpl = Array.from({ length: MAX_IMPORT_ROWS + 1 }, (_, i) => ({ type: 'gate', tag: `V${i}`, x: 0, y: 0, rot: 0 }));
     const json = JSON.stringify({ template: tmpl, pipes: [] });
     expect(() => parseDrawing(json)).toThrow(`Drawing has too many items (max ${MAX_IMPORT_ROWS}).`);
+  });
+
+  it('throws a clean size error for a drawing over the char cap', () => {
+    const big = 'x'.repeat(MAX_DRAWING_CHARS + 1);
+    expect(() => parseDrawing(big)).toThrow('Drawing file too large.');
   });
 });
