@@ -18,7 +18,8 @@ export default function UnitsPanel() {
   const [openFor, setOpenFor] = useState<string | null>(null);
   const [diagrams, setDiagrams] = useState<ProjectSummary[] | null>(null);
 
-  useEffect(() => { if (showUnits) { refreshUnits(); setMsg(''); } /* eslint-disable-next-line */ }, [showUnits]);
+  // refreshUnits is a stable useCallback ([] deps in ProjectContext).
+  useEffect(() => { if (showUnits) { refreshUnits(); setMsg(''); } }, [showUnits, refreshUnits]);
 
   if (!showUnits) return null;
   const close = () => setShowUnits(false);

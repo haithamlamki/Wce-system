@@ -4,28 +4,37 @@
 //  exposes the actions that wrap the extracted engine modules. Swap the
 //  in-memory store for AEMP server persistence in Phase-1 (PRD FR-59) without
 //  touching the views.
+//
+//  F19: decomposed into focused hooks under ./hooks — this file now composes
+//  them (history, selection, units, symbol library) plus the node/edge CRUD,
+//  persistence, cloud, and annotation logic that didn't factor out as cleanly,
+//  and assembles the single memoized context value (F15) the views consume
+//  via useProject(). The public useProject()/useAuth() facades are unchanged.
 // ============================================================================
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Annotation, Component, Edge, PipeKind, PipeSeg, PortName, Project, TemplateItem } from '../types';
-import { buildFromRegister, buildMaster, importFromAEMP, rigData, seedProjectFromTemplate, type AempConfig } from '../lib/aemp';
+import { buildFromRegister, buildMaster, importFromAEMP, rigData, type AempConfig } from '../lib/aemp';
 import { buildBopStack, seedBopSeq, type HoleSection } from '../lib/bop';
-import { box, snap } from '../lib/geometry';
-import { nextSeqSeed, withFreshIds } from '../lib/idSeq';
+import { snap } from '../lib/geometry';
 import { canEditForRole } from '../lib/roles';
-import { SYM, SYM_ORDER, type SymbolDef, type SymbolKey } from '../lib/symbols';
-import { mergeCustomSymbols, newCustomKey, registerBuiltins, unregisterSymbol } from '../lib/customSymbols';
-import { sanitizeSvg, safeColor } from '../lib/sanitizeSvg';
-import { listSymbols, upsertSymbol, deleteSymbolRow, setSymbolHidden, mergeLibraryRows, readSymbolCache, type SymbolRow } from '../lib/symbolStore';
+import { SYM, type SymbolKey } from '../lib/symbols';
+import { mergeCustomSymbols } from '../lib/customSymbols';
 import { REWARDS, rewardStats } from '../lib/rewards';
 import { validate, type Issue } from '../lib/validation';
-
-export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vmiddle' | 'bottom';
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
 import { autosave, openFromFile, restore, saveToFile } from '../lib/persistence';
-import { addUnit as cloudAddUnit, deleteUnit as cloudDeleteUnit, fetchLatestProject, fetchLatestPublished, fetchUnitTemplate, isSupabaseConfigured, listProjectsCloud, listProjectVersions, listUnits, listUnitTemplates, loadProjectCloud, loadProjectVersion, renameUnit as cloudRenameUnit, saveProjectCloud, saveUnitTemplate as cloudSaveUnitTemplate, type ProjectSummary, type ProjectVersionSummary } from '../lib/cloud';
-import { RIGS } from '../lib/aemp';
+import {
+  isSupabaseConfigured, listProjectsCloud, listProjectVersions, loadProjectCloud, loadProjectVersion,
+  saveProjectCloud, type ProjectSummary, type ProjectVersionSummary,
+} from '../lib/cloud';
 import { useAuth } from './AuthContext';
+import { nextId, seedSeqFromProject } from './idSequence';
+import { useHistory } from './hooks/useHistory';
+import { useSelection, type AlignMode } from './hooks/useSelection';
+import { useUnits } from './hooks/useUnits';
+import { useSymbolLibrary } from './hooks/useSymbolLibrary';
 
+export type { AlignMode };
 export type Mode = 'admin' | 'field';
 
 function emptyProject(): Project {
@@ -38,17 +47,6 @@ function emptyProject(): Project {
     rewards: { spent: 0, redeemed: [] },
     revision: 0,
   };
-}
-
-let seq = 1000;
-const nextId = (p: string) => `${p}${seq++}`;
-
-/** Reseed the id counter (F8) from a project brought in from an external
- *  source (restore / open / cloud-load / version-restore / unit switch /
- *  template) so freshly-created ids can't collide with ids it already
- *  contains. Never lowers the counter. */
-function seedSeqFromProject(project: Project | null | undefined): void {
-  seq = nextSeqSeed(project, seq);
 }
 
 function newNode(type: SymbolKey, x: number, y: number): Component {
@@ -203,8 +201,8 @@ interface ProjectCtx {
   toggleLockSelection: () => void;
 
   // custom symbols (Symbol Library / Drawer)
-  addCustomSymbol: (def: SymbolDef) => string;
-  updateCustomSymbol: (key: string, def: SymbolDef) => void;
+  addCustomSymbol: (def: import('../lib/symbols').SymbolDef) => string;
+  updateCustomSymbol: (key: string, def: import('../lib/symbols').SymbolDef) => void;
   deleteCustomSymbol: (key: string) => void;
   /** Hide a built-in symbol from the library/palette (drops any override). */
   hideSymbol: (key: string) => void;
@@ -235,21 +233,20 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   });
   const [project, setProject] = useState<Project>(() => restored ?? emptyProject());
   const [mode, setMode] = useState<Mode>('admin');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [clipboard, setClipboard] = useState<Component[]>([]);
   // first open (nothing autosaved) → show the date-first onboarding modal (FR-1)
   const [showOnboard, setShowOnboard] = useState(() => restored === null);
   const [cloudId, setCloudId] = useState<string | null>(null);
-  // global (company-wide) symbol library — merged into SYM on mount (FR: shared
-  // Symbol library). Additive to project.customSymbols so offline is unaffected.
-  const [globalHidden, setGlobalHidden] = useState<string[]>([]);
   // register → diagram focus request (FR-27): bump seq to re-center on focusId
   const [focusId, setFocusId] = useState<string | null>(null);
   const [focusSeq, setFocusSeq] = useState(0);
 
-  // primary selection (last) for single-target convenience + back-compat
-  const selectedId = selectedIds.length ? selectedIds[selectedIds.length - 1] : null;
-  const setSelectedId = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
+  // ---- multi-selection + clipboard + group transforms (F19: useSelection) ---
+  const {
+    selectedId, setSelectedId, selected, selectedIds, setSelectedIds, toggleSelect, clearSelection, selectAll,
+    clipboardCount, copySelection, cutSelection, pasteClipboard, deleteSelection, duplicateSelection,
+    rotateSelection, flipSelection, scaleSelection, moveMany, alignSelection, distributeSelection,
+    groupSelection, ungroupSelection, toggleLockSelection,
+  } = useSelection(project, setProject);
 
   // debounced autosave on every project change (FR-58)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -259,64 +256,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [project]);
 
-  // ---- undo / redo history (coalesces bursts like a drag into one step) ----
-  const past = useRef<Project[]>([]);
-  const future = useRef<Project[]>([]);
-  const baseline = useRef<Project>(project);
-  const timeTravel = useRef(false);
-  const sealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [, setHistVer] = useState(0);
-
-  const sealNow = useCallback(() => {
-    if (sealTimer.current) { clearTimeout(sealTimer.current); sealTimer.current = null; }
-    if (project !== baseline.current) {
-      past.current.push(baseline.current);
-      if (past.current.length > 100) past.current.shift();
-      future.current = [];
-      baseline.current = project;
-      setHistVer((v) => v + 1);
-    }
-  }, [project]);
-
-  useEffect(() => {
-    if (timeTravel.current) { timeTravel.current = false; baseline.current = project; return; }
-    if (sealTimer.current) clearTimeout(sealTimer.current);
-    sealTimer.current = setTimeout(sealNow, 350);
-    return () => { if (sealTimer.current) clearTimeout(sealTimer.current); };
-  }, [project, sealNow]);
-
-  const undo = useCallback(() => {
-    sealNow();
-    if (!past.current.length) return;
-    const prev = past.current.pop()!;
-    future.current.push(baseline.current);
-    baseline.current = prev;
-    timeTravel.current = true;
-    setSelectedIds([]);
-    setProject(prev);
-    setHistVer((v) => v + 1);
-  }, [sealNow]);
-
-  const redo = useCallback(() => {
-    if (!future.current.length) return;
-    const next = future.current.pop()!;
-    past.current.push(baseline.current);
-    baseline.current = next;
-    timeTravel.current = true;
-    setSelectedIds([]);
-    setProject(next);
-    setHistVer((v) => v + 1);
-  }, []);
+  // ---- undo / redo history (F19: useHistory) --------------------------------
+  // a jump in time shouldn't leave a stale selection pointing at nodes from
+  // the other timeline — clear it, same as the old inline undo/redo did.
+  const onTimeTravel = useCallback(() => setSelectedIds([]), [setSelectedIds]);
+  const { undo, redo, canUndo, canRedo } = useHistory(project, setProject, onTimeTravel);
 
   const refDate = useMemo(() => {
     const d = new Date(project.meta.date + 'T00:00');
     return isNaN(d.getTime()) ? new Date() : d;
   }, [project.meta.date]);
-
-  const selected = useMemo(
-    () => (selectedIds.length === 1 ? project.nodes.find((n) => n.id === selectedIds[0]) ?? null : null),
-    [project.nodes, selectedIds],
-  );
 
   // F17: validate() walks the whole project graph, so don't re-run it on every
   // tick of a drag/edit burst — debounce ~250ms after the project settles.
@@ -328,48 +277,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [project]);
 
-  const hiddenSymbols = useMemo(
-    () => Array.from(new Set([...(project.hiddenSymbols ?? []), ...globalHidden])),
-    [project.hiddenSymbols, globalHidden],
-  );
-  const canEditLibrary = canEditForRole(role);
-
-  // keep the shared SYM registry in sync with the project's custom symbols
-  // (covers open/load/cloud-restore; live edits also mutate SYM directly)
-  useEffect(() => { mergeCustomSymbols(project.customSymbols); }, [project.customSymbols]);
-
-  // lazy-load the Rig 103 symbol pack (incl. logos + P&ID reference) as built-ins
-  // on startup — kept out of the initial bundle (it's a large chunk).
-  const [, bumpSyms] = useState(0);
-  useEffect(() => {
-    let active = true;
-    import('../lib/data/rig103-symbols')
-      .then((m) => { if (active && registerBuiltins(m.RIG103_SYMBOLS)) bumpSyms((v) => v + 1); })
-      .catch(() => { /* optional pack */ });
-    return () => { active = false; };
-  }, []);
-
-  // load the shared symbol library: apply the offline cache immediately (so the
-  // full catalog is present offline / before the network settles), then refresh
-  // from the DB. Both merge onto SYM preserving built-in-only fields.
-  useEffect(() => {
-    let active = true;
-    const apply = (rows: SymbolRow[]) => {
-      if (!active || !rows.length) return;
-      const { merged, hidden } = mergeLibraryRows(SYM, rows);
-      for (const [k, d] of Object.entries(merged)) {
-        SYM[k] = d;
-        if (!SYM_ORDER.includes(d.cat)) SYM_ORDER.push(d.cat);
-      }
-      setGlobalHidden(hidden);
-      bumpSyms((v) => v + 1);            // re-render palette/library
-    };
-    apply(readSymbolCache());            // instant + offline
-    listSymbols()
-      .then(apply)
-      .catch(() => { /* offline or table absent — cache already applied */ });
-    return () => { active = false; };
-  }, []);
+  // ---- shared + custom symbol library (F19: useSymbolLibrary) ---------------
+  const {
+    hiddenSymbols, canEditLibrary, addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol,
+  } = useSymbolLibrary(role, project.customSymbols, project.hiddenSymbols, setProject);
 
   const bump = (p: Project, patch: Partial<Project>): Project => ({ ...p, ...patch, revision: (p.revision ?? 0) + 1 });
 
@@ -378,14 +289,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     const { nodes, pipes } = d.byRegister ? buildFromRegister(d.register, d.template) : buildMaster(d.template, d.register, d.pipes);
     setSelectedId(null);
     setProject((p) => bump(p, { nodes, pipes, edges: [] }));
-  }, [project.meta.rig]);
+  }, [project.meta.rig, setSelectedId]);
 
   const loadLayout = useCallback((template: TemplateItem[], pipes: PipeSeg[]) => {
     const { nodes } = buildMaster(template, RIG303_EQUIPMENT);
     setSelectedId(null);
     setProject((p) => bump(p, { nodes, pipes, edges: [] }));
     return nodes.length;
-  }, []);
+  }, [setSelectedId]);
 
   const importAEMP = useCallback(async (config?: AempConfig) => {
     const { assets, live } = await importFromAEMP(config);
@@ -393,7 +304,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setSelectedId(null);
     setProject((p) => bump(p, { nodes, pipes, edges: [] }));
     return live;
-  }, []);
+  }, [setSelectedId]);
 
   const buildBop = useCallback((section: HoleSection) => {
     setProject((p) => {
@@ -408,7 +319,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setProject((p) => ({ ...p, nodes: [...p.nodes, n] }));
     setSelectedId(n.id);
     return n.id;
-  }, []);
+  }, [setSelectedId]);
 
   const updateNode = useCallback((id: string, patch: Partial<Component>) => {
     setProject((p) => ({ ...p, nodes: p.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) }));
@@ -428,7 +339,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       };
     });
     setSelectedIds((ids) => ids.filter((x) => x !== id));
-  }, []);
+  }, [setSelectedIds]);
 
   const duplicateNode = useCallback((id: string) => {
     // F11: honest duplicate — only mint an id (and select it) when a source
@@ -446,7 +357,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     });
     setSelectedId(newId);
     return newId;
-  }, [project.nodes]);
+  }, [project.nodes, setSelectedId]);
 
   // swap symbol type, keeping all inspection/identity data (FR-16);
   // applyToType swaps every item of the original type (FR-18)
@@ -573,128 +484,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     });
     setSelectedId(j.id);
     return j.id;
-  }, []);
-
-  // ---- multi-selection -------------------------------------------------------
-  const toggleSelect = useCallback((id: string) =>
-    setSelectedIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])), []);
-  const clearSelection = useCallback(() => setSelectedIds([]), []);
-  const selectAll = useCallback(() => setSelectedIds(project.nodes.map((n) => n.id)), [project.nodes]);
-
-  const moveMany = useCallback((updates: Array<{ id: string; x: number; y: number }>) => {
-    if (!updates.length) return;
-    const map = new Map(updates.map((u) => [u.id, u]));
-    setProject((p) => ({ ...p, nodes: p.nodes.map((n) => { if (n.locked) return n; const u = map.get(n.id); return u ? { ...n, x: u.x, y: u.y } : n; }) }));
-  }, []);
-
-  // ---- clipboard + group transforms -----------------------------------------
-  const copySelection = useCallback(() => {
-    const sel = new Set(selectedIds);
-    setClipboard(project.nodes.filter((n) => sel.has(n.id)).map((n) => ({ ...n })));
-  }, [project.nodes, selectedIds]);
-
-  const deleteSelection = useCallback(() => {
-    const sel = new Set(selectedIds);
-    if (!sel.size) return;
-    setProject((p) => {
-      // locked items survive deletion (report §3)
-      const del = new Set(p.nodes.filter((n) => sel.has(n.id) && !n.locked).map((n) => n.id));
-      if (!del.size) return p;
-      return {
-        ...p,
-        nodes: p.nodes.filter((n) => !del.has(n.id)),
-        edges: p.edges.filter((e) => !del.has(e.from) && !del.has(e.to)),
-      };
-    });
-    setSelectedIds([]);
-  }, [selectedIds]);
-
-  const cutSelection = useCallback(() => { copySelection(); deleteSelection(); }, [copySelection, deleteSelection]);
-
-  const pasteClipboard = useCallback((dx = 24, dy = 24) => {
-    if (!clipboard.length) return;
-    // F11: precompute the copies (ids minted once) BEFORE setProject so the
-    // reducer is pure.
-    const copies = withFreshIds(clipboard, () => nextId('n'), dx, dy);
-    const newIds = copies.map((c) => c.id);
-    setProject((p) => ({ ...p, nodes: [...p.nodes, ...copies] }));
-    setSelectedIds(newIds);
-  }, [clipboard]);
-
-  const duplicateSelection = useCallback(() => {
-    if (!selectedIds.length) return;
-    // F11: precompute from the current nodes/selection closure BEFORE
-    // setProject — no nested setProject-inside-setSelectedIds, no nextId
-    // inside the reducer.
-    const set = new Set(selectedIds);
-    const copies = withFreshIds(project.nodes.filter((n) => set.has(n.id)), () => nextId('n'), 24, 24);
-    if (!copies.length) return;
-    const newIds = copies.map((c) => c.id);
-    setProject((p) => ({ ...p, nodes: [...p.nodes, ...copies] }));
-    setSelectedIds(newIds);
-  }, [project.nodes, selectedIds]);
-
-  const rotateSelection = useCallback((applyToType = false) => {
-    setProject((p) => {
-      const set = new Set(selectedIds);
-      const types = new Set(p.nodes.filter((n) => set.has(n.id)).map((n) => n.type));
-      return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) || (applyToType && types.has(n.type)) ? { ...n, rot: ((n.rot || 0) + 90) % 360 } : n)) };
-    });
-  }, [selectedIds]);
-
-  const flipSelection = useCallback(() => {
-    setProject((p) => { const set = new Set(selectedIds); return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, flip: !n.flip } : n)) }; });
-  }, [selectedIds]);
-
-  const scaleSelection = useCallback((scale: number) => {
-    const s = Math.max(0.4, Math.min(3, scale));
-    setProject((p) => { const set = new Set(selectedIds); return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, scale: s } : n)) }; });
-  }, [selectedIds]);
-
-  const alignSelection = useCallback((mode: AlignMode) => {
-    setProject((p) => {
-      const set = new Set(selectedIds);
-      const dims = p.nodes.filter((n) => set.has(n.id)).map((n) => ({ n, b: box(n) }));
-      if (dims.length < 2) return p;
-      const minX = Math.min(...dims.map((d) => d.n.x));
-      const maxR = Math.max(...dims.map((d) => d.n.x + d.b.w));
-      const minY = Math.min(...dims.map((d) => d.n.y));
-      const maxB = Math.max(...dims.map((d) => d.n.y + d.b.h));
-      const cx = (minX + maxR) / 2, cy = (minY + maxB) / 2;
-      const upd = new Map<string, { x: number; y: number }>();
-      for (const { n, b } of dims) {
-        let x = n.x, y = n.y;
-        if (mode === 'left') x = minX;
-        else if (mode === 'right') x = maxR - b.w;
-        else if (mode === 'hcenter') x = cx - b.w / 2;
-        else if (mode === 'top') y = minY;
-        else if (mode === 'bottom') y = maxB - b.h;
-        else if (mode === 'vmiddle') y = cy - b.h / 2;
-        upd.set(n.id, { x: Math.round(x), y: Math.round(y) });
-      }
-      return { ...p, nodes: p.nodes.map((n) => { const u = upd.get(n.id); return u ? { ...n, ...u } : n; }) };
-    });
-  }, [selectedIds]);
-
-  const distributeSelection = useCallback((axis: 'h' | 'v') => {
-    setProject((p) => {
-      const set = new Set(selectedIds);
-      const dims = p.nodes.filter((n) => set.has(n.id)).map((n) => ({ n, b: box(n) }));
-      if (dims.length < 3) return p;
-      const cOf = (d: { n: Component; b: { w: number; h: number } }) =>
-        axis === 'h' ? d.n.x + d.b.w / 2 : d.n.y + d.b.h / 2;
-      dims.sort((a, b) => cOf(a) - cOf(b));
-      const c0 = cOf(dims[0]), c1 = cOf(dims[dims.length - 1]);
-      const step = (c1 - c0) / (dims.length - 1);
-      const upd = new Map<string, { x: number; y: number }>();
-      dims.forEach((d, i) => {
-        if (i === 0 || i === dims.length - 1) return;
-        const c = c0 + step * i;
-        upd.set(d.n.id, axis === 'h' ? { x: Math.round(c - d.b.w / 2), y: d.n.y } : { x: d.n.x, y: Math.round(c - d.b.h / 2) });
-      });
-      return { ...p, nodes: p.nodes.map((n) => { const u = upd.get(n.id); return u ? { ...n, ...u } : n; }) };
-    });
-  }, [selectedIds]);
+  }, [setSelectedId]);
 
   const saveProject = useCallback(() => saveToFile(project), [project]);
   const openProject = useCallback(async (file: File) => {
@@ -702,7 +492,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     seedSeqFromProject(loaded); // F8
     setSelectedId(null);
     setProject(loaded);
-  }, []);
+  }, [setSelectedId]);
   const updateMeta = useCallback((patch: Partial<Project['meta']>) => {
     setProject((p) => ({ ...p, meta: { ...p.meta, ...patch } }));
   }, []);
@@ -730,12 +520,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const loadCloud = useCallback(async (id: string) => {
     const loaded = await loadProjectCloud(id);
     if (loaded) { seedSeqFromProject(loaded); setSelectedId(null); setCloudId(id); setProject(loaded); } // F8
-  }, []);
+  }, [setSelectedId]);
   const listVersions = useCallback((projectId: string) => listProjectVersions(projectId), []);
   const restoreVersion = useCallback(async (versionId: string) => {
     const loaded = await loadProjectVersion(versionId);
     if (loaded) { seedSeqFromProject(loaded); setSelectedId(null); setProject(loaded); } // F8
-  }, []);
+  }, [setSelectedId]);
 
   // ---- draft / publish workflow ---------------------------------------------
   const saveWithStatus = useCallback(async (status: 'draft' | 'published', note?: string) => {
@@ -756,116 +546,13 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const clearCanvas = useCallback(() => {
     setSelectedIds([]);
     setProject((p) => bump(p, { nodes: [], pipes: [], edges: [], annotations: [] }));
-  }, []);
+  }, [setSelectedIds]);
 
-  // ---- units (user-manageable rigs) -----------------------------------------
-  // Each unit owns a page/drawing (a `projects` row keyed by rig_name). The list
-  // comes from the cloud `units` table (admin-managed), merged with the built-in
-  // rigs so their master templates stay available; falls back to built-ins when
-  // the cloud is off or migration 0008 hasn't been applied.
-  const [units, setUnits] = useState<string[]>(() => Object.keys(RIGS));
-  const [showUnits, setShowUnits] = useState(false);
-  const [unitTemplates, setUnitTemplates] = useState<string[]>([]);
-
-  const refreshUnits = useCallback(async () => {
-    const builtins = Object.keys(RIGS);
-    if (!isSupabaseConfigured) { setUnits(builtins); return; }
-    try {
-      const names = await listUnits();
-      setUnits(Array.from(new Set([...names, ...builtins])).sort());
-    } catch { setUnits(builtins); }
-  }, []);
-  const refreshUnitTemplates = useCallback(async () => {
-    if (!isSupabaseConfigured) { setUnitTemplates([]); return; }
-    try { setUnitTemplates(await listUnitTemplates()); } catch { setUnitTemplates([]); }
-  }, []);
-  useEffect(() => { refreshUnits(); refreshUnitTemplates(); }, [refreshUnits, refreshUnitTemplates]);
-
-  // Switch the active unit and load its drawing: field users see the latest
-  // PUBLISHED sheet; privileged users get the latest saved row (so Save upserts
-  // it), or a fresh master if the unit has no drawing yet.
-  const switchUnit = useCallback(async (name: string) => {
-    setSelectedId(null);
-    if (role === 'field') {
-      let pub: Project | null = null;
-      try { pub = await fetchLatestPublished(name); } catch { /* none yet */ }
-      if (pub) seedSeqFromProject(pub); // F8
-      setCloudId(null);
-      setProject((p) => pub ?? { ...p, meta: { ...p.meta, rig: name }, nodes: [], pipes: [], edges: [], annotations: [] });
-      return;
-    }
-    let row: { id: string; data: Project } | null = null;
-    try { row = await fetchLatestProject(name); } catch { /* none yet */ }
-    if (row) { seedSeqFromProject(row.data); setCloudId(row.id); setProject(row.data); return; } // F8
-    // no saved drawing — seed from the unit's saved template, else its built-in
-    // master (known rig), else an empty page.
-    let tpl: Project | null = null;
-    try { tpl = await fetchUnitTemplate(name); } catch { /* none */ }
-    if (tpl) seedSeqFromProject(tpl); // F8 — template carries over its own existing ids
-    setCloudId(null);
-    setProject((p) => {
-      if (tpl) return seedProjectFromTemplate(tpl, name, p);
-      const meta = { ...p.meta, rig: name };
-      if (RIGS[name]) {
-        const d = rigData(name);
-        const { nodes, pipes } = d.byRegister ? buildFromRegister(d.register, d.template) : buildMaster(d.template, d.register, d.pipes);
-        return { ...p, meta, nodes, pipes, edges: [], annotations: [], status: 'draft', publishedAt: undefined, revision: (p.revision ?? 0) + 1 };
-      }
-      return { ...p, meta, nodes: [], pipes: [], edges: [], annotations: [], status: 'draft', publishedAt: undefined };
-    });
-  }, [role]);
-
-  const addUnit = useCallback(async (name: string) => {
-    const n = name.trim(); if (!n) return;
-    await cloudAddUnit(n); await refreshUnits();
-  }, [refreshUnits]);
-  const renameUnit = useCallback(async (oldName: string, newName: string) => {
-    const n = newName.trim(); if (!n || n === oldName) return;
-    await cloudRenameUnit(oldName, n); await refreshUnits();
-    setProject((p) => (p.meta.rig === oldName ? { ...p, meta: { ...p.meta, rig: n } } : p));
-  }, [refreshUnits]);
-  const removeUnit = useCallback(async (name: string) => {
-    await cloudDeleteUnit(name); await refreshUnits();
-  }, [refreshUnits]);
-
-  // Start a brand-new draft for `rig` from its saved template, else its built-in
-  // master, else an empty canvas. New draft (cloudId null) so Save creates a row.
-  const startFromTemplate = useCallback(async (rig: string) => {
-    let tpl: Project | null = null;
-    try { tpl = await fetchUnitTemplate(rig); } catch { /* none */ }
-    if (tpl) seedSeqFromProject(tpl); // F8 — template carries over its own existing ids
-    setSelectedId(null);
-    setCloudId(null);
-    setProject((p) => {
-      if (tpl) return seedProjectFromTemplate(tpl, rig, p);
-      const meta = { ...p.meta, rig };
-      if (RIGS[rig]) {
-        const d = rigData(rig);
-        const { nodes, pipes } = d.byRegister ? buildFromRegister(d.register, d.template) : buildMaster(d.template, d.register, d.pipes);
-        return { ...p, meta, nodes, pipes, edges: [], annotations: [], status: 'draft', publishedAt: undefined, revision: (p.revision ?? 0) + 1 };
-      }
-      return { ...p, meta, nodes: [], pipes: [], edges: [], annotations: [], status: 'draft', publishedAt: undefined };
-    });
-  }, []);
-
-  // Admin: save the current diagram as `rig`'s reusable template (RLS-guarded).
-  const saveUnitTemplate = useCallback(async (rig?: string) => {
-    await cloudSaveUnitTemplate(rig ?? project.meta.rig, project);
-    await refreshUnitTemplates();
-  }, [project, refreshUnitTemplates]);
-
-  // Saved diagrams (projects) for one unit, most-recent first.
-  const listUnitDiagrams = useCallback((rig: string) => listProjectsCloud(rig), []);
-
-  // End users load their rig's latest PUBLISHED final sheet (read-only).
-  useEffect(() => {
-    if (role !== 'field' || !authEnabled || !rig) return;
-    let active = true;
-    fetchLatestPublished(rig)
-      .then((p) => { if (active && p) { setSelectedId(null); setProject(p); } })
-      .catch(() => { /* no published sheet yet */ });
-    return () => { active = false; };
-  }, [role, rig, authEnabled]);
+  // ---- units (user-manageable rigs) (F19: useUnits) --------------------------
+  const {
+    units, refreshUnits, switchUnit, addUnit, renameUnit, removeUnit, showUnits, setShowUnits,
+    unitTemplates, refreshUnitTemplates, startFromTemplate, saveUnitTemplate, listUnitDiagrams,
+  } = useUnits(role, rig, authEnabled, project, setProject, setCloudId, setSelectedId);
 
   // FR-27: select a node + signal the canvas to re-center on it
   const requestFocus = useCallback((id: string) => {
@@ -887,77 +574,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setProject((p) => ({ ...p, annotations: (p.annotations ?? []).filter((x) => x.id !== id) }));
   }, []);
 
-  // ---- grouping / locking (report §3) ---------------------------------------
-  const groupSelection = useCallback(() => {
-    if (selectedIds.length < 2) return;
-    const gid = nextId('g');
-    const set = new Set(selectedIds);
-    setProject((p) => ({ ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, groupId: gid } : n)) }));
-  }, [selectedIds]);
-  const ungroupSelection = useCallback(() => {
-    const set = new Set(selectedIds);
-    setProject((p) => ({ ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, groupId: undefined } : n)) }));
-  }, [selectedIds]);
-  const toggleLockSelection = useCallback(() => {
-    const set = new Set(selectedIds);
-    setProject((p) => {
-      const sel = p.nodes.filter((n) => set.has(n.id));
-      const allLocked = sel.length > 0 && sel.every((n) => n.locked);
-      return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, locked: !allLocked } : n)) };
-    });
-  }, [selectedIds]);
-
-  // ---- custom symbols (Symbol Library / Drawer) -----------------------------
-  const addCustomSymbol = useCallback((def: SymbolDef) => {
-    const key = newCustomKey(project.customSymbols ?? {});
-    const clean = { ...def, svg: sanitizeSvg(def.svg), color: safeColor(def.color), custom: true };
-    SYM[key] = clean; // make available immediately
-    setProject((p) => ({ ...p, customSymbols: { ...(p.customSymbols ?? {}), [key]: clean } }));
-    void upsertSymbol(key, clean, { custom: true, hidden: false })
-      .catch((e) => console.error('Symbol not saved to the shared library:', e));
-    return key;
-  }, [project.customSymbols]);
-
-  const updateCustomSymbol = useCallback((key: string, def: SymbolDef) => {
-    const isCustom = key.startsWith('custom_');
-    const clean = { ...def, svg: sanitizeSvg(def.svg), color: safeColor(def.color), custom: true };
-    SYM[key] = clean;
-    setProject((p) => ({ ...p, customSymbols: { ...(p.customSymbols ?? {}), [key]: clean } }));
-    void upsertSymbol(key, { ...clean, custom: isCustom }, { custom: isCustom, hidden: false })
-      .catch((e) => console.error('Symbol change not saved to the shared library:', e));
-  }, []);
-
-  const deleteCustomSymbol = useCallback((key: string) => {
-    unregisterSymbol(key);
-    setProject((p) => {
-      const next = { ...(p.customSymbols ?? {}) };
-      delete next[key];
-      return { ...p, customSymbols: next };
-    });
-    void deleteSymbolRow(key).catch((e) => console.error('Symbol not deleted from the shared library:', e));
-  }, []);
-
-  // Hide a built-in (keep SYM[key] so placed nodes still render) and drop any
-  // per-project override of it. Reversible via restoreSymbol.
-  const hideSymbol = useCallback((key: string) => {
-    const def = SYM[key];
-    setProject((p) => {
-      const custom = { ...(p.customSymbols ?? {}) };
-      delete custom[key];
-      const hidden = p.hiddenSymbols ?? [];
-      return { ...p, customSymbols: custom, hiddenSymbols: hidden.includes(key) ? hidden : [...hidden, key] };
-    });
-    setGlobalHidden((h) => (h.includes(key) ? h : [...h, key]));
-    if (def) void setSymbolHidden(key, def, true).catch((e) => console.error('Hide not saved to the shared library:', e));
-  }, []);
-
-  const restoreSymbol = useCallback((key: string) => {
-    const def = SYM[key];
-    setProject((p) => ({ ...p, hiddenSymbols: (p.hiddenSymbols ?? []).filter((k) => k !== key) }));
-    setGlobalHidden((h) => h.filter((k) => k !== key));
-    if (def) void setSymbolHidden(key, def, false).catch((e) => console.error('Restore not saved to the shared library:', e));
-  }, []);
-
   // FR-55: redeem a reward if affordable; persists in project.rewards
   const redeemReward = useCallback((id: string) => {
     const item = REWARDS.find((r) => r.id === id);
@@ -970,12 +586,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     });
   }, [refDate]);
 
-  // F15: recomputed every render (cheap) so a history seal — which bumps
-  // histVer without necessarily changing `project` itself — is still picked
-  // up by the value memo below (both are listed in its deps).
-  const canUndo = past.current.length > 0 || project !== baseline.current;
-  const canRedo = future.current.length > 0;
-
   // F15: the context value was a fresh object literal every render, so every
   // useProject() consumer re-rendered on ANY state change (mega-context).
   // Every member above is already a stable useCallback / useState setter or a
@@ -984,7 +594,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const value: ProjectCtx = useMemo(() => ({
     project, refDate, mode, setMode, selectedId, setSelectedId, selected,
     selectedIds, setSelectedIds, toggleSelect, clearSelection, selectAll,
-    clipboardCount: clipboard.length, copySelection, cutSelection, pasteClipboard,
+    clipboardCount, copySelection, cutSelection, pasteClipboard,
     deleteSelection, duplicateSelection, rotateSelection, flipSelection, scaleSelection, moveMany,
     alignSelection, distributeSelection,
     undo, redo, canUndo, canRedo,
@@ -1005,7 +615,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }), [
     project, refDate, mode, setMode, selectedId, setSelectedId, selected,
     selectedIds, setSelectedIds, toggleSelect, clearSelection, selectAll,
-    clipboard, copySelection, cutSelection, pasteClipboard,
+    clipboardCount, copySelection, cutSelection, pasteClipboard,
     deleteSelection, duplicateSelection, rotateSelection, flipSelection, scaleSelection, moveMany,
     alignSelection, distributeSelection,
     undo, redo, canUndo, canRedo,

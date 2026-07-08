@@ -8,7 +8,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProject, type Mode } from '../state/ProjectContext';
 import PropertiesPanel from '../components/PropertiesPanel';
-import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
+import { SYM, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import { safeColor } from '../lib/sanitizeSvg';
 import {
@@ -16,11 +16,13 @@ import {
   PIPE_KINDS, pipeColor, pipeParts, pipeSwatch, ports, proj, routeEdgePoints,
   screenToWorld, snap, type PipeKindDef, type View,
 } from '../lib/geometry';
-import { parseDrawing } from '../lib/layoutImport';
 import ExportDialog from '../components/ExportDialog';
 import AnnotationLayer from '../components/AnnotationLayer';
-import SymbolLibrary from '../components/SymbolLibrary';
 import SvgMarkup from '../components/SvgMarkup';
+import SymbolPalette from '../components/pid/SymbolPalette';
+import PipeTypeMenu from '../components/pid/PipeTypeMenu';
+import PipeEditMenu from '../components/pid/PipeEditMenu';
+import SelectionToolbar from '../components/pid/SelectionToolbar';
 import type { Component, Edge, PortName } from '../types';
 
 interface PortRef { id: string; port?: PortName }
@@ -84,7 +86,6 @@ export default function PidFullView() {
     if (pendingMoveRef.current) { p.moveMany(pendingMoveRef.current); pendingMoveRef.current = null; }
   }, [p]);
   useEffect(() => () => { if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current); }, []);
-  const drawingRef = useRef<HTMLInputElement | null>(null);
   const [view, setView] = useState<View>({ x: 60, y: 60, k: 1 });
   const [connect, setConnect] = useState<ConnectState | null>(null);
   const [pipeMenu, setPipeMenu] = useState<PipeMenu | null>(null);
@@ -98,10 +99,6 @@ export default function PidFullView() {
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [showWarnings, setShowWarnings] = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [palQuery, setPalQuery] = useState('');
-  const [palCollapsed, setPalCollapsed] = useState<Set<string>>(new Set());
-  const [palHover, setPalHover] = useState<SymbolKey | null>(null);
-  const [showLibrary, setShowLibrary] = useState(false);
 
   const editable = mode === 'admin' && !iso;
   // drop-shadow depth is per-node SVG filter work — only worth it on smaller
@@ -357,12 +354,16 @@ export default function PidFullView() {
   // ---- pipe editing (select / double-click to insert or branch) -------------
   // F19 (PR7 review): both are passed to EdgeG (React.memo) as onSelect/onEdit —
   // wrapped in useCallback so their identity is stable across renders (incl.
-  // every drag tick), letting EdgeG's memo actually bail. `p.clearSelection` is
+  // every drag tick), letting EdgeG's memo actually bail. `clearSelection` is
   // a stable useCallback ([] deps in ProjectContext); the setState setters are
-  // stable by React guarantee, so neither needs to be listed as a dependency.
+  // stable by React guarantee. Destructured to a plain identifier (rather than
+  // called as `p.clearSelection()`) so exhaustive-deps can track it precisely
+  // instead of asking for the whole (per-edit-unstable) `p` object — same
+  // function reference either way, just expressed so the lint rule proves it.
+  const { clearSelection } = p;
   const selectEdge = useCallback((id: string) => {
-    p.clearSelection(); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(id);
-  }, [p.clearSelection]);
+    clearSelection(); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(id);
+  }, [clearSelection]);
   const openPipeEdit = useCallback((e: React.MouseEvent, edgeId: string) => {
     // inlined equivalent of `local(e)` — that helper is a plain closure
     // recreated every render, so calling it here would drag a fresh identity
@@ -371,9 +372,9 @@ export default function PidFullView() {
     const r = svgRef.current!.getBoundingClientRect();
     const px = e.clientX - r.left, py = e.clientY - r.top;
     const w = screenToWorld(px, py, view);
-    p.clearSelection(); setPipeMenu(null); setSelectedEdgeId(edgeId);
+    clearSelection(); setPipeMenu(null); setSelectedEdgeId(edgeId);
     setPipeEdit({ edgeId, wx: w.x, wy: w.y, sx: px, sy: py });
-  }, [view, p.clearSelection]);
+  }, [view, clearSelection]);
   /** Insert a junction on the pipe at the clicked point (splits A→B into A→J→B).
    *  `inline` selects the junction for retyping to real equipment; branch leaves
    *  it as a tee ready to connect a side item. Both keep the pipe type/colour. */
@@ -431,80 +432,13 @@ export default function PidFullView() {
     p.addAnnotation({ kind: 'text', x: snap(w.x), y: snap(w.y), w: 140, h: 24, text: 'Note' });
   }
 
-  async function onImportDrawing(file: File) {
-    try {
-      const { template, pipes, source } = parseDrawing(await file.text());
-      const n = p.loadLayout(template, pipes);
-      alert(`Imported ${n} items + ${pipes.length} pipe runs (${source}). Equipment was matched to library symbols; review tags before saving.`);
-    } catch (e) {
-      alert(`Could not import drawing: ${(e as Error).message}`);
-    }
-  }
-
   const showPalette = mode === 'admin' && !iso;
   const hasNodes = project.nodes.length > 0;
   const pendingNode = (pendingId && nodeMap.get(pendingId)) ?? null;
 
   return (
     <>
-      {showPalette && (
-        <aside style={paletteStyle}>
-          <div style={palHeader}>
-            <button style={primaryBtn} onClick={p.loadMaster}>Build Full P&amp;ID</button>
-            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => p.importAEMP()}>Import from AEMP</button>
-            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => drawingRef.current?.click()}>Import drawing…</button>
-            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => setShowLibrary(true)}>⊞ Symbol library</button>
-            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--red)', marginBottom: 0 }}
-              onClick={() => { if (confirm('Clear the entire canvas — all equipment, piping and annotations?')) p.clearCanvas(); }}>Clear canvas</button>
-            <input ref={drawingRef} type="file" accept=".html,.htm,.json,.js,text/html,application/json" style={{ display: 'none' }}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportDrawing(f); e.target.value = ''; }} />
-            <input placeholder="Search symbols…" value={palQuery} onChange={(e) => setPalQuery(e.target.value)} style={palSearch} />
-          </div>
-          <div style={palScroll}>
-          {(() => {
-            const q = palQuery.trim().toLowerCase();
-            const hidden = new Set(p.project.hiddenSymbols ?? []);
-            return SYM_ORDER.map((cat) => {
-              const items = Object.entries(SYM).filter(([key, s]) => s.cat === cat && !hidden.has(key) && (!q || s.name.toLowerCase().includes(q) || key.includes(q)));
-              if (!items.length) return null;
-              const collapsed = !q && palCollapsed.has(cat);
-              return (
-                <div key={cat}>
-                  <div style={palHead} onClick={() => !q && setPalCollapsed((cs) => { const n = new Set(cs); n.has(cat) ? n.delete(cat) : n.add(cat); return n; })}>
-                    <span>{q ? '' : (collapsed ? '▸ ' : '▾ ')}{cat}</span>
-                    <span style={{ opacity: 0.6 }}>{items.length}</span>
-                  </div>
-                  {!collapsed && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      {items.map(([key, s]) => (
-                        <div key={key} title={s.name} style={palCard} draggable
-                          onDragStart={(e) => e.dataTransfer.setData('type', key)}
-                          onClick={() => placeCentre(key as SymbolKey)}
-                          onMouseEnter={() => setPalHover(key as SymbolKey)}
-                          onMouseLeave={() => setPalHover((h) => (h === key ? null : h))}>
-                          <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={44} height={36}>
-                            <SvgMarkup svg={s.svg} style={{ color: safeColor(s.color) }} />
-                          </svg>
-                          <span style={{ fontSize: 10, color: 'var(--dim)', textAlign: 'center' }}>{s.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            });
-          })()}
-          <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.6, padding: '12px 4px', borderTop: '1px solid var(--line)', marginTop: 12 }}>
-            Click a symbol to place &amp; approve, or drag it onto the canvas.<br />
-            <b>Hover an item</b> for its connection handles · <b>drag a handle</b> to another item to connect.<br />
-            <b>Drag the body</b> to move · <b>middle-mouse drag</b> to pan · <b>wheel</b> to zoom.<br />
-            <b>Shift-click</b> or <b>drag a box</b> to multi-select · <b>Ctrl+A</b> all · <b>Esc</b> clear.<br />
-            <b>Ctrl+C/X/V</b> copy/cut/paste · <b>R</b> rotate (⇧R type) · <b>D</b> duplicate · <b>F</b> flip · <b>Del</b> remove.<br />
-            <b>Arrow keys</b> nudge by grid · <b>Shift+Arrow</b> nudge 1px · <b>Ctrl+Z/⇧Z</b> undo/redo.
-          </div>
-          </div>
-        </aside>
-      )}
+      {showPalette && <SymbolPalette onPlaceCentre={placeCentre} />}
 
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: 'var(--sunk)' }}>
         {/* left toolbar (admin, 2D) */}
@@ -570,60 +504,18 @@ export default function PidFullView() {
 
         {/* pipe-type picker — shown only while creating a new connection */}
         {pipeMenu && (
-          <div style={{ ...pipeMenuBox, left: pipeMenu.sx, top: pipeMenu.sy }}
-            onPointerDown={(e) => e.stopPropagation()}>
-            <div style={pipeMenuHead}>Select pipe line type</div>
-            {PIPE_KINDS.map((k) => (
-              <button key={k.key} style={pipeMenuRow} onClick={() => choosePipe(k)}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                <span style={{ width: 24, height: 7, borderRadius: 4, flex: '0 0 auto', background: pipeSwatch(k.color) }} />
-                <span>{k.label}</span>
-              </button>
-            ))}
-            <button style={{ ...pipeMenuRow, color: 'var(--faint)', justifyContent: 'center' }}
-              onClick={() => setPipeMenu(null)}>Cancel</button>
-          </div>
+          <PipeTypeMenu sx={pipeMenu.sx} sy={pipeMenu.sy} onChoose={choosePipe} onCancel={() => setPipeMenu(null)} />
         )}
 
         {/* pipe edit menu — double-click an existing pipe: insert / branch /
             change type / delete. Only shown while editing that pipe. */}
         {pipeEdit && (
-          <div style={{ ...pipeMenuBox, left: pipeEdit.sx, top: pipeEdit.sy }}
-            onPointerDown={(e) => e.stopPropagation()}>
-            <div style={pipeMenuHead}>Edit pipe connection</div>
-            <button style={pipeMenuRow} onClick={() => insertOnPipe(true)}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-              <span style={{ fontSize: 15, width: 18, textAlign: 'center' }}>⊕</span>
-              <span style={{ display: 'grid' }}>Insert equipment here
-                <small style={{ color: 'var(--faint)', fontWeight: 400 }}>Splits pipe: A → new item → B</small></span>
-            </button>
-            <button style={pipeMenuRow} onClick={() => insertOnPipe(false)}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-              <span style={{ fontSize: 15, width: 18, textAlign: 'center' }}>⌥</span>
-              <span style={{ display: 'grid' }}>Add branch point
-                <small style={{ color: 'var(--faint)', fontWeight: 400 }}>Adds a tee — drag from it to a new item</small></span>
-            </button>
-            <div style={{ ...pipeMenuHead, paddingTop: 8 }}>Change line type</div>
-            <div style={{ display: 'flex', gap: 5, padding: '2px 6px 6px' }}>
-              {PIPE_KINDS.map((k) => (
-                <button key={k.key} title={k.label} onClick={() => changeEdgeType(k)}
-                  style={{ flex: 1, height: 16, borderRadius: 4, border: '1px solid var(--line2)', cursor: 'pointer', background: pipeSwatch(k.color) }} />
-              ))}
-            </div>
-            <button style={{ ...pipeMenuRow, color: 'var(--red)' }} onClick={deleteEdgeFromMenu}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-              <span style={{ fontSize: 14, width: 18, textAlign: 'center' }}>🗑</span> Delete connection
-            </button>
-            <button style={{ ...pipeMenuRow, color: 'var(--faint)', justifyContent: 'center' }}
-              onClick={() => { setPipeEdit(null); setSelectedEdgeId(null); }}>Cancel</button>
-          </div>
+          <PipeEditMenu sx={pipeEdit.sx} sy={pipeEdit.sy} onInsert={insertOnPipe} onChangeType={changeEdgeType}
+            onDelete={deleteEdgeFromMenu} onCancel={() => { setPipeEdit(null); setSelectedEdgeId(null); }} />
         )}
 
         <svg ref={svgRef} width="100%" height="100%"
+          role="application" tabIndex={0} aria-label="P&ID editor canvas"
           style={{ position: 'absolute', inset: 0, cursor: iso || mode === 'field' ? 'grab' : connect || portHover?.port ? 'crosshair' : 'default', touchAction: 'none' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
           onPointerLeave={() => { onPointerUp(); setHover(null); }}
@@ -712,28 +604,7 @@ export default function PidFullView() {
         <AnnotationLayer view={view} editable={editable} />
 
         {/* floating selection mini-toolbar */}
-        {editable && selBounds && !marquee && p.selectedIds.length > 0 && (() => {
-          const sx = selBounds.cx * view.k + view.x;
-          const sy = selBounds.top * view.k + view.y;
-          const above = sy > 52;
-          const multi = p.selectedIds.length > 1;
-          return (
-            <div style={{ position: 'absolute', left: sx, top: above ? sy - 46 : sy + 16, transform: 'translateX(-50%)', zIndex: 18, display: 'flex', gap: 3, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 9, padding: 4, boxShadow: 'var(--shadow)' }}>
-              <button style={miniBtn} title="Rotate 90° (R)" onClick={() => p.rotateSelection()}>⟳</button>
-              <button style={miniBtn} title="Flip (F)" onClick={() => p.flipSelection()}>⇄</button>
-              <button style={miniBtn} title="Duplicate (D)" onClick={() => p.duplicateSelection()}>⧉</button>
-              <button style={miniBtn} title="Copy (Ctrl+C)" onClick={() => p.copySelection()}>⎘</button>
-              {multi && <>
-                <span style={{ width: 1, background: 'var(--line2)', margin: '2px 1px' }} />
-                <button style={miniBtn} title="Align left" onClick={() => p.alignSelection('left')}>⤙</button>
-                <button style={miniBtn} title="Align top" onClick={() => p.alignSelection('top')}>⤒</button>
-                {p.selectedIds.length > 2 && <button style={miniBtn} title="Distribute horizontally" onClick={() => p.distributeSelection('h')}>↔</button>}
-              </>}
-              <span style={{ width: 1, background: 'var(--line2)', margin: '2px 1px' }} />
-              <button style={{ ...miniBtn, color: 'var(--red)' }} title="Delete (Del)" onClick={() => p.deleteSelection()}>🗑</button>
-            </div>
-          );
-        })()}
+        <SelectionToolbar editable={editable} selBounds={selBounds} hasMarquee={!!marquee} view={view} />
 
         {/* zoom controls */}
         <div style={zoombar}>
@@ -777,16 +648,6 @@ export default function PidFullView() {
       {mode === 'admin' && !iso && <PropertiesPanel />}
       {hover && !iso && !connect && <Tooltip h={hover} refDate={refDate} />}
       {showExport && <ExportDialog project={project} refDate={refDate} onClose={() => setShowExport(false)} />}
-      {showLibrary && <SymbolLibrary onClose={() => setShowLibrary(false)} />}
-      {showPalette && palHover && SYM[palHover] && (
-        <div style={palPreview}>
-          <svg viewBox={`-4 -4 ${SYM[palHover].w + 8} ${SYM[palHover].h + 8}`} width={130} height={104}>
-            <SvgMarkup svg={SYM[palHover].svg} style={{ color: safeColor(SYM[palHover].color) }} />
-          </svg>
-          <div style={{ fontWeight: 600, fontSize: 12.5, marginTop: 6 }}>{SYM[palHover].name}</div>
-          <div style={{ fontSize: 10.5, color: 'var(--faint)' }}>{SYM[palHover].cat}{SYM[palHover].defaults?.size ? ` · ${SYM[palHover].defaults!.size}` : ''}</div>
-        </div>
-      )}
     </>
   );
 }
@@ -887,6 +748,8 @@ const NodeG = memo(function NodeG({ n, selected, connecting, pending, flagged, s
   const outer = iso ? `translate(${ip!.x},${ip!.y})` : `translate(${n.x},${n.y})`;
   return (
     <g transform={outer} opacity={n.removed ? 0.28 : 1} style={{ color: safeColor(s.color) }}>
+      {/* accessible name (F20): so AT can identify a placed item by tag + type */}
+      <title>{`${n.tag || s.name}${n.tag ? ` — ${s.name}` : ''}${n.removed ? ' (removed)' : ''}`}</title>
       {iso && (
         <>
           <ellipse cx={ew / 2} cy={ip!.lift + eh / 2 + 4} rx={ew * 0.5} ry={ew * 0.2} fill="#0b1a2655" />
@@ -947,15 +810,6 @@ const TBRow = ({ k, v }: { k: string; v: string }) => (
 );
 
 // ---- styles ----------------------------------------------------------------
-const paletteStyle: React.CSSProperties = { width: 230, flex: '0 0 auto', background: 'var(--panel)', borderRight: '1px solid var(--line2)', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 12 };
-// Buttons + search stay pinned; only the symbol list below scrolls.
-const palHeader: React.CSSProperties = { flex: '0 0 auto', paddingBottom: 10, borderBottom: '1px solid var(--line)' };
-const palScroll: React.CSSProperties = { flex: '1 1 auto', overflowY: 'auto', minHeight: 0, marginRight: -6, paddingRight: 6 };
-const primaryBtn: React.CSSProperties = { width: '100%', background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '9px 11px', fontWeight: 600, fontSize: 12, marginBottom: 8, cursor: 'pointer' };
-const palHead: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1.6, color: 'var(--faint)', textTransform: 'uppercase', margin: '15px 4px 8px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' };
-const palSearch: React.CSSProperties = { width: '100%', boxSizing: 'border-box', background: 'var(--panel2)', border: '1px solid var(--line2)', color: 'var(--ink)', padding: '7px 9px', borderRadius: 7, fontSize: 12, margin: '4px 0 4px' };
-const palPreview: React.CSSProperties = { position: 'absolute', left: 238, top: 120, zIndex: 30, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 11, boxShadow: 'var(--shadow)', padding: 12, width: 168, textAlign: 'center', pointerEvents: 'none' };
-const palCard: React.CSSProperties = { background: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 4px 7px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: 'grab' };
 const toolbar: React.CSSProperties = { position: 'absolute', left: 16, top: 16, display: 'flex', gap: 5, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: 5, zIndex: 10, boxShadow: 'var(--shadow)' };
 const tbtn: React.CSSProperties = { width: 36, height: 36, border: 0, background: 'transparent', borderRadius: 7, color: 'var(--dim)', fontSize: 16, cursor: 'pointer' };
 const miniBtn: React.CSSProperties = { width: 28, height: 28, border: 0, background: 'transparent', borderRadius: 6, color: 'var(--ink)', fontSize: 14, cursor: 'pointer', display: 'grid', placeItems: 'center' };
@@ -967,9 +821,6 @@ const approveBar: React.CSSProperties = { position: 'absolute', top: 16, left: '
 const primarySm: React.CSSProperties = { background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '7px 12px', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
 const ghostSm: React.CSSProperties = { background: 'var(--panel2)', color: 'var(--ink)', border: '1px solid var(--line2)', borderRadius: 7, padding: '7px 12px', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
 const zoombar: React.CSSProperties = { position: 'absolute', right: 16, bottom: 16, display: 'flex', gap: 6, alignItems: 'center', background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: '5px 8px', zIndex: 10, boxShadow: 'var(--shadow)' };
-const pipeMenuBox: React.CSSProperties = { position: 'absolute', transform: 'translate(-50%, 12px)', zIndex: 40, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: 6, minWidth: 190 };
-const pipeMenuHead: React.CSSProperties = { fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--faint)', padding: '4px 8px 6px', fontWeight: 600 };
-const pipeMenuRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '8px 9px', background: 'transparent', border: 0, borderRadius: 7, cursor: 'pointer', fontSize: 12.5, color: 'var(--ink)', fontWeight: 600 };
 const zbtn: React.CSSProperties = { width: 26, height: 26, border: 0, background: 'var(--sunk)', color: 'var(--ink)', borderRadius: 6, fontSize: 16, cursor: 'pointer' };
 const legend: React.CSSProperties = { position: 'absolute', left: 16, bottom: 16, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: '9px 13px', zIndex: 10, fontSize: 11, color: 'var(--dim)', boxShadow: 'var(--shadow)' };
 const legendHead: React.CSSProperties = { color: 'var(--ink)', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1, display: 'block', marginBottom: 6 };

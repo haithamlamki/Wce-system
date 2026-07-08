@@ -11,6 +11,11 @@ import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import { SYM, type SymbolKey } from '../lib/symbols';
 import { fetchLeaderboard, upsertMyScore, type LeaderRow } from '../lib/cloud';
 
+// Sort weight for the action queue below — worst-first (overdue, then
+// invalid/unresolved, then due-soon). Module-scope constant (not per-render)
+// so the useMemo that depends on it has a genuinely stable reference.
+const QUEUE_RANK = { over: 0, invalid: 1, due: 2 } as const;
+
 export default function AccountView() {
   const { project, refDate, redeemReward, requestFocus } = useProject();
   const { enabled, user, fullName } = useAuth();
@@ -26,14 +31,12 @@ export default function AccountView() {
   // An unparseable due date (statusOf === 'invalid') is a safety-relevant,
   // un-triaged alert — it must never be silently dropped from this queue
   // (that would let the empty-state below claim "All clear" incorrectly).
-  // Sort worst-first: overdue, then invalid (unknown/unresolved), then due-soon.
-  const queueRank = { over: 0, invalid: 1, due: 2 } as const;
   const queue = useMemo(
     () => project.nodes
       .map((n) => ({ n, st: statusOf(n, refDate) }))
       .filter((x): x is { n: typeof x.n; st: 'over' | 'due' | 'invalid' } =>
         x.st === 'over' || x.st === 'due' || x.st === 'invalid')
-      .sort((a, b) => queueRank[a.st] - queueRank[b.st]),
+      .sort((a, b) => QUEUE_RANK[a.st] - QUEUE_RANK[b.st]),
     [project.nodes, refDate],
   );
   const fix = (id: string) => { requestFocus(id); navigate('/full'); };

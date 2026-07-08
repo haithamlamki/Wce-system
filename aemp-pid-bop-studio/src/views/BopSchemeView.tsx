@@ -32,6 +32,7 @@ export default function BopSchemeView() {
   const { project, refDate, buildBop, setProject } = useProject();
   const { bop } = project;
   const [hover, setHover] = useState<{ it: BopItem; x: number; y: number } | null>(null);
+  const [section, setSection] = useState<HoleSection>('12.25');
 
   const m = stackMetrics(bop);
   const toUnit = (v: number) => (bop.unit === 'ft' ? toFeet(v) : v);
@@ -195,12 +196,12 @@ export default function BopSchemeView() {
         <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '14px 0' }} />
 
         <Field label="Hole section">
-          <select id="section" defaultValue="12.25" style={inp}>
+          <select id="section" value={section} onChange={(e) => setSection(e.target.value as HoleSection)} style={inp}>
             {(Object.keys(SECTION_NAMES) as HoleSection[]).map((s) => (<option key={s} value={s}>{SECTION_NAMES[s]}</option>))}
           </select>
         </Field>
         <button style={{ width: '100%', background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '9px', fontWeight: 600, cursor: 'pointer' }}
-          onClick={() => buildBop((document.getElementById('section') as HTMLSelectElement).value as HoleSection)}>
+          onClick={() => buildBop(section)}>
           AI-build BOP stack
         </button>
         {bop.items.length > 0 && (
