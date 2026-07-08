@@ -135,15 +135,18 @@ export async function deleteUnit(name: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Rename a unit AND re-key its drawings / equipment / manuals so they follow it. */
+/**
+ * Rename a unit AND re-key its drawings / equipment / manuals so they follow
+ * it. Calls the `rename_unit` SECURITY DEFINER RPC (migration 0012) so all
+ * four tables are updated inside ONE Postgres transaction — a failure
+ * partway through rolls back the whole rename instead of leaving rig_name
+ * inconsistent across tables. The function re-checks privileged-only
+ * authorization internally.
+ */
 export async function renameUnit(oldName: string, newName: string): Promise<void> {
   if (!supabase) throw new Error('Cloud not configured.');
-  const u = await supabase.from('units').update({ name: newName }).eq('name', oldName);
-  if (u.error) throw new Error(u.error.message);
-  // best-effort re-key of dependent rows (rig_name is a plain string, not an FK)
-  await supabase.from('projects').update({ rig_name: newName }).eq('rig_name', oldName);
-  await supabase.from('equipment').update({ rig_name: newName }).eq('rig_name', oldName);
-  try { await supabase.from('manuals').update({ rig_name: newName }).eq('rig_name', oldName); } catch { /* manuals optional */ }
+  const { error } = await supabase.rpc('rename_unit', { p_old: oldName, p_new: newName });
+  if (error) throw new Error(error.message);
 }
 
 // ---- unit templates (per-unit reusable start layout, migration 0010) --------
@@ -230,19 +233,17 @@ export interface EquipmentInput {
 
 /**
  * Replace the shared equipment register for one rig (admin-only, FR-36/37).
- * Deletes the rig's existing rows then inserts the new set in chunks. RLS
- * rejects this for non-admins. Returns the number of rows written.
+ * Calls the `replace_rig_equipment` SECURITY DEFINER RPC (migration 0012) so
+ * the delete + re-insert run inside ONE Postgres transaction — a failure
+ * partway through rolls back the whole thing instead of leaving the register
+ * wiped or half-written. The function re-checks admin-only authorization
+ * internally. Returns the number of rows written.
  */
 export async function replaceRigEquipment(rig: string, rows: EquipmentInput[]): Promise<number> {
   if (!supabase) throw new Error('Cloud not configured');
-  const del = await supabase.from('equipment').delete().eq('rig_name', rig);
-  if (del.error) throw new Error(del.error.message);
-  for (let i = 0; i < rows.length; i += 100) {
-    const chunk = rows.slice(i, i + 100).map((r) => ({ ...r, rig_name: rig }));
-    const { error } = await supabase.from('equipment').insert(chunk);
-    if (error) throw new Error(error.message);
-  }
-  return rows.length;
+  const { data, error } = await supabase.rpc('replace_rig_equipment', { p_rig: rig, p_rows: rows });
+  if (error) throw new Error(error.message);
+  return data ?? rows.length;
 }
 
 export interface ComplianceRow {

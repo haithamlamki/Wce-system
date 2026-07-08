@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { idTail, nextBopSeqSeed, nextSeqSeed } from './idSeq';
+import { idTail, nextBopSeqSeed, nextSeqSeed, withFreshIds } from './idSeq';
 import type { Project } from '../types';
 
 const emptyProject = (): Project => ({
@@ -74,5 +74,35 @@ describe('nextBopSeqSeed', () => {
   });
   it('never lowers the counter', () => {
     expect(nextBopSeqSeed([{ id: 'b2' }], 50)).toBe(50);
+  });
+});
+
+describe('withFreshIds (F11 — pure duplicate/paste helper)', () => {
+  it('returns copies with fresh ids and the (dx, dy) offset applied', () => {
+    const items = [{ id: 'n1', x: 10, y: 20 }, { id: 'n2', x: 30, y: 40 }];
+    let n = 0;
+    const copies = withFreshIds(items, () => `fresh${++n}`, 24, 24);
+    expect(copies).toEqual([
+      { id: 'fresh1', x: 34, y: 44 },
+      { id: 'fresh2', x: 54, y: 64 },
+    ]);
+  });
+  it('never mutates the input items or array', () => {
+    const items = [{ id: 'n1', x: 10, y: 20 }];
+    const snapshot = JSON.parse(JSON.stringify(items));
+    withFreshIds(items, () => 'fresh', 24, 24);
+    expect(items).toEqual(snapshot);
+  });
+  it('calls makeId exactly once per item — no id is skipped or duplicated', () => {
+    const items = [{ id: 'a', x: 0, y: 0 }, { id: 'b', x: 0, y: 0 }, { id: 'c', x: 0, y: 0 }];
+    const makeId = () => `id${calls++}`;
+    let calls = 0;
+    const copies = withFreshIds(items, makeId, 0, 0);
+    expect(calls).toBe(3);
+    expect(new Set(copies.map((c) => c.id)).size).toBe(3);
+  });
+  it('returns [] for an empty input without calling makeId', () => {
+    const makeId = () => { throw new Error('should not be called'); };
+    expect(withFreshIds([], makeId, 0, 0)).toEqual([]);
   });
 });

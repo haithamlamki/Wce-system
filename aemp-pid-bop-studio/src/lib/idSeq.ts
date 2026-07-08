@@ -60,3 +60,22 @@ export function nextBopSeqSeed(items: Array<{ id: string }> | null | undefined, 
   if (max === -Infinity) return current;
   return Math.max(current, max + 1);
 }
+
+/**
+ * Pure "duplicate with fresh ids" (F11) used by paste/duplicate-selection.
+ * Returns NEW copies of `items` offset by (dx, dy), each with a freshly
+ * minted id from `makeId()`. Never mutates `items`, and calls `makeId()`
+ * exactly once per item — so callers MUST invoke this to precompute the
+ * copies BEFORE handing them to a React state updater. Calling `makeId()`
+ * (which mutates an outer id counter) from inside the updater itself is
+ * unsafe: StrictMode / concurrent re-invocation can run the updater twice,
+ * silently skipping or duplicating ids and desyncing selection.
+ */
+export function withFreshIds<T extends { id: string; x: number; y: number }>(
+  items: readonly T[],
+  makeId: () => string,
+  dx: number,
+  dy: number,
+): T[] {
+  return items.map((it) => ({ ...it, id: makeId(), x: it.x + dx, y: it.y + dy }));
+}

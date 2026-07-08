@@ -10,7 +10,7 @@ import type { Annotation, Component, Edge, PipeKind, PipeSeg, PortName, Project,
 import { buildFromRegister, buildMaster, importFromAEMP, rigData, seedProjectFromTemplate, type AempConfig } from '../lib/aemp';
 import { buildBopStack, seedBopSeq, type HoleSection } from '../lib/bop';
 import { box, snap } from '../lib/geometry';
-import { nextSeqSeed } from '../lib/idSeq';
+import { nextSeqSeed, withFreshIds } from '../lib/idSeq';
 import { canEditForRole } from '../lib/roles';
 import { SYM, SYM_ORDER, type SymbolDef, type SymbolKey } from '../lib/symbols';
 import { mergeCustomSymbols, newCustomKey, registerBuiltins, unregisterSymbol } from '../lib/customSymbols';
@@ -423,11 +423,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const duplicateNode = useCallback((id: string) => {
-    let newId: string | null = null;
+    // F11: mint the id BEFORE setProject so the reducer stays pure — React
+    // StrictMode/concurrent re-invocation must never call nextId() itself.
+    const newId = nextId('n');
     setProject((p) => {
       const src = p.nodes.find((n) => n.id === id);
-      if (!src) return p;
-      newId = nextId('n');
+      if (!src) return p; // a wasted id here is acceptable; the reducer stays pure
       const copy: Component = { ...src, id: newId, x: src.x + 24, y: src.y + 24 };
       return { ...p, nodes: [...p.nodes, copy] };
     });
@@ -545,14 +546,17 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     const s = SYM[type];
     if (!s) return null;
     const j = newNode(type, snap(at.x - s.w / 2), snap(at.y - s.h / 2));
+    // F11: mint both edge ids BEFORE setProject so the reducer stays pure.
+    const eAId = nextId('e');
+    const eBId = nextId('e');
     setProject((p) => {
       const e = p.edges.find((x) => x.id === edgeId);
       if (!e) return p;
       // A→J keeps A's port; J→B keeps B's port. The junction ends auto-pick
       // their nearest port so both halves re-route cleanly (and stay attached
       // to the original equipment at the far ends).
-      const eA: Edge = { id: nextId('e'), from: e.from, to: j.id, color: e.color, lineType: e.lineType, fromPort: e.fromPort };
-      const eB: Edge = { id: nextId('e'), from: j.id, to: e.to, color: e.color, lineType: e.lineType, toPort: e.toPort };
+      const eA: Edge = { id: eAId, from: e.from, to: j.id, color: e.color, lineType: e.lineType, fromPort: e.fromPort };
+      const eB: Edge = { id: eBId, from: j.id, to: e.to, color: e.color, lineType: e.lineType, toPort: e.toPort };
       return { ...p, nodes: [...p.nodes, j], edges: [...p.edges.filter((x) => x.id !== edgeId), eA, eB] };
     });
     setSelectedId(j.id);
@@ -597,26 +601,26 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const pasteClipboard = useCallback((dx = 24, dy = 24) => {
     if (!clipboard.length) return;
-    const newIds: string[] = [];
-    setProject((p) => {
-      const copies = clipboard.map((c) => { const id = nextId('n'); newIds.push(id); return { ...c, id, x: c.x + dx, y: c.y + dy }; });
-      return { ...p, nodes: [...p.nodes, ...copies] };
-    });
+    // F11: precompute the copies (ids minted once) BEFORE setProject so the
+    // reducer is pure.
+    const copies = withFreshIds(clipboard, () => nextId('n'), dx, dy);
+    const newIds = copies.map((c) => c.id);
+    setProject((p) => ({ ...p, nodes: [...p.nodes, ...copies] }));
     setSelectedIds(newIds);
   }, [clipboard]);
 
   const duplicateSelection = useCallback(() => {
-    setSelectedIds((ids) => {
-      if (!ids.length) return ids;
-      const set = new Set(ids);
-      const newIds: string[] = [];
-      setProject((p) => {
-        const copies = p.nodes.filter((n) => set.has(n.id)).map((n) => { const id = nextId('n'); newIds.push(id); return { ...n, id, x: n.x + 24, y: n.y + 24 }; });
-        return { ...p, nodes: [...p.nodes, ...copies] };
-      });
-      return newIds;
-    });
-  }, []);
+    if (!selectedIds.length) return;
+    // F11: precompute from the current nodes/selection closure BEFORE
+    // setProject — no nested setProject-inside-setSelectedIds, no nextId
+    // inside the reducer.
+    const set = new Set(selectedIds);
+    const copies = withFreshIds(project.nodes.filter((n) => set.has(n.id)), () => nextId('n'), 24, 24);
+    if (!copies.length) return;
+    const newIds = copies.map((c) => c.id);
+    setProject((p) => ({ ...p, nodes: [...p.nodes, ...copies] }));
+    setSelectedIds(newIds);
+  }, [project.nodes, selectedIds]);
 
   const rotateSelection = useCallback((applyToType = false) => {
     setProject((p) => {
