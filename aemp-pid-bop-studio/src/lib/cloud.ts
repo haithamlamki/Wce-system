@@ -24,14 +24,23 @@ const d = (v: string | null) => v ?? '';
  */
 export async function saveProjectCloud(project: Project, id?: string, note?: string): Promise<string | null> {
   if (!supabase) return null;
-  const row = {
-    ...(id ? { id } : {}),
+  // Stamp ownership (F4): the caller's uid on brand-new rows. On an UPDATE
+  // (id provided) we deliberately omit created_by so an existing owner is
+  // never overwritten — RLS (0003/0011) already scopes writes by rig, and
+  // insert policies require created_by = auth.uid() (or null) on new rows.
+  const { data: u } = await supabase.auth.getUser();
+  const uid = u.user?.id ?? null;
+  const row: {
+    id?: string; created_by?: string | null; rig_name: string;
+    reference_date: string | null; inspector: string | null; revision: number; data: Project;
+  } = {
     rig_name: project.meta.rig,
     reference_date: project.meta.date || null,
     inspector: project.meta.who || null,
     revision: project.revision ?? 0,
     data: project, // full doc incl. status/publishedAt (queried via data->>status)
   };
+  if (id) row.id = id; else row.created_by = uid;
   const { data, error } = await supabase.from('projects').upsert(row).select('id').single();
   if (error) throw new Error(error.message);
   const newId = data?.id ?? null;
@@ -45,6 +54,7 @@ export async function saveProjectCloud(project: Project, id?: string, note?: str
         inspector: project.meta.who || null,
         note: note || null,
         data: project,
+        created_by: uid, // explicit so the 0011 INSERT policy is satisfied
       });
     } catch { /* project_versions is optional (pre-0005) */ }
   }
