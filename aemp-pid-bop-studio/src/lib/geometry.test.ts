@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pipeParts, ports, routeEdge, routeEdgePoints } from './geometry';
+import { buildNodeMap, pipeParts, pipeSwatch, ports, routeEdge, routeEdgePoints } from './geometry';
 import type { Component, Edge } from '../types';
 import type { SymbolKey } from './symbols';
 
@@ -69,5 +69,36 @@ describe('pipeParts', () => {
     expect(parts.segments).toHaveLength(2);    // segment → elbow → segment
     // the elbow is trimmed out of the straight run (segment stops before corner)
     expect(parts.segments[0][1]).not.toEqual({ x: 100, y: 0 });
+  });
+});
+
+describe('pipeSwatch', () => {
+  it('builds a 3-stop gradient shaded from the given color', () => {
+    expect(pipeSwatch('#16a6e0')).toBe(
+      'linear-gradient(color-mix(in srgb, #16a6e0 55%, #000), color-mix(in srgb, #16a6e0 20%, #fff) 45%, color-mix(in srgb, #16a6e0 55%, #000))',
+    );
+  });
+
+  it('is a pure function of its input color', () => {
+    expect(pipeSwatch('var(--accent2)')).toEqual(pipeSwatch('var(--accent2)'));
+  });
+});
+
+describe('buildNodeMap', () => {
+  it('maps every node by id', () => {
+    const map = buildNodeMap([a, b]);
+    expect(map.get('a')).toBe(a);
+    expect(map.get('b')).toBe(b);
+    expect(map.size).toBe(2);
+  });
+
+  it('returns an empty map for no nodes', () => {
+    expect(buildNodeMap([]).size).toBe(0);
+  });
+
+  it('last node wins on a duplicate id (Map semantics)', () => {
+    const dup = mk('a', 'gate', 999, 999);
+    const map = buildNodeMap([a, dup]);
+    expect(map.get('a')).toBe(dup);
   });
 });

@@ -318,7 +318,15 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     [project.nodes, selectedIds],
   );
 
-  const issues = useMemo(() => validate(project), [project]);
+  // F17: validate() walks the whole project graph, so don't re-run it on every
+  // tick of a drag/edit burst — debounce ~250ms after the project settles.
+  // The previous result stays visible during the burst; it always converges
+  // to the correct set once edits stop (validate() itself is unchanged).
+  const [issues, setIssues] = useState<Issue[]>(() => validate(project));
+  useEffect(() => {
+    const t = setTimeout(() => setIssues(validate(project)), 250);
+    return () => clearTimeout(t);
+  }, [project]);
 
   const hiddenSymbols = useMemo(
     () => Array.from(new Set([...(project.hiddenSymbols ?? []), ...globalHidden])),
@@ -962,13 +970,24 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     });
   }, [refDate]);
 
-  const value: ProjectCtx = {
+  // F15: recomputed every render (cheap) so a history seal — which bumps
+  // histVer without necessarily changing `project` itself — is still picked
+  // up by the value memo below (both are listed in its deps).
+  const canUndo = past.current.length > 0 || project !== baseline.current;
+  const canRedo = future.current.length > 0;
+
+  // F15: the context value was a fresh object literal every render, so every
+  // useProject() consumer re-rendered on ANY state change (mega-context).
+  // Every member above is already a stable useCallback / useState setter or a
+  // value memoized on its own inputs, so memoizing this object on all of them
+  // means it only changes identity when something it actually exposes changed.
+  const value: ProjectCtx = useMemo(() => ({
     project, refDate, mode, setMode, selectedId, setSelectedId, selected,
     selectedIds, setSelectedIds, toggleSelect, clearSelection, selectAll,
     clipboardCount: clipboard.length, copySelection, cutSelection, pasteClipboard,
     deleteSelection, duplicateSelection, rotateSelection, flipSelection, scaleSelection, moveMany,
     alignSelection, distributeSelection,
-    undo, redo, canUndo: past.current.length > 0 || project !== baseline.current, canRedo: future.current.length > 0,
+    undo, redo, canUndo, canRedo,
     loadMaster, loadLayout, importAEMP, buildBop, setProject,
     saveProject, openProject, updateMeta,
     showOnboard, setShowOnboard, completeOnboarding,
@@ -983,7 +1002,28 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     groupSelection, ungroupSelection, toggleLockSelection,
     addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol, hiddenSymbols, canEditLibrary,
     redeemReward,
-  };
+  }), [
+    project, refDate, mode, setMode, selectedId, setSelectedId, selected,
+    selectedIds, setSelectedIds, toggleSelect, clearSelection, selectAll,
+    clipboard, copySelection, cutSelection, pasteClipboard,
+    deleteSelection, duplicateSelection, rotateSelection, flipSelection, scaleSelection, moveMany,
+    alignSelection, distributeSelection,
+    undo, redo, canUndo, canRedo,
+    loadMaster, loadLayout, importAEMP, buildBop, setProject,
+    saveProject, openProject, updateMeta,
+    showOnboard, setShowOnboard, completeOnboarding,
+    cloudId, saveCloud, listCloud, loadCloud, listVersions, restoreVersion,
+    canEdit, saveAsDraft, publishFinal, clearCanvas,
+    units, refreshUnits, switchUnit, addUnit, renameUnit, removeUnit, showUnits, setShowUnits,
+    unitTemplates, refreshUnitTemplates, startFromTemplate, saveUnitTemplate, listUnitDiagrams,
+    addNode, updateNode, moveNode, deleteNode, duplicateNode, changeType,
+    rotateNode, flipNode, scaleNode, toggleRemoved, addEdge, deleteEdge, setEdgeType, splitEdgeAt, addComponents,
+    focusId, focusSeq, requestFocus, issues,
+    addAnnotation, updateAnnotation, deleteAnnotation,
+    groupSelection, ungroupSelection, toggleLockSelection,
+    addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol, hiddenSymbols, canEditLibrary,
+    redeemReward,
+  ]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

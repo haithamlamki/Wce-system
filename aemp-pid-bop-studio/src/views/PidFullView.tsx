@@ -5,15 +5,15 @@
 //  Field: pan-and-read; click toggles installed/removed; hover tooltips.
 //  Pan / wheel-zoom / fit-to-view, title block + legend overlay, 3D iso view.
 // ============================================================================
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useProject } from '../state/ProjectContext';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useProject, type Mode } from '../state/ProjectContext';
 import PropertiesPanel from '../components/PropertiesPanel';
 import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import { safeColor } from '../lib/sanitizeSvg';
 import {
-  box, edgeNodes, fitView, GRID, innerTransform, isoDepth, isoPlacement, pickNode,
-  PIPE_KINDS, pipeColor, pipeParts, ports, proj, routeEdgePoints,
+  box, buildNodeMap, fitView, GRID, innerTransform, isoDepth, isoPlacement, pickNode,
+  PIPE_KINDS, pipeColor, pipeParts, pipeSwatch, ports, proj, routeEdgePoints,
   screenToWorld, snap, type PipeKindDef, type View,
 } from '../lib/geometry';
 import { parseDrawing } from '../lib/layoutImport';
@@ -21,7 +21,7 @@ import ExportDialog from '../components/ExportDialog';
 import AnnotationLayer from '../components/AnnotationLayer';
 import SymbolLibrary from '../components/SymbolLibrary';
 import SvgMarkup from '../components/SvgMarkup';
-import type { Component, PortName } from '../types';
+import type { Component, Edge, PortName } from '../types';
 
 interface PortRef { id: string; port?: PortName }
 interface ConnectState { from: PortRef; to: { x: number; y: number }; target?: PortRef }
@@ -71,6 +71,19 @@ export default function PidFullView() {
   const { project, refDate, mode } = p;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragRef = useRef<Drag | null>(null);
+  // F16: a node drag used to call p.moveMany (→ global project state → whole
+  // view re-render) on EVERY raw pointermove, which can fire far more often
+  // than the screen repaints. Batch commits to once per animation frame
+  // instead — same final call chain (moveMany still commits every frame, so
+  // pipes/PropertiesPanel keep live-following the drag) and still coalesces
+  // into exactly one undo step, just without redundant intra-frame renders.
+  const dragRafRef = useRef<number | null>(null);
+  const pendingMoveRef = useRef<Array<{ id: string; x: number; y: number }> | null>(null);
+  const flushPendingMove = useCallback(() => {
+    dragRafRef.current = null;
+    if (pendingMoveRef.current) { p.moveMany(pendingMoveRef.current); pendingMoveRef.current = null; }
+  }, [p]);
+  useEffect(() => () => { if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current); }, []);
   const drawingRef = useRef<HTMLInputElement | null>(null);
   const [view, setView] = useState<View>({ x: 60, y: 60, k: 1 });
   const [connect, setConnect] = useState<ConnectState | null>(null);
@@ -97,6 +110,9 @@ export default function PidFullView() {
   const selSet = useMemo(() => new Set(p.selectedIds), [p.selectedIds]);
   // nodes implicated in any validation issue → red ring (report §2.4)
   const flagged = useMemo(() => new Set(p.issues.flatMap((i) => i.nodeIds)), [p.issues]);
+  // F16: id → node lookup so hot paths (edge endpoint resolution, connect/
+  // focus handling) don't re-scan the whole node array with `.find`.
+  const nodeMap = useMemo(() => buildNodeMap(project.nodes), [project.nodes]);
 
   // selection bounding box (world) → for the floating mini-toolbar
   const selBounds = useMemo(() => {
@@ -117,57 +133,89 @@ export default function PidFullView() {
     if (r) setView(fitView(project.nodes, r.width, r.height));
   }, [project.nodes]);
 
-  useEffect(() => { if (project.nodes.length) doFit(); /* eslint-disable-next-line */ }, [project.revision]);
+  // F18: this must fit ONLY when a new project/layout lands (revision bump),
+  // never on incidental node edits — but `doFit` closes over `project.nodes`,
+  // which changes on every edit too, so a naive `[project.revision]` dep array
+  // was previously eslint-disabled. Instead: list every dep honestly (so the
+  // effect re-runs on incidental edits too) and gate the actual work behind a
+  // "have we already fit this revision" ref — semantically identical to the
+  // old behavior (fit exactly once per new revision) with no lint suppression.
+  const lastFitRevision = useRef<number | null>(null);
+  useEffect(() => {
+    const rev = project.revision ?? 0;
+    if (rev === lastFitRevision.current) return;
+    lastFitRevision.current = rev;
+    if (project.nodes.length) doFit();
+  }, [project.revision, project.nodes, doFit]);
 
   // FR-27: when the register requests focus, re-center on that node (in 2D).
+  // F18: gated the same way as the fit effect above (only act on a genuinely
+  // new focusSeq) so `view.k` and `nodeMap` can be honest dependencies without
+  // re-centering every time the user merely pans/zooms or edits the project —
+  // and because `view.k` is now a real dependency, the effect always reads the
+  // CURRENT zoom (no more stale `view.k`).
+  const lastFocusSeq = useRef(0);
   useEffect(() => {
-    if (!p.focusSeq || !p.focusId) return;
-    const node = project.nodes.find((n) => n.id === p.focusId);
+    if (p.focusSeq === lastFocusSeq.current) return;
+    lastFocusSeq.current = p.focusSeq;
+    if (!p.focusId) return;
+    const node = nodeMap.get(p.focusId);
     const r = svgRef.current?.getBoundingClientRect();
     if (!node || !r) return;
     setIso(false);
     const b = box(node);
     const k = Math.max(view.k, 1);
     setView({ k, x: r.width / 2 - (node.x + b.w / 2) * k, y: r.height / 2 - (node.y + b.h / 2) * k });
-    /* eslint-disable-next-line */
-  }, [p.focusSeq]);
+  }, [p.focusSeq, p.focusId, nodeMap, view.k]);
+
+  // F18: keep the latest values the keydown handler needs in refs, updated
+  // every render, so the `window` listener can be attached exactly ONCE
+  // (empty dep array) instead of being torn down/re-added on every state
+  // change (previously deps were `[editable, p, selectedEdgeId]`).
+  const pRef = useRef(p);
+  pRef.current = p;
+  const editableRef = useRef(editable);
+  editableRef.current = editable;
+  const selectedEdgeIdRef = useRef(selectedEdgeId);
+  selectedEdgeIdRef.current = selectedEdgeId;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
-      if (!editable) return;
+      if (!editableRef.current) return;
+      const proj = pRef.current;
       const mod = e.ctrlKey || e.metaKey;
       // undo / redo
-      if (mod && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) { e.preventDefault(); p.undo(); return; }
-      if (mod && ((e.key === 'z' || e.key === 'Z') && e.shiftKey || e.key === 'y' || e.key === 'Y')) { e.preventDefault(); p.redo(); return; }
+      if (mod && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) { e.preventDefault(); proj.undo(); return; }
+      if (mod && ((e.key === 'z' || e.key === 'Z') && e.shiftKey || e.key === 'y' || e.key === 'Y')) { e.preventDefault(); proj.redo(); return; }
       // clipboard + select-all work on the whole selection
-      if (mod && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); p.copySelection(); return; }
-      if (mod && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); p.cutSelection(); return; }
-      if (mod && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); p.pasteClipboard(); return; }
-      if (mod && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); p.selectAll(); return; }
-      if (e.key === 'Escape') { p.clearSelection(); setConnect(null); setPortHover(null); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(null); return; }
+      if (mod && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); proj.copySelection(); return; }
+      if (mod && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); proj.cutSelection(); return; }
+      if (mod && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); proj.pasteClipboard(); return; }
+      if (mod && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); proj.selectAll(); return; }
+      if (e.key === 'Escape') { proj.clearSelection(); setConnect(null); setPortHover(null); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(null); return; }
       // a selected pipe (no node selection) can be deleted with Del/Backspace
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdgeId && !p.selectedIds.length) {
-        e.preventDefault(); p.deleteEdge(selectedEdgeId); setSelectedEdgeId(null); return;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdgeIdRef.current && !proj.selectedIds.length) {
+        e.preventDefault(); proj.deleteEdge(selectedEdgeIdRef.current); setSelectedEdgeId(null); return;
       }
-      if (!p.selectedIds.length) return;
+      if (!proj.selectedIds.length) return;
       const arrow = ARROW_DELTA[e.key];
       if (arrow) {
         e.preventDefault();
         const step = e.shiftKey ? 1 : GRID; // Shift = 1px fine nudge, else one grid cell
-        const sel = new Set(p.selectedIds);
-        p.moveMany(project.nodes.filter((n) => sel.has(n.id)).map((n) => ({ id: n.id, x: n.x + arrow[0] * step, y: n.y + arrow[1] * step })));
+        const sel = new Set(proj.selectedIds);
+        proj.moveMany(proj.project.nodes.filter((n) => sel.has(n.id)).map((n) => ({ id: n.id, x: n.x + arrow[0] * step, y: n.y + arrow[1] * step })));
         return;
       }
-      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); p.deleteSelection(); }
-      else if (e.key === 'r' || e.key === 'R') p.rotateSelection(e.shiftKey);
-      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); p.duplicateSelection(); }
-      else if (e.key === 'f' || e.key === 'F') p.flipSelection();
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); proj.deleteSelection(); }
+      else if (e.key === 'r' || e.key === 'R') proj.rotateSelection(e.shiftKey);
+      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); proj.duplicateSelection(); }
+      else if (e.key === 'f' || e.key === 'F') proj.flipSelection();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editable, p, selectedEdgeId]);
+  }, []);
 
   // ---- pointer interactions (one unified mode) ------------------------------
   //  • hover an item       → its N/E/S/W connection handles appear
@@ -244,7 +292,8 @@ export default function PidFullView() {
     else if (d.kind === 'node' && d.starts) {
       const dx = (px - d.sx) / view.k;
       const dy = (py - d.sy) / view.k;
-      p.moveMany(d.starts.map((s) => ({ id: s.id, x: snap(s.x + dx), y: snap(s.y + dy) })));
+      pendingMoveRef.current = d.starts.map((s) => ({ id: s.id, x: snap(s.x + dx), y: snap(s.y + dy) }));
+      if (dragRafRef.current == null) dragRafRef.current = requestAnimationFrame(flushPendingMove);
     } else if (d.kind === 'marquee') {
       const w = screenToWorld(px, py, view);
       setMarquee((m) => (m ? { ...m, x1: w.x, y1: w.y } : m));
@@ -263,6 +312,11 @@ export default function PidFullView() {
   function onPointerUp() {
     const d = dragRef.current;
     dragRef.current = null;
+    // F16: flush any move batched for the next animation frame synchronously,
+    // so the final drop position always commits (never lost to a cancelled
+    // rAF), and this frame's drag ends in exactly one settled position.
+    if (dragRafRef.current != null) { cancelAnimationFrame(dragRafRef.current); dragRafRef.current = null; }
+    if (pendingMoveRef.current) { p.moveMany(pendingMoveRef.current); pendingMoveRef.current = null; }
     if (d?.kind === 'marquee' && marquee) {
       const xMin = Math.min(marquee.x0, marquee.x1), xMax = Math.max(marquee.x0, marquee.x1);
       const yMin = Math.min(marquee.y0, marquee.y1), yMax = Math.max(marquee.y0, marquee.y1);
@@ -277,8 +331,8 @@ export default function PidFullView() {
       // complete only when released on another item's port → offer the pipe-type
       // picker (positioned at the mid-point of the new run, in screen space)
       if (d.from && d.target && d.target.id !== d.from.id) {
-        const fromN = project.nodes.find((n) => n.id === d.from!.id);
-        const toN = project.nodes.find((n) => n.id === d.target!.id);
+        const fromN = nodeMap.get(d.from.id);
+        const toN = nodeMap.get(d.target.id);
         if (fromN && toN) {
           const fp = ports(fromN)[d.from.port as PortName];
           const tp = ports(toN)[d.target.port as PortName];
@@ -377,7 +431,7 @@ export default function PidFullView() {
 
   const showPalette = mode === 'admin' && !iso;
   const hasNodes = project.nodes.length > 0;
-  const pendingNode = project.nodes.find((n) => n.id === pendingId) ?? null;
+  const pendingNode = (pendingId && nodeMap.get(pendingId)) ?? null;
 
   return (
     <>
@@ -511,7 +565,7 @@ export default function PidFullView() {
               <button key={k.key} style={pipeMenuRow} onClick={() => choosePipe(k)}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                <span style={{ width: 24, height: 7, borderRadius: 4, flex: '0 0 auto', background: `linear-gradient(${`color-mix(in srgb, ${k.color} 55%, #000)`}, ${`color-mix(in srgb, ${k.color} 20%, #fff)`} 45%, ${`color-mix(in srgb, ${k.color} 55%, #000)`})` }} />
+                <span style={{ width: 24, height: 7, borderRadius: 4, flex: '0 0 auto', background: pipeSwatch(k.color) }} />
                 <span>{k.label}</span>
               </button>
             ))}
@@ -544,7 +598,7 @@ export default function PidFullView() {
             <div style={{ display: 'flex', gap: 5, padding: '2px 6px 6px' }}>
               {PIPE_KINDS.map((k) => (
                 <button key={k.key} title={k.label} onClick={() => changeEdgeType(k)}
-                  style={{ flex: 1, height: 16, borderRadius: 4, border: '1px solid var(--line2)', cursor: 'pointer', background: `linear-gradient(${`color-mix(in srgb, ${k.color} 55%, #000)`}, ${`color-mix(in srgb, ${k.color} 20%, #fff)`} 45%, ${`color-mix(in srgb, ${k.color} 55%, #000)`})` }} />
+                  style={{ flex: 1, height: 16, borderRadius: 4, border: '1px solid var(--line2)', cursor: 'pointer', background: pipeSwatch(k.color) }} />
               ))}
             </div>
             <button style={{ ...pipeMenuRow, color: 'var(--red)' }} onClick={deleteEdgeFromMenu}
@@ -585,30 +639,19 @@ export default function PidFullView() {
                 The route recomputes from live node positions every render, so it
                 follows the items when they move. */}
             {project.edges.map((e) => {
-              const pr = edgeNodes(e, project.nodes);
-              if (!pr) return null;
+              const a = nodeMap.get(e.from);
+              const b = nodeMap.get(e.to);
+              if (!a || !b) return null;
               const color = e.color || pipeColor(e.lineType) || 'var(--accent2)';
               if (iso) {
-                const ba = box(pr.a), bb = box(pr.b);
-                const a = proj(pr.a.x + ba.w / 2, pr.a.y + ba.h / 2);
-                const b = proj(pr.b.x + bb.w / 2, pr.b.y + bb.h / 2);
-                return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={2.2} opacity={0.55} />;
+                const ba = box(a), bb = box(b);
+                const pa = proj(a.x + ba.w / 2, a.y + ba.h / 2);
+                const pb = proj(b.x + bb.w / 2, b.y + bb.h / 2);
+                return <line key={e.id} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke={color} strokeWidth={2.2} opacity={0.55} />;
               }
-              const pts = routeEdgePoints(pr.a, pr.b, e);
-              const hitD = pts.map((pt, i) => `${i ? 'L' : 'M'} ${pt.x} ${pt.y}`).join(' ');
               return (
-                <g key={e.id}>
-                  <Pipe pts={pts} color={color} selected={selectedEdgeId === e.id} />
-                  {/* wide invisible hit-line: click selects the pipe, double-click
-                      opens the edit menu — the pipe itself is never dragged. */}
-                  {mode === 'admin' && (
-                    <path d={hitD} stroke="transparent" strokeWidth={18} fill="none"
-                      strokeLinecap="round" strokeLinejoin="round" pointerEvents="stroke"
-                      style={{ cursor: 'pointer' }}
-                      onPointerDown={(ev) => { ev.stopPropagation(); selectEdge(e.id); }}
-                      onDoubleClick={(ev) => { ev.stopPropagation(); openPipeEdit(ev, e.id); }} />
-                  )}
-                </g>
+                <EdgeG key={e.id} edge={e} a={a} b={b} color={color} selected={selectedEdgeId === e.id}
+                  mode={mode} onSelect={selectEdge} onEdit={openPipeEdit} />
               );
             })}
             {/* connection handles — auto-shown on the hovered item, the connection
@@ -618,7 +661,7 @@ export default function PidFullView() {
               if (hover) ids.add(hover.n.id);
               if (connect) { ids.add(connect.from.id); if (connect.target) ids.add(connect.target.id); }
               return [...ids].map((id) => {
-                const n = project.nodes.find((x) => x.id === id);
+                const n = nodeMap.get(id);
                 if (!n) return null;
                 const ps = ports(n);
                 return (['N', 'E', 'S', 'W'] as PortName[]).map((k) => {
@@ -638,11 +681,11 @@ export default function PidFullView() {
             ))}
             {/* live connection rubber-band (from the source port to the cursor / snapped target port) */}
             {connect && !iso && (() => {
-              const fromN = project.nodes.find((x) => x.id === connect.from.id);
+              const fromN = nodeMap.get(connect.from.id);
               if (!fromN) return null;
               const a = ports(fromN)[connect.from.port as PortName];
               let b = connect.to;
-              if (connect.target) { const tn = project.nodes.find((x) => x.id === connect.target!.id); if (tn) b = ports(tn)[connect.target.port as PortName]; }
+              if (connect.target) { const tn = nodeMap.get(connect.target.id); if (tn) b = ports(tn)[connect.target.port as PortName]; }
               return <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--accent2)" strokeWidth={2.2 / view.k}
                 strokeDasharray={`${6 / view.k} ${4 / view.k}`} opacity={0.95} pointerEvents="none" />;
             })()}
@@ -694,7 +737,7 @@ export default function PidFullView() {
             <b style={legendHead}>PIPING &amp; LINES</b>
             {PIPE_LEGEND.map(([c, label]) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
-                <span style={{ width: 22, height: 6, borderRadius: 3, background: `linear-gradient(${`color-mix(in srgb, ${c} 55%, #000)`}, ${`color-mix(in srgb, ${c} 20%, #fff)`} 45%, ${`color-mix(in srgb, ${c} 55%, #000)`})` }} />{label}
+                <span style={{ width: 22, height: 6, borderRadius: 3, background: pipeSwatch(c) }} />{label}
               </div>
             ))}
           </div>
@@ -760,7 +803,9 @@ function tube(d: string, color: string, scale = 1) {
  * one continuous line. Every shade derives from the line colour, so the elbow
  * always matches its pipe's type/colour.
  */
-function Pipe({ pts, color, selected }: { pts: Pt[]; color: string; selected?: boolean }) {
+// F16: memoized so an unrelated re-render (e.g. another node's drag tick)
+// doesn't re-run this pipe's fitting geometry when its own props are unchanged.
+const Pipe = memo(function Pipe({ pts, color, selected }: { pts: Pt[]; color: string; selected?: boolean }) {
   const { segments, elbows } = pipeParts(pts, 14);
   const dark = `color-mix(in srgb, ${color} 55%, #000)`;
   const seg = (a: Pt, b: Pt) => `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
@@ -791,9 +836,37 @@ function Pipe({ pts, color, selected }: { pts: Pt[]; color: string; selected?: b
       })}
     </g>
   );
-}
+});
 
-function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso }: { n: Component; selected: boolean; connecting: boolean; pending: boolean; flagged: boolean; shadow: boolean; refDate: Date; iso: boolean }) {
+/**
+ * One edge's route + hit-target, split out of the edges.map loop so its route
+ * (routeEdgePoints) only recomputes when ITS OWN endpoints/edge/selection
+ * actually change (memoized here + React.memo), instead of on every render of
+ * the whole canvas (F16 — "edge routes recomputed inside the render loop").
+ */
+const EdgeG = memo(function EdgeG({ edge, a, b, color, selected, mode, onSelect, onEdit }: {
+  edge: Edge; a: Component; b: Component; color: string; selected: boolean; mode: Mode;
+  onSelect: (id: string) => void; onEdit: (e: React.MouseEvent, edgeId: string) => void;
+}) {
+  const pts = useMemo(() => routeEdgePoints(a, b, edge), [a, b, edge]);
+  const hitD = useMemo(() => pts.map((pt, i) => `${i ? 'L' : 'M'} ${pt.x} ${pt.y}`).join(' '), [pts]);
+  return (
+    <g>
+      <Pipe pts={pts} color={color} selected={selected} />
+      {/* wide invisible hit-line: click selects the pipe, double-click
+          opens the edit menu — the pipe itself is never dragged. */}
+      {mode === 'admin' && (
+        <path d={hitD} stroke="transparent" strokeWidth={18} fill="none"
+          strokeLinecap="round" strokeLinejoin="round" pointerEvents="stroke"
+          style={{ cursor: 'pointer' }}
+          onPointerDown={(ev) => { ev.stopPropagation(); onSelect(edge.id); }}
+          onDoubleClick={(ev) => { ev.stopPropagation(); onEdit(ev, edge.id); }} />
+      )}
+    </g>
+  );
+});
+
+const NodeG = memo(function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso }: { n: Component; selected: boolean; connecting: boolean; pending: boolean; flagged: boolean; shadow: boolean; refDate: Date; iso: boolean }) {
   const s = SYM[n.type as SymbolKey];
   if (!s) return null;
   const { w: ew, h: eh } = box(n);
@@ -828,7 +901,7 @@ function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso
       <text x={ew / 2} y={eh + 26} textAnchor="middle" style={{ font: '9px var(--body)', fill: 'var(--dim)' }}>{(n.description || '').slice(0, 24)}</text>
     </g>
   );
-}
+});
 
 function Tooltip({ h, refDate }: { h: Hover; refDate: Date }) {
   const { n } = h;
