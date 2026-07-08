@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyMap, autoMap } from './importMap';
+import { applyMap, autoMap, MAX_IMPORT_ROWS } from './importMap';
 
 describe('autoMap', () => {
   it('detects fields from common header aliases', () => {
@@ -36,5 +36,10 @@ describe('applyMap', () => {
   it('filters out empty rows', () => {
     const rows = applyMap([{ tag: '', type: '', serial: '', system: '' }], map);
     expect(rows).toHaveLength(0);
+  });
+
+  it('throws when the row count exceeds the import cap', () => {
+    const rows = Array.from({ length: MAX_IMPORT_ROWS + 1 }, (_, i) => ({ tag: `V${i}`, type: '', serial: '', system: '' }));
+    expect(() => applyMap(rows, map)).toThrow(`Too many rows to import (max ${MAX_IMPORT_ROWS}).`);
   });
 });

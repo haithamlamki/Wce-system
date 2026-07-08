@@ -35,6 +35,9 @@ export const IMPORT_FIELDS: ImportField[] = [
 export type ColumnMap = Partial<Record<FieldKey, string>>;
 export type MappedRow = Partial<Component> & { type?: SymbolKey };
 
+/** Shared row cap for untrusted-file import parsers (xlsx.ts, layoutImport.ts, here). */
+export const MAX_IMPORT_ROWS = 10000;
+
 /** Best-guess header→field map from the file's headers (first alias hit wins). */
 export function autoMap(headers: string[]): ColumnMap {
   const set = new Set(headers.map((h) => h.trim().toLowerCase()));
@@ -48,6 +51,7 @@ export function autoMap(headers: string[]): ColumnMap {
 
 /** Apply a column map to parsed rows, dropping rows with no usable content. */
 export function applyMap(rows: Record<string, string>[], map: ColumnMap): MappedRow[] {
+  if (rows.length > MAX_IMPORT_ROWS) throw new Error(`Too many rows to import (max ${MAX_IMPORT_ROWS}).`);
   return rows
     .map((r): MappedRow => {
       const v = (k: FieldKey) => { const h = map[k]; return h ? (r[h] ?? '').trim() : ''; };
