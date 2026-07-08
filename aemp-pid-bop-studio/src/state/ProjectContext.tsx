@@ -8,8 +8,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Annotation, Component, Edge, PipeKind, PipeSeg, PortName, Project, TemplateItem } from '../types';
 import { buildFromRegister, buildMaster, importFromAEMP, rigData, seedProjectFromTemplate, type AempConfig } from '../lib/aemp';
-import { buildBopStack, type HoleSection } from '../lib/bop';
+import { buildBopStack, seedBopSeq, type HoleSection } from '../lib/bop';
 import { box, snap } from '../lib/geometry';
+import { nextSeqSeed } from '../lib/idSeq';
+import { canEditForRole } from '../lib/roles';
 import { SYM, SYM_ORDER, type SymbolDef, type SymbolKey } from '../lib/symbols';
 import { mergeCustomSymbols, newCustomKey, registerBuiltins, unregisterSymbol } from '../lib/customSymbols';
 import { sanitizeSvg, safeColor } from '../lib/sanitizeSvg';
@@ -40,6 +42,14 @@ function emptyProject(): Project {
 
 let seq = 1000;
 const nextId = (p: string) => `${p}${seq++}`;
+
+/** Reseed the id counter (F8) from a project brought in from an external
+ *  source (restore / open / cloud-load / version-restore / unit switch /
+ *  template) so freshly-created ids can't collide with ids it already
+ *  contains. Never lowers the counter. */
+function seedSeqFromProject(project: Project | null | undefined): void {
+  seq = nextSeqSeed(project, seq);
+}
 
 function newNode(type: SymbolKey, x: number, y: number): Component {
   const s = SYM[type];
@@ -213,9 +223,16 @@ const Ctx = createContext<ProjectCtx | null>(null);
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const { role, rig, enabled: authEnabled } = useAuth();
-  // End users (field role) are read-only; admin/manager/offline can edit.
-  const canEdit = role !== 'field';
-  const [restored] = useState(() => { const r = restore(); mergeCustomSymbols(r?.customSymbols); return r; });
+  // Allow-list (F9): only admin/manager can edit. A role that hasn't loaded
+  // yet, or failed to load, is `null` and must stay read-only — it must never
+  // be treated as an editor just because it isn't 'field'.
+  const canEdit = canEditForRole(role);
+  const [restored] = useState(() => {
+    const r = restore();
+    mergeCustomSymbols(r?.customSymbols);
+    seedSeqFromProject(r); // F8: don't restart the id counter below ids already in the restored project
+    return r;
+  });
   const [project, setProject] = useState<Project>(() => restored ?? emptyProject());
   const [mode, setMode] = useState<Mode>('admin');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -307,7 +324,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     () => Array.from(new Set([...(project.hiddenSymbols ?? []), ...globalHidden])),
     [project.hiddenSymbols, globalHidden],
   );
-  const canEditLibrary = role !== 'field';
+  const canEditLibrary = canEditForRole(role);
 
   // keep the shared SYM registry in sync with the project's custom symbols
   // (covers open/load/cloud-restore; live edits also mutate SYM directly)
@@ -371,8 +388,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const buildBop = useCallback((section: HoleSection) => {
-    const items = buildBopStack(section, RIG303_EQUIPMENT);
-    setProject((p) => ({ ...p, bop: { ...p.bop, items } }));
+    setProject((p) => {
+      seedBopSeq(p.bop.items); // F8: don't collide with b-ids already in this scheme
+      const items = buildBopStack(section, RIG303_EQUIPMENT);
+      return { ...p, bop: { ...p.bop, items } };
+    });
   }, []);
 
   const addNode = useCallback((type: SymbolKey, x: number, y: number) => {
@@ -663,6 +683,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const saveProject = useCallback(() => saveToFile(project), [project]);
   const openProject = useCallback(async (file: File) => {
     const loaded = await openFromFile(file);
+    seedSeqFromProject(loaded); // F8
     setSelectedId(null);
     setProject(loaded);
   }, []);
@@ -692,12 +713,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const listCloud = useCallback(() => listProjectsCloud(), []);
   const loadCloud = useCallback(async (id: string) => {
     const loaded = await loadProjectCloud(id);
-    if (loaded) { setSelectedId(null); setCloudId(id); setProject(loaded); }
+    if (loaded) { seedSeqFromProject(loaded); setSelectedId(null); setCloudId(id); setProject(loaded); } // F8
   }, []);
   const listVersions = useCallback((projectId: string) => listProjectVersions(projectId), []);
   const restoreVersion = useCallback(async (versionId: string) => {
     const loaded = await loadProjectVersion(versionId);
-    if (loaded) { setSelectedId(null); setProject(loaded); }
+    if (loaded) { seedSeqFromProject(loaded); setSelectedId(null); setProject(loaded); } // F8
   }, []);
 
   // ---- draft / publish workflow ---------------------------------------------
@@ -752,17 +773,19 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     if (role === 'field') {
       let pub: Project | null = null;
       try { pub = await fetchLatestPublished(name); } catch { /* none yet */ }
+      if (pub) seedSeqFromProject(pub); // F8
       setCloudId(null);
       setProject((p) => pub ?? { ...p, meta: { ...p.meta, rig: name }, nodes: [], pipes: [], edges: [], annotations: [] });
       return;
     }
     let row: { id: string; data: Project } | null = null;
     try { row = await fetchLatestProject(name); } catch { /* none yet */ }
-    if (row) { setCloudId(row.id); setProject(row.data); return; }
+    if (row) { seedSeqFromProject(row.data); setCloudId(row.id); setProject(row.data); return; } // F8
     // no saved drawing — seed from the unit's saved template, else its built-in
     // master (known rig), else an empty page.
     let tpl: Project | null = null;
     try { tpl = await fetchUnitTemplate(name); } catch { /* none */ }
+    if (tpl) seedSeqFromProject(tpl); // F8 — template carries over its own existing ids
     setCloudId(null);
     setProject((p) => {
       if (tpl) return seedProjectFromTemplate(tpl, name, p);
@@ -794,6 +817,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const startFromTemplate = useCallback(async (rig: string) => {
     let tpl: Project | null = null;
     try { tpl = await fetchUnitTemplate(rig); } catch { /* none */ }
+    if (tpl) seedSeqFromProject(tpl); // F8 — template carries over its own existing ids
     setSelectedId(null);
     setCloudId(null);
     setProject((p) => {

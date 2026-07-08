@@ -5,6 +5,7 @@
 // ============================================================================
 import type { AempAsset, BopItem, BopScheme } from '../types';
 import { SYM, type SymbolKey } from './symbols';
+import { nextBopSeqSeed } from './idSeq';
 
 /** Nominal component heights (metres) used to draw the stack to scale.
  *  A symbol's own `bopHeight` (symbols.ts) wins where present; this is fallback. */
@@ -35,6 +36,13 @@ export const toFeet = (m: number) => m / M_PER_FT;
 export const toMetres = (ft: number) => ft * M_PER_FT;
 
 let bopSeq = 1;
+
+/** Reseed the `b<n>` id counter (F8) so rebuilding the stack after a project
+ *  load/restore can't collide with `b`-ids already present in that project's
+ *  BOP scheme. Never lowers the counter — call before `buildBopStack`. */
+export function seedBopSeq(items: BopItem[] | null | undefined): void {
+  bopSeq = nextBopSeqSeed(items, bopSeq);
+}
 
 /**
  * Auto-build a BOP stack for a hole section (FR-33). Production / reservoir

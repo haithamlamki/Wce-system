@@ -37,6 +37,10 @@ export function statusOf(
   if (!dates.length) return 'ok';
   let worst: InspectionStatus = 'ok';
   for (const d of dates) {
+    // An unparseable due date (e.g. wrong format) is a safety-relevant alert
+    // state in its own right — never let it silently fall through to ok/due
+    // (NaN comparisons below would otherwise all be false, reading as "ok").
+    if (Number.isNaN(d.getTime())) return 'invalid';
     const days = (d.getTime() - refDate.getTime()) / MS_PER_DAY;
     if (days < 0) {
       // Overdue dominates everything else — short-circuit.
@@ -59,6 +63,7 @@ export const STATUS_COLOR: Record<InspectionStatus, string> = {
   due: 'var(--amber)',
   over: 'var(--red)',
   untag: 'var(--faint)',
+  invalid: 'var(--status-invalid)',
 };
 
 /** Status → human label. */
@@ -67,11 +72,12 @@ export const STATUS_LABEL: Record<InspectionStatus, string> = {
   due: 'Due Soon',
   over: 'Overdue',
   untag: 'Untagged',
+  invalid: 'Invalid Date',
 };
 
 /** Roll up a component list into register summary counters (PRD FR-25). */
 export function summarize(nodes: Component[], refDate?: Date) {
-  const counts = { total: nodes.length, ok: 0, due: 0, over: 0, untag: 0 };
+  const counts = { total: nodes.length, ok: 0, due: 0, over: 0, untag: 0, invalid: 0 };
   for (const n of nodes) counts[statusOf(n, refDate)]++;
   return counts;
 }

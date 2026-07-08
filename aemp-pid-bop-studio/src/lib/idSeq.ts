@@ -1,0 +1,58 @@
+// ============================================================================
+//  Id-sequence reseeding (F8) — a restored/loaded project already contains
+//  ids like "n1042" / "e17" / "g3", but the in-memory `nextId` counters
+//  (ProjectContext's `seq`, bop.ts's `bopSeq`) always restart from their
+//  initial value on page load. Left alone, the next freshly-created id can
+//  collide with one already in the loaded document. These pure helpers scan
+//  a project's existing ids and return a seed that is guaranteed to be past
+//  the highest one found — and never lower than the counter's current value.
+// ============================================================================
+import type { Project } from '../types';
+
+const ID_TAIL = /(\d+)$/;
+
+/** Parse the trailing integer off an id like "n1042" / "e17" / "g3" / "b12".
+ *  Returns null when the id has no numeric tail (ignored by the seeders). */
+export function idTail(id: string): number | null {
+  const m = ID_TAIL.exec(id);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/** Highest numeric id-tail found across a list of ids, or -Infinity if none. */
+function maxTail(ids: Iterable<string>): number {
+  let max = -Infinity;
+  for (const id of ids) {
+    const n = idTail(id);
+    if (n !== null && n > max) max = n;
+  }
+  return max;
+}
+
+/**
+ * Next safe seed for the node/edge/annotation `nextId` counter given a
+ * loaded/restored project: one past the highest numeric suffix found across
+ * `nodes[]`, `edges[]` and `annotations[]`. Never lower than `current` — it
+ * can only advance the counter, never rewind it.
+ */
+export function nextSeqSeed(
+  project: Pick<Project, 'nodes' | 'edges' | 'annotations'> | null | undefined,
+  current: number,
+): number {
+  if (!project) return current;
+  const ids: string[] = [
+    ...project.nodes.map((n) => n.id),
+    ...project.edges.map((e) => e.id),
+    ...(project.annotations ?? []).map((a) => a.id),
+  ];
+  const max = maxTail(ids);
+  if (max === -Infinity) return current;
+  return Math.max(current, max + 1);
+}
+
+/** Same idea for the BOP stack's independent `b<n>` id namespace. */
+export function nextBopSeqSeed(items: Array<{ id: string }> | null | undefined, current: number): number {
+  if (!items || !items.length) return current;
+  const max = maxTail(items.map((i) => i.id));
+  if (max === -Infinity) return current;
+  return Math.max(current, max + 1);
+}

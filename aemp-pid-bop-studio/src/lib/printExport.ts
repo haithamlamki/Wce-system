@@ -11,7 +11,7 @@ import { statusOf } from './status';
 import { stackMetrics, toFeet } from './bop';
 import { safeColor, sanitizeSvg } from './sanitizeSvg';
 
-const STATUS_HEX: Record<string, string> = { ok: '#1f9d57', due: '#cf8a00', over: '#d8453d', untag: '#8d9dab' };
+const STATUS_HEX: Record<string, string> = { ok: '#1f9d57', due: '#cf8a00', over: '#d8453d', untag: '#8d9dab', invalid: '#a5279e' };
 const esc = (s: string) => (s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!));
 
 function header(project: Project, subtitle: string): string {

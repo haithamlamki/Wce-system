@@ -136,6 +136,7 @@ export default function RegisterView() {
         <Counter n={counts.due} label="Due Soon" color="var(--amber)" />
         <Counter n={counts.over} label="Overdue" color="var(--red)" />
         <Counter n={counts.untag} label="Untagged" color="var(--faint)" />
+        <Counter n={counts.invalid} label="Invalid Date" color="var(--status-invalid)" />
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -146,6 +147,7 @@ export default function RegisterView() {
           <option value="due">Due soon</option>
           <option value="ok">In date</option>
           <option value="untag">Untagged</option>
+          <option value="invalid">Invalid date</option>
         </select>
         <span className="spacer" style={{ flex: 1 }} />
         {canEdit && <button style={btn} onClick={() => importAEMP()}>Import from AEMP</button>}
