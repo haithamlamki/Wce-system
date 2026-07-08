@@ -79,13 +79,15 @@ export async function loadProjectVersion(versionId: string): Promise<Project | n
   return (data?.data as Project) ?? null;
 }
 
-/** List saved projects (most-recent first). */
-export async function listProjectsCloud(): Promise<ProjectSummary[]> {
+/** List saved projects (most-recent first). Pass `rig` to list only one unit's
+ *  saved diagrams (rig_name is indexed). */
+export async function listProjectsCloud(rig?: string): Promise<ProjectSummary[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase
+  let q = supabase
     .from('projects')
-    .select('id, rig_name, reference_date, updated_at')
-    .order('updated_at', { ascending: false });
+    .select('id, rig_name, reference_date, updated_at');
+  if (rig) q = q.eq('rig_name', rig);
+  const { data, error } = await q.order('updated_at', { ascending: false });
   if (error) throw new Error(error.message);
   return (data as ProjectSummary[]) ?? [];
 }
@@ -132,6 +134,33 @@ export async function renameUnit(oldName: string, newName: string): Promise<void
   await supabase.from('projects').update({ rig_name: newName }).eq('rig_name', oldName);
   await supabase.from('equipment').update({ rig_name: newName }).eq('rig_name', oldName);
   try { await supabase.from('manuals').update({ rig_name: newName }).eq('rig_name', oldName); } catch { /* manuals optional */ }
+}
+
+// ---- unit templates (per-unit reusable start layout, migration 0010) --------
+
+/** Names of units that have a saved template. [] if Supabase isn't configured
+ *  or the `unit_templates` table doesn't exist yet (pre-0010) — degrade quietly. */
+export async function listUnitTemplates(): Promise<string[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('unit_templates').select('rig_name');
+  if (error) return []; // table may not exist yet
+  return (data ?? []).map((r: { rig_name: string }) => r.rig_name);
+}
+
+/** Save (upsert) a unit's reusable start template — the full Project doc.
+ *  Admin/manager only (enforced by RLS). No-op when Supabase isn't configured. */
+export async function saveUnitTemplate(rig: string, project: Project): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('unit_templates').upsert({ rig_name: rig, data: project });
+  if (error) throw new Error(error.message);
+}
+
+/** Fetch a unit's saved template Project, or null when none / offline. */
+export async function fetchUnitTemplate(rig: string): Promise<Project | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('unit_templates').select('data').eq('rig_name', rig).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data?.data as Project) ?? null;
 }
 
 /** Latest saved project for a unit (any status), with its row id so Save upserts
