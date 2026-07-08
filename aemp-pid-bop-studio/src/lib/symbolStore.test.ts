@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defToRowFields, rowToDef, splitSymbolRows, type SymbolRow } from './symbolStore';
+import { defToRowFields, mergeLibraryRows, rowToDef, type SymbolRow } from './symbolStore';
 import type { SymbolDef } from './symbols';
 
 const baseRow: SymbolRow = {
@@ -27,16 +27,37 @@ describe('defToRowFields', () => {
   });
 });
 
-describe('splitSymbolRows', () => {
-  it('registers non-hidden rows as defs and collects hidden keys', () => {
+describe('mergeLibraryRows', () => {
+  it('merges every row and collects hidden keys, preserving the custom flag', () => {
     const rows: SymbolRow[] = [
       baseRow,
       { ...baseRow, key: 'gate', name: 'Gate override', custom: false },
       { ...baseRow, key: 'annular', hidden: true },
     ];
-    const { defs, hidden } = splitSymbolRows(rows);
-    expect(Object.keys(defs).sort()).toEqual(['annular', 'custom_a', 'gate']);
-    expect(defs.gate.custom).toBe(false);
+    const { merged, hidden } = mergeLibraryRows({}, rows);
+    expect(Object.keys(merged).sort()).toEqual(['annular', 'custom_a', 'gate']);
+    expect(merged.gate.custom).toBe(false);
     expect(hidden).toEqual(['annular']);
+  });
+
+  it('preserves built-in-only fields (bopHeight/defaults) when merging an override', () => {
+    const existing: Record<string, SymbolDef> = {
+      annular: { name: 'Annular BOP', cat: 'BOP Stack', w: 84, h: 60, color: '#cf3a30', svg: '<orig/>', bopHeight: 1.5, defaults: { size: '13-5/8"' } },
+    };
+    const rows: SymbolRow[] = [{ ...baseRow, key: 'annular', name: 'Annular BOP', cat: 'BOP Stack', svg: '<edited/>', custom: false }];
+    const { merged } = mergeLibraryRows(existing, rows);
+    expect(merged.annular.svg).toBe('<edited/>');       // edited art applied
+    expect(merged.annular.bopHeight).toBe(1.5);          // built-in field survives
+    expect(merged.annular.defaults).toEqual({ size: '13-5/8"' });
+  });
+
+  it('still merges a hidden row so an edited-then-hidden built-in keeps its art (restore recovers it)', () => {
+    const existing: Record<string, SymbolDef> = {
+      gate: { name: 'Gate Valve', cat: 'Valves', w: 50, h: 40, color: '#abc', svg: '<orig/>' },
+    };
+    const rows: SymbolRow[] = [{ ...baseRow, key: 'gate', name: 'Gate Valve', cat: 'Valves', svg: '<edited/>', custom: false, hidden: true }];
+    const { merged, hidden } = mergeLibraryRows(existing, rows);
+    expect(hidden).toEqual(['gate']);
+    expect(merged.gate.svg).toBe('<edited/>');           // art retained despite hidden
   });
 });

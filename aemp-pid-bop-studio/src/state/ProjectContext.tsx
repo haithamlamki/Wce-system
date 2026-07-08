@@ -12,7 +12,7 @@ import { buildBopStack, type HoleSection } from '../lib/bop';
 import { box, snap } from '../lib/geometry';
 import { SYM, SYM_ORDER, type SymbolDef, type SymbolKey } from '../lib/symbols';
 import { mergeCustomSymbols, newCustomKey, registerBuiltins, unregisterSymbol } from '../lib/customSymbols';
-import { listSymbols, upsertSymbol, deleteSymbolRow, setSymbolHidden, splitSymbolRows } from '../lib/symbolStore';
+import { listSymbols, upsertSymbol, deleteSymbolRow, setSymbolHidden, mergeLibraryRows, readSymbolCache, type SymbolRow } from '../lib/symbolStore';
 import { REWARDS, rewardStats } from '../lib/rewards';
 import { validate, type Issue } from '../lib/validation';
 
@@ -317,23 +317,25 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, []);
 
-  // load the shared symbol library once and merge it into SYM
+  // load the shared symbol library: apply the offline cache immediately (so the
+  // full catalog is present offline / before the network settles), then refresh
+  // from the DB. Both merge onto SYM preserving built-in-only fields.
   useEffect(() => {
     let active = true;
+    const apply = (rows: SymbolRow[]) => {
+      if (!active || !rows.length) return;
+      const { merged, hidden } = mergeLibraryRows(SYM, rows);
+      for (const [k, d] of Object.entries(merged)) {
+        SYM[k] = d;
+        if (!SYM_ORDER.includes(d.cat)) SYM_ORDER.push(d.cat);
+      }
+      setGlobalHidden(hidden);
+      bumpSyms((v) => v + 1);            // re-render palette/library
+    };
+    apply(readSymbolCache());            // instant + offline
     listSymbols()
-      .then((rows) => {
-        if (!active || !rows.length) return;
-        const { defs, hidden } = splitSymbolRows(rows);
-        const hiddenSet = new Set(hidden);
-        for (const [k, d] of Object.entries(defs)) {
-          if (hiddenSet.has(k)) continue;              // keep built-in's original SYM entry
-          SYM[k] = SYM[k] ? { ...SYM[k], ...d } : { ...d }; // merge preserves bopHeight/defaults
-          if (!SYM_ORDER.includes(d.cat)) SYM_ORDER.push(d.cat);
-        }
-        setGlobalHidden(hidden);
-        bumpSyms((v) => v + 1);            // re-render palette/library
-      })
-      .catch(() => { /* offline or table absent — degrade to per-project */ });
+      .then(apply)
+      .catch(() => { /* offline or table absent — cache already applied */ });
     return () => { active = false; };
   }, []);
 
