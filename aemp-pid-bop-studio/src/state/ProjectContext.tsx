@@ -417,7 +417,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const scaleNode = useCallback((id: string, scale: number, applyToType = false) => {
-    const s = Math.max(0.4, Math.min(2.4, scale));
+    const s = Math.max(0.4, Math.min(3, scale));
     setProject((p) => {
       const src = p.nodes.find((n) => n.id === id);
       if (!src) return p;
@@ -568,7 +568,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [selectedIds]);
 
   const scaleSelection = useCallback((scale: number) => {
-    const s = Math.max(0.4, Math.min(2.4, scale));
+    const s = Math.max(0.4, Math.min(3, scale));
     setProject((p) => { const set = new Set(selectedIds); return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, scale: s } : n)) }; });
   }, [selectedIds]);
 
