@@ -355,13 +355,25 @@ export default function PidFullView() {
   }
 
   // ---- pipe editing (select / double-click to insert or branch) -------------
-  function selectEdge(id: string) { p.clearSelection(); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(id); }
-  function openPipeEdit(e: React.MouseEvent, edgeId: string) {
-    const { px, py } = local(e);
+  // F19 (PR7 review): both are passed to EdgeG (React.memo) as onSelect/onEdit —
+  // wrapped in useCallback so their identity is stable across renders (incl.
+  // every drag tick), letting EdgeG's memo actually bail. `p.clearSelection` is
+  // a stable useCallback ([] deps in ProjectContext); the setState setters are
+  // stable by React guarantee, so neither needs to be listed as a dependency.
+  const selectEdge = useCallback((id: string) => {
+    p.clearSelection(); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(id);
+  }, [p.clearSelection]);
+  const openPipeEdit = useCallback((e: React.MouseEvent, edgeId: string) => {
+    // inlined equivalent of `local(e)` — that helper is a plain closure
+    // recreated every render, so calling it here would drag a fresh identity
+    // into this callback's deps and defeat the memoization above; svgRef is a
+    // ref (stable) so this keeps the callback's identity tied only to `view`.
+    const r = svgRef.current!.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
     const w = screenToWorld(px, py, view);
     p.clearSelection(); setPipeMenu(null); setSelectedEdgeId(edgeId);
     setPipeEdit({ edgeId, wx: w.x, wy: w.y, sx: px, sy: py });
-  }
+  }, [view, p.clearSelection]);
   /** Insert a junction on the pipe at the clicked point (splits A→B into A→J→B).
    *  `inline` selects the junction for retyping to real equipment; branch leaves
    *  it as a tee ready to connect a side item. Both keep the pipe type/colour. */

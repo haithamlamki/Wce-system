@@ -362,10 +362,3 @@ export function isoPlacement(n: Component) {
 
 /** Iso depth key — back-to-front draw order. */
 export const isoDepth = (n: Component) => n.x + n.y;
-
-/** Resolve the two endpoints of a logical edge to their nodes. */
-export function edgeNodes(edge: Edge, nodes: Component[]) {
-  const a = nodes.find((n) => n.id === edge.from);
-  const b = nodes.find((n) => n.id === edge.to);
-  return a && b ? { a, b } : null;
-}
