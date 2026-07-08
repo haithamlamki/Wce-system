@@ -10,8 +10,9 @@ import type { Annotation, Component, Edge, PipeKind, PipeSeg, PortName, Project,
 import { buildFromRegister, buildMaster, importFromAEMP, rigData, type AempConfig } from '../lib/aemp';
 import { buildBopStack, type HoleSection } from '../lib/bop';
 import { box, snap } from '../lib/geometry';
-import { SYM, type SymbolDef, type SymbolKey } from '../lib/symbols';
+import { SYM, SYM_ORDER, type SymbolDef, type SymbolKey } from '../lib/symbols';
 import { mergeCustomSymbols, newCustomKey, registerBuiltins, unregisterSymbol } from '../lib/customSymbols';
+import { listSymbols, upsertSymbol, deleteSymbolRow, setSymbolHidden, mergeLibraryRows, readSymbolCache, type SymbolRow } from '../lib/symbolStore';
 import { REWARDS, rewardStats } from '../lib/rewards';
 import { validate, type Issue } from '../lib/validation';
 
@@ -192,6 +193,10 @@ interface ProjectCtx {
   hideSymbol: (key: string) => void;
   /** Un-hide a previously removed built-in symbol. */
   restoreSymbol: (key: string) => void;
+  /** Effective hidden set (per-project ∪ global library). */
+  hiddenSymbols: string[];
+  /** Whether the current user may modify the shared Symbol library. */
+  canEditLibrary: boolean;
 
   // rewards redemption (FR-55)
   redeemReward: (id: string) => void;
@@ -211,6 +216,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // first open (nothing autosaved) → show the date-first onboarding modal (FR-1)
   const [showOnboard, setShowOnboard] = useState(() => restored === null);
   const [cloudId, setCloudId] = useState<string | null>(null);
+  // global (company-wide) symbol library — merged into SYM on mount (FR: shared
+  // Symbol library). Additive to project.customSymbols so offline is unaffected.
+  const [globalHidden, setGlobalHidden] = useState<string[]>([]);
   // register → diagram focus request (FR-27): bump seq to re-center on focusId
   const [focusId, setFocusId] = useState<string | null>(null);
   const [focusSeq, setFocusSeq] = useState(0);
@@ -288,6 +296,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const issues = useMemo(() => validate(project), [project]);
 
+  const hiddenSymbols = useMemo(
+    () => Array.from(new Set([...(project.hiddenSymbols ?? []), ...globalHidden])),
+    [project.hiddenSymbols, globalHidden],
+  );
+  const canEditLibrary = role !== 'field';
+
   // keep the shared SYM registry in sync with the project's custom symbols
   // (covers open/load/cloud-restore; live edits also mutate SYM directly)
   useEffect(() => { mergeCustomSymbols(project.customSymbols); }, [project.customSymbols]);
@@ -300,6 +314,28 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     import('../lib/data/rig103-symbols')
       .then((m) => { if (active && registerBuiltins(m.RIG103_SYMBOLS)) bumpSyms((v) => v + 1); })
       .catch(() => { /* optional pack */ });
+    return () => { active = false; };
+  }, []);
+
+  // load the shared symbol library: apply the offline cache immediately (so the
+  // full catalog is present offline / before the network settles), then refresh
+  // from the DB. Both merge onto SYM preserving built-in-only fields.
+  useEffect(() => {
+    let active = true;
+    const apply = (rows: SymbolRow[]) => {
+      if (!active || !rows.length) return;
+      const { merged, hidden } = mergeLibraryRows(SYM, rows);
+      for (const [k, d] of Object.entries(merged)) {
+        SYM[k] = d;
+        if (!SYM_ORDER.includes(d.cat)) SYM_ORDER.push(d.cat);
+      }
+      setGlobalHidden(hidden);
+      bumpSyms((v) => v + 1);            // re-render palette/library
+    };
+    apply(readSymbolCache());            // instant + offline
+    listSymbols()
+      .then(apply)
+      .catch(() => { /* offline or table absent — cache already applied */ });
     return () => { active = false; };
   }, []);
 
@@ -417,7 +453,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const scaleNode = useCallback((id: string, scale: number, applyToType = false) => {
-    const s = Math.max(0.4, Math.min(2.4, scale));
+    const s = Math.max(0.4, Math.min(3, scale));
     setProject((p) => {
       const src = p.nodes.find((n) => n.id === id);
       if (!src) return p;
@@ -568,7 +604,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [selectedIds]);
 
   const scaleSelection = useCallback((scale: number) => {
-    const s = Math.max(0.4, Math.min(2.4, scale));
+    const s = Math.max(0.4, Math.min(3, scale));
     setProject((p) => { const set = new Set(selectedIds); return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, scale: s } : n)) }; });
   }, [selectedIds]);
 
@@ -792,12 +828,17 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     const key = newCustomKey(project.customSymbols ?? {});
     SYM[key] = { ...def, custom: true }; // make available immediately
     setProject((p) => ({ ...p, customSymbols: { ...(p.customSymbols ?? {}), [key]: { ...def, custom: true } } }));
+    void upsertSymbol(key, { ...def, custom: true }, { custom: true, hidden: false })
+      .catch((e) => console.error('Symbol not saved to the shared library:', e));
     return key;
   }, [project.customSymbols]);
 
   const updateCustomSymbol = useCallback((key: string, def: SymbolDef) => {
     SYM[key] = { ...def, custom: true };
     setProject((p) => ({ ...p, customSymbols: { ...(p.customSymbols ?? {}), [key]: { ...def, custom: true } } }));
+    const isCustom = key.startsWith('custom_');
+    void upsertSymbol(key, { ...def, custom: isCustom }, { custom: isCustom, hidden: false })
+      .catch((e) => console.error('Symbol change not saved to the shared library:', e));
   }, []);
 
   const deleteCustomSymbol = useCallback((key: string) => {
@@ -807,21 +848,28 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       delete next[key];
       return { ...p, customSymbols: next };
     });
+    void deleteSymbolRow(key).catch((e) => console.error('Symbol not deleted from the shared library:', e));
   }, []);
 
   // Hide a built-in (keep SYM[key] so placed nodes still render) and drop any
   // per-project override of it. Reversible via restoreSymbol.
   const hideSymbol = useCallback((key: string) => {
+    const def = SYM[key];
     setProject((p) => {
       const custom = { ...(p.customSymbols ?? {}) };
       delete custom[key];
       const hidden = p.hiddenSymbols ?? [];
       return { ...p, customSymbols: custom, hiddenSymbols: hidden.includes(key) ? hidden : [...hidden, key] };
     });
+    setGlobalHidden((h) => (h.includes(key) ? h : [...h, key]));
+    if (def) void setSymbolHidden(key, def, true).catch((e) => console.error('Hide not saved to the shared library:', e));
   }, []);
 
   const restoreSymbol = useCallback((key: string) => {
+    const def = SYM[key];
     setProject((p) => ({ ...p, hiddenSymbols: (p.hiddenSymbols ?? []).filter((k) => k !== key) }));
+    setGlobalHidden((h) => h.filter((k) => k !== key));
+    if (def) void setSymbolHidden(key, def, false).catch((e) => console.error('Restore not saved to the shared library:', e));
   }, []);
 
   // FR-55: redeem a reward if affordable; persists in project.rewards
@@ -854,7 +902,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     focusId, focusSeq, requestFocus, issues,
     addAnnotation, updateAnnotation, deleteAnnotation,
     groupSelection, ungroupSelection, toggleLockSelection,
-    addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol,
+    addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol, hiddenSymbols, canEditLibrary,
     redeemReward,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

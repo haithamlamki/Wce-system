@@ -54,7 +54,7 @@ function parseSymbolFile(text: string, fileName: string, fallback?: SymbolDef): 
 }
 
 export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
-  const { project, addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol } = useProject();
+  const { project, addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol, hiddenSymbols, canEditLibrary } = useProject();
   const [drawer, setDrawer] = useState<{ key: string | null } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [, refresh] = useReducer((x) => x + 1, 0);
@@ -64,7 +64,7 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
 
   const custom = project.customSymbols ?? {};
   const customCount = Object.keys(custom).length;
-  const hidden = new Set(project.hiddenSymbols ?? []);
+  const hidden = new Set(hiddenSymbols);
   // custom symbols first
   const all = Object.entries(SYM).sort((a, b) => (b[1].custom ? 1 : 0) - (a[1].custom ? 1 : 0));
   const entries = all.filter(([k]) => !hidden.has(k));
@@ -142,11 +142,13 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
         </div>
         <div style={{ fontSize: 12, fontWeight: 600, textAlign: 'center', lineHeight: 1.25, minHeight: 30, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.name}</div>
         <div style={{ fontSize: 9, color: kind === 'built-in' ? 'var(--faint)' : 'var(--accent)', textAlign: 'center', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{kind}</div>
-        <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
-          <button style={smallBtn} title="Edit name / size / shapes" onClick={() => setDrawer({ key })}>edit</button>
-          <button style={smallBtn} title="Replace artwork with an uploaded SVG or PNG image" onClick={() => { replaceKey.current = key; replaceRef.current?.click(); }}>upload</button>
-          <button style={{ ...smallBtn, color: 'var(--red)' }} title={key.startsWith('custom_') ? 'Delete symbol' : 'Remove from library'} onClick={() => onDelete(key)}>del</button>
-        </div>
+        {canEditLibrary && (
+          <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
+            <button style={smallBtn} title="Edit name / size / shapes" onClick={() => setDrawer({ key })}>edit</button>
+            <button style={smallBtn} title="Replace artwork with an uploaded SVG or PNG image" onClick={() => { replaceKey.current = key; replaceRef.current?.click(); }}>upload</button>
+            <button style={{ ...smallBtn, color: 'var(--red)' }} title={key.startsWith('custom_') ? 'Delete symbol' : 'Remove from library'} onClick={() => onDelete(key)}>del</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -163,9 +165,10 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          <button style={primary} onClick={() => setDrawer({ key: null })}>＋ Draw new symbol</button>
-          <button style={ghost} onClick={() => fileRef.current?.click()}>⤓ Import</button>
+          {canEditLibrary && <button style={primary} onClick={() => setDrawer({ key: null })}>＋ Draw new symbol</button>}
+          {canEditLibrary && <button style={ghost} onClick={() => fileRef.current?.click()}>⤓ Import</button>}
           <button style={ghost} onClick={exportJson}>⤒ Export</button>
+          {!canEditLibrary && <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--faint)', alignSelf: 'center' }}>Read-only — the shared library is admin-managed.</span>}
           {hiddenEntries.length > 0 && (
             <button style={ghost} onClick={() => setShowHidden((v) => !v)}>{showHidden ? 'Hide removed' : `Show hidden (${hiddenEntries.length})`}</button>
           )}

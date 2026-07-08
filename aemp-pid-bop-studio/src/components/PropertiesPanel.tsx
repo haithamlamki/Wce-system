@@ -34,7 +34,7 @@ export default function PropertiesPanel() {
             <button style={{ ...ctlBtn, color: 'var(--red)' }} title="Delete all (Del)" onClick={deleteSelection}>🗑</button>
           </div>
           <Field label="Scale all">
-            <input type="range" min={0.4} max={2.4} step={0.1} defaultValue={1} onChange={(e) => scaleSelection(+e.target.value)} style={{ width: '100%' }} />
+            <input type="range" min={0.4} max={3} step={0.1} defaultValue={1} onChange={(e) => scaleSelection(+e.target.value)} style={{ width: '100%' }} />
           </Field>
 
           <Field label="Align">
@@ -129,7 +129,7 @@ export default function PropertiesPanel() {
           <button style={{ ...ctlBtn, color: 'var(--red)' }} title="Delete (Del)" onClick={() => deleteNode(n.id)}>🗑</button>
         </div>
         <Field label={`Scale · ${Math.round((n.scale || 1) * 100)}%`}>
-          <input type="range" min={0.4} max={2.4} step={0.1} value={n.scale || 1} onChange={(e) => scaleNode(n.id, +e.target.value, applyAll)} style={{ width: '100%' }} />
+          <input type="range" min={0.4} max={3} step={0.1} value={n.scale || 1} onChange={(e) => scaleNode(n.id, +e.target.value, applyAll)} style={{ width: '100%' }} />
         </Field>
 
         <Field label="Tag"><input style={inp} value={n.tag} onChange={(e) => set({ tag: e.target.value })} /></Field>
