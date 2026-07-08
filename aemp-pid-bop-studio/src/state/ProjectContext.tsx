@@ -423,18 +423,22 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const duplicateNode = useCallback((id: string) => {
-    // F11: mint the id BEFORE setProject so the reducer stays pure — React
+    // F11: honest duplicate — only mint an id (and select it) when a source
+    // node actually exists; otherwise return null and touch nothing.
+    const src = project.nodes.find((n) => n.id === id);
+    if (!src) return null;
+    // mint the id BEFORE setProject so the reducer stays pure — React
     // StrictMode/concurrent re-invocation must never call nextId() itself.
     const newId = nextId('n');
     setProject((p) => {
-      const src = p.nodes.find((n) => n.id === id);
-      if (!src) return p; // a wasted id here is acceptable; the reducer stays pure
-      const copy: Component = { ...src, id: newId, x: src.x + 24, y: src.y + 24 };
+      const s = p.nodes.find((n) => n.id === id);
+      if (!s) return p; // source removed between the check above and now
+      const copy: Component = { ...s, id: newId, x: s.x + 24, y: s.y + 24 };
       return { ...p, nodes: [...p.nodes, copy] };
     });
-    if (newId) setSelectedId(newId);
+    setSelectedId(newId);
     return newId;
-  }, []);
+  }, [project.nodes]);
 
   // swap symbol type, keeping all inspection/identity data (FR-16);
   // applyToType swaps every item of the original type (FR-18)

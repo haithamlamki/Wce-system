@@ -28,7 +28,12 @@ as $$
 declare
   v_count integer;
 begin
-  if public.my_role() <> 'admin' then
+  -- NULL-safe: my_role() is a bare `select role ...` with no coalesce, so a
+  -- caller with no profiles row (or unauthenticated) gets NULL back. Plain
+  -- `<>` against NULL evaluates to NULL, and `if <NULL> then` is treated as
+  -- false — silently skipping the guard. `is distinct from` treats NULL as a
+  -- real inequality, so a NULL role is correctly rejected as not-admin.
+  if public.my_role() is distinct from 'admin' then
     raise exception 'not authorized' using errcode = '42501';
   end if;
 
@@ -50,6 +55,9 @@ begin
 end;
 $$;
 
+-- functions are executable by PUBLIC by default; revoke that before granting
+-- to authenticated so anonymous/unauthenticated callers can't invoke it at all.
+revoke all on function public.replace_rig_equipment(text, jsonb) from public;
 grant execute on function public.replace_rig_equipment(text, jsonb) to authenticated;
 
 create or replace function public.rename_unit(p_old text, p_new text)
@@ -74,4 +82,7 @@ begin
 end;
 $$;
 
+-- functions are executable by PUBLIC by default; revoke that before granting
+-- to authenticated so anonymous/unauthenticated callers can't invoke it at all.
+revoke all on function public.rename_unit(text, text) from public;
 grant execute on function public.rename_unit(text, text) to authenticated;

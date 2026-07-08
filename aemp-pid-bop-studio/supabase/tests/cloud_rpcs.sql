@@ -152,6 +152,18 @@ end $$;
 -- 5) A rename that fails partway (duplicate unit name) leaves EVERYTHING
 --    unchanged — no partial re-key of projects/equipment while units fails
 --    (or vice versa).
+--    NOTE: this case fails on the very FIRST statement inside rename_unit
+--    (the `update public.units ... set name = p_new` hits units' unique
+--    constraint on `name`), so by itself it does not prove CROSS-statement
+--    rollback (i.e. an earlier successful update being undone by a LATER
+--    failure). None of projects/equipment/manuals carry a constraint that
+--    can be made to fail only after a preceding statement succeeds, so that
+--    can't be constructed here without adding an artificial constraint
+--    purely for the test (over-engineering for this fixture). Cross-statement
+--    rollback (an earlier successful write undone by a later failure within
+--    the same function call) is exercised by test #6 below, which fails
+--    partway through replace_rig_equipment's insert (after its delete has
+--    already run) and asserts the pre-existing rows are still intact.
 do $$
 declare v_units int; v_projects int; v_equipment int;
 begin
