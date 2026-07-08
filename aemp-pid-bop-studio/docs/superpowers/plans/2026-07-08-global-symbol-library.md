@@ -311,7 +311,7 @@ git commit -m "feat: symbolStore — DB mappers + async CRUD for global symbols"
 - Modify: `src/state/ProjectContext.tsx`
 
 **Interfaces:**
-- Consumes: `listSymbols`, `upsertSymbol`, `deleteSymbolRow`, `setSymbolHidden`, `splitSymbolRows` from `../lib/symbolStore`; existing `mergeCustomSymbols`, `unregisterSymbol` from `../lib/customSymbols`; `SYM` from `../lib/symbols`; `role` from `useAuth()`.
+- Consumes: `listSymbols`, `upsertSymbol`, `deleteSymbolRow`, `setSymbolHidden`, `splitSymbolRows` from `../lib/symbolStore`; existing `unregisterSymbol` from `../lib/customSymbols`; `SYM`, `SYM_ORDER` from `../lib/symbols`; `role` from `useAuth()`.
 - Produces (added to `ProjectCtx`): `hiddenSymbols: string[]` (union of project + global hidden), `canEditLibrary: boolean`. Consumed by Task 4 (`SymbolLibrary`).
 
 - [ ] **Step 1: Add the import**
@@ -320,6 +320,13 @@ In `src/state/ProjectContext.tsx`, below the existing `customSymbols` import (li
 
 ```ts
 import { listSymbols, upsertSymbol, deleteSymbolRow, setSymbolHidden, splitSymbolRows } from '../lib/symbolStore';
+```
+
+Also add `SYM_ORDER` to the existing symbols import — change
+`import { SYM, type SymbolDef, type SymbolKey } from '../lib/symbols';` to:
+
+```ts
+import { SYM, SYM_ORDER, type SymbolDef, type SymbolKey } from '../lib/symbols';
 ```
 
 - [ ] **Step 2: Add global-hidden state and the load effect**
@@ -332,7 +339,17 @@ Inside `ProjectProvider`, near the other `useState` hooks (after `const [cloudId
   const [globalHidden, setGlobalHidden] = useState<string[]>([]);
 ```
 
-Then, next to the existing Rig 103 symbol-pack effect (~line 298), add a new effect:
+Then, next to the existing Rig 103 symbol-pack effect (~line 298), add a new effect.
+
+**Important merge rule (do NOT use `mergeCustomSymbols` here):** `mergeCustomSymbols`
+replaces `SYM[key]` wholesale and forces `custom: true`. The `symbols` table has no
+`bopHeight` / `defaults` columns, so replacing a built-in (e.g. an override or a
+hidden BOP-stack symbol) would drop those fields and break BOP elevation math and
+placement defaults. Instead: **skip hidden rows** when registering defs (a hidden
+built-in keeps its original full-fidelity `SYM` entry — placed nodes still render),
+and **merge overrides ONTO the existing entry** (`{ ...SYM[key], ...def }`) so
+built-in-only fields survive while the edited artwork/name/size/colour apply. Each
+row's `def.custom` (set by `rowToDef`) is preserved, so labels stay correct.
 
 ```ts
   // load the shared symbol library once and merge it into SYM
@@ -342,7 +359,12 @@ Then, next to the existing Rig 103 symbol-pack effect (~line 298), add a new eff
       .then((rows) => {
         if (!active || !rows.length) return;
         const { defs, hidden } = splitSymbolRows(rows);
-        mergeCustomSymbols(defs);          // registers each def into SYM
+        const hiddenSet = new Set(hidden);
+        for (const [k, d] of Object.entries(defs)) {
+          if (hiddenSet.has(k)) continue;              // keep built-in's original SYM entry
+          SYM[k] = SYM[k] ? { ...SYM[k], ...d } : { ...d }; // merge preserves bopHeight/defaults
+          if (!SYM_ORDER.includes(d.cat)) SYM_ORDER.push(d.cat);
+        }
         setGlobalHidden(hidden);
         bumpSyms((v) => v + 1);            // re-render palette/library
       })
