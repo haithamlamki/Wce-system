@@ -6,7 +6,7 @@
 //  API contract (PRD §16.1) — until then we fall back to an embedded offline
 //  cache (the Rig 303 dataset).
 // ============================================================================
-import type { AempAsset, Component, PipeSeg, TemplateItem } from '../types';
+import type { AempAsset, Component, PipeSeg, Project, TemplateItem } from '../types';
 import { RIG303_EQUIPMENT } from './data/rig303-equipment';
 import { RIG305_TEMPLATE, RIG305_PIPES } from './data/rig305-layout';
 import { RIG103_EQUIPMENT, RIG103_TEMPLATE } from './data/rig103-equipment';
@@ -143,6 +143,23 @@ export const RIGS: Record<string, { template: TemplateItem[]; register: AempAsse
 /** Resolve a rig's master sources (defaults to Rig 305). */
 export function rigData(rig?: string) {
   return (rig && RIGS[rig]) || RIGS['Rig 305'];
+}
+
+/**
+ * Seed a fresh draft Project from a saved unit template. Carries over the
+ * template's canvas (nodes/pipes/edges/annotations) but re-stamps it as a NEW
+ * draft for `rig`: keeps the current reference date/inspector from `base`,
+ * clears published status, and bumps the revision. Pure — used by
+ * `startFromTemplate` / `switchUnit`.
+ */
+export function seedProjectFromTemplate(template: Project, rig: string, base: Project): Project {
+  return {
+    ...template,
+    meta: { ...template.meta, rig, date: base.meta.date, who: base.meta.who },
+    status: 'draft',
+    publishedAt: undefined,
+    revision: (base.revision ?? 0) + 1,
+  };
 }
 
 export function buildMaster(

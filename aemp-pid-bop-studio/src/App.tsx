@@ -6,6 +6,7 @@ import { AccountChip, LoginScreen } from './components/Auth';
 import { OnboardModal, ProjectChip } from './components/Onboarding';
 import AssistantPanel from './components/AssistantPanel';
 import CloudPanel from './components/CloudPanel';
+import UnitsPanel from './components/UnitsPanel';
 import FileMenu from './components/FileMenu';
 import PidFullView from './views/PidFullView';
 import BopSchemeView from './views/BopSchemeView';
@@ -79,6 +80,11 @@ function CloudButton({ onOpen }: { onOpen: () => void }) {
   return <button style={hdrBtn} onClick={onOpen} title="Cloud projects (Supabase)">☁ Cloud</button>;
 }
 
+function UnitsButton() {
+  const { setShowUnits } = useProject();
+  return <button style={hdrBtn} onClick={() => setShowUnits(true)} title="Units — open a unit, its saved diagrams & templates">▤ Units</button>;
+}
+
 function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void }) {
   const [aiOpen, setAiOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
@@ -103,6 +109,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
         </nav>
         <div className="spacer" />
         <button style={{ ...hdrBtn, borderColor: aiOpen ? 'var(--accent)' : 'var(--line2)', color: aiOpen ? 'var(--accent)' : 'var(--ink)' }} onClick={() => setAiOpen((v) => !v)} title="AI assistant (preview)">✦ AI</button>
+        <UnitsButton />
         <CloudButton onOpen={() => setCloudOpen(true)} />
         <FileMenu />
         <ModeToggle />
@@ -125,6 +132,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
       </main>
       <AssistantPanel open={aiOpen} onClose={() => setAiOpen(false)} />
       <CloudPanel open={cloudOpen} onClose={() => setCloudOpen(false)} />
+      <UnitsPanel />
       <OnboardModal />
     </>
   );

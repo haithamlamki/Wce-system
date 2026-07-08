@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { importFromAEMP, mapAempRecords, type AempFieldMap } from './aemp';
+import { importFromAEMP, mapAempRecords, seedProjectFromTemplate, type AempFieldMap } from './aemp';
+import type { Project } from '../types';
+
+function proj(over: Partial<Project> = {}): Project {
+  return {
+    meta: { rig: 'Rig 305', date: '2026-01-01', who: 'Old Inspector' },
+    nodes: [], edges: [], pipes: [],
+    bop: { datum: 0, rt: 8.5, unit: 'm', items: [] },
+    rewards: { spent: 0, redeemed: [] },
+    revision: 0,
+    ...over,
+  };
+}
 
 describe('mapAempRecords', () => {
   it('maps foreign field names to AempAsset via the field map', () => {
@@ -20,6 +32,31 @@ describe('mapAempRecords', () => {
     const [a] = mapAempRecords([{ tag: 123, rwp: 10000 }]);
     expect(a.tag).toBe('123');
     expect(a.rwp).toBe('10000');
+  });
+});
+
+describe('seedProjectFromTemplate', () => {
+  it('re-stamps a template as a fresh draft for the target unit', () => {
+    const template = proj({
+      meta: { rig: 'Rig 999', date: '2020-05-05', who: 'Template Author' },
+      nodes: [{ id: 'n1' } as never],
+      pipes: [{ id: 'p1' } as never],
+      status: 'published',
+      publishedAt: '2020-06-01T00:00:00Z',
+      revision: 12,
+    });
+    const base = proj({ meta: { rig: 'whatever', date: '2026-07-08', who: 'Current User' }, revision: 4 });
+
+    const seed = seedProjectFromTemplate(template, 'Rig 42', base);
+
+    expect(seed.meta.rig).toBe('Rig 42');            // target unit
+    expect(seed.meta.date).toBe('2026-07-08');       // current date, not the template's
+    expect(seed.meta.who).toBe('Current User');      // current inspector
+    expect(seed.status).toBe('draft');               // never inherits published
+    expect(seed.publishedAt).toBeUndefined();
+    expect(seed.revision).toBe(5);                   // base.revision + 1
+    expect(seed.nodes).toHaveLength(1);              // canvas carried over
+    expect(seed.pipes).toHaveLength(1);
   });
 });
 

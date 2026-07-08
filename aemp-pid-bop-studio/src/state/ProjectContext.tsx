@@ -7,7 +7,7 @@
 // ============================================================================
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Annotation, Component, Edge, PipeKind, PipeSeg, PortName, Project, TemplateItem } from '../types';
-import { buildFromRegister, buildMaster, importFromAEMP, rigData, type AempConfig } from '../lib/aemp';
+import { buildFromRegister, buildMaster, importFromAEMP, rigData, seedProjectFromTemplate, type AempConfig } from '../lib/aemp';
 import { buildBopStack, type HoleSection } from '../lib/bop';
 import { box, snap } from '../lib/geometry';
 import { SYM, SYM_ORDER, type SymbolDef, type SymbolKey } from '../lib/symbols';
@@ -19,7 +19,7 @@ import { validate, type Issue } from '../lib/validation';
 export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vmiddle' | 'bottom';
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
 import { autosave, openFromFile, restore, saveToFile } from '../lib/persistence';
-import { addUnit as cloudAddUnit, deleteUnit as cloudDeleteUnit, fetchLatestProject, fetchLatestPublished, isSupabaseConfigured, listProjectsCloud, listProjectVersions, listUnits, loadProjectCloud, loadProjectVersion, renameUnit as cloudRenameUnit, saveProjectCloud, type ProjectSummary, type ProjectVersionSummary } from '../lib/cloud';
+import { addUnit as cloudAddUnit, deleteUnit as cloudDeleteUnit, fetchLatestProject, fetchLatestPublished, fetchUnitTemplate, isSupabaseConfigured, listProjectsCloud, listProjectVersions, listUnits, listUnitTemplates, loadProjectCloud, loadProjectVersion, renameUnit as cloudRenameUnit, saveProjectCloud, saveUnitTemplate as cloudSaveUnitTemplate, type ProjectSummary, type ProjectVersionSummary } from '../lib/cloud';
 import { RIGS } from '../lib/aemp';
 import { useAuth } from './AuthContext';
 
@@ -142,6 +142,12 @@ interface ProjectCtx {
   removeUnit: (name: string) => Promise<void>;
   showUnits: boolean;
   setShowUnits: (b: boolean) => void;
+  // per-unit templates + saved-diagram listing (Units panel)
+  unitTemplates: string[];                                  // unit names that have a saved template
+  refreshUnitTemplates: () => Promise<void>;
+  startFromTemplate: (rig: string) => Promise<void>;        // seed a fresh draft from a unit's template
+  saveUnitTemplate: (rig?: string) => Promise<void>;        // admin: save current diagram as the unit's template
+  listUnitDiagrams: (rig: string) => Promise<ProjectSummary[]>; // saved diagrams for one unit
 
   // node CRUD (admin) / as-built (field)
   addNode: (type: SymbolKey, x: number, y: number) => string;
@@ -721,6 +727,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // the cloud is off or migration 0008 hasn't been applied.
   const [units, setUnits] = useState<string[]>(() => Object.keys(RIGS));
   const [showUnits, setShowUnits] = useState(false);
+  const [unitTemplates, setUnitTemplates] = useState<string[]>([]);
 
   const refreshUnits = useCallback(async () => {
     const builtins = Object.keys(RIGS);
@@ -730,7 +737,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setUnits(Array.from(new Set([...names, ...builtins])).sort());
     } catch { setUnits(builtins); }
   }, []);
-  useEffect(() => { refreshUnits(); }, [refreshUnits]);
+  const refreshUnitTemplates = useCallback(async () => {
+    if (!isSupabaseConfigured) { setUnitTemplates([]); return; }
+    try { setUnitTemplates(await listUnitTemplates()); } catch { setUnitTemplates([]); }
+  }, []);
+  useEffect(() => { refreshUnits(); refreshUnitTemplates(); }, [refreshUnits, refreshUnitTemplates]);
 
   // Switch the active unit and load its drawing: field users see the latest
   // PUBLISHED sheet; privileged users get the latest saved row (so Save upserts
@@ -747,9 +758,13 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     let row: { id: string; data: Project } | null = null;
     try { row = await fetchLatestProject(name); } catch { /* none yet */ }
     if (row) { setCloudId(row.id); setProject(row.data); return; }
-    // no saved drawing — start this unit's page from its master (known rig) or empty
+    // no saved drawing — seed from the unit's saved template, else its built-in
+    // master (known rig), else an empty page.
+    let tpl: Project | null = null;
+    try { tpl = await fetchUnitTemplate(name); } catch { /* none */ }
     setCloudId(null);
     setProject((p) => {
+      if (tpl) return seedProjectFromTemplate(tpl, name, p);
       const meta = { ...p.meta, rig: name };
       if (RIGS[name]) {
         const d = rigData(name);
@@ -772,6 +787,34 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const removeUnit = useCallback(async (name: string) => {
     await cloudDeleteUnit(name); await refreshUnits();
   }, [refreshUnits]);
+
+  // Start a brand-new draft for `rig` from its saved template, else its built-in
+  // master, else an empty canvas. New draft (cloudId null) so Save creates a row.
+  const startFromTemplate = useCallback(async (rig: string) => {
+    let tpl: Project | null = null;
+    try { tpl = await fetchUnitTemplate(rig); } catch { /* none */ }
+    setSelectedId(null);
+    setCloudId(null);
+    setProject((p) => {
+      if (tpl) return seedProjectFromTemplate(tpl, rig, p);
+      const meta = { ...p.meta, rig };
+      if (RIGS[rig]) {
+        const d = rigData(rig);
+        const { nodes, pipes } = d.byRegister ? buildFromRegister(d.register, d.template) : buildMaster(d.template, d.register, d.pipes);
+        return { ...p, meta, nodes, pipes, edges: [], annotations: [], status: 'draft', publishedAt: undefined, revision: (p.revision ?? 0) + 1 };
+      }
+      return { ...p, meta, nodes: [], pipes: [], edges: [], annotations: [], status: 'draft', publishedAt: undefined };
+    });
+  }, []);
+
+  // Admin: save the current diagram as `rig`'s reusable template (RLS-guarded).
+  const saveUnitTemplate = useCallback(async (rig?: string) => {
+    await cloudSaveUnitTemplate(rig ?? project.meta.rig, project);
+    await refreshUnitTemplates();
+  }, [project, refreshUnitTemplates]);
+
+  // Saved diagrams (projects) for one unit, most-recent first.
+  const listUnitDiagrams = useCallback((rig: string) => listProjectsCloud(rig), []);
 
   // End users load their rig's latest PUBLISHED final sheet (read-only).
   useEffect(() => {
@@ -897,6 +940,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     cloudEnabled: isSupabaseConfigured, cloudId, saveCloud, listCloud, loadCloud, listVersions, restoreVersion,
     canEdit, saveAsDraft, publishFinal, clearCanvas,
     units, refreshUnits, switchUnit, addUnit, renameUnit, removeUnit, showUnits, setShowUnits,
+    unitTemplates, refreshUnitTemplates, startFromTemplate, saveUnitTemplate, listUnitDiagrams,
     addNode, updateNode, moveNode, deleteNode, duplicateNode, changeType,
     rotateNode, flipNode, scaleNode, toggleRemoved, addEdge, deleteEdge, setEdgeType, splitEdgeAt, addComponents,
     focusId, focusSeq, requestFocus, issues,
