@@ -6,6 +6,7 @@
 //  empty when Supabase isn't configured, so the app still works offline.
 // ============================================================================
 import { supabase } from './supabase';
+import { sanitizeSvg } from './sanitizeSvg';
 import type { DrawShape, SymbolDef } from './symbols';
 
 export interface SymbolRow {
@@ -21,9 +22,11 @@ export interface SymbolRow {
   hidden: boolean;
 }
 
-/** DB row → SymbolDef (drops null shapes; preserves the custom flag). */
+/** DB row → SymbolDef (drops null shapes; preserves the custom flag).
+ *  Sanitizes `svg` on ingest — a global library row may have been authored by
+ *  any admin/user, so the stored SYM registry never holds unsanitized art. */
 export function rowToDef(row: SymbolRow): SymbolDef {
-  const def: SymbolDef = { name: row.name, cat: row.cat, w: row.w, h: row.h, color: row.color, svg: row.svg, custom: row.custom };
+  const def: SymbolDef = { name: row.name, cat: row.cat, w: row.w, h: row.h, color: row.color, svg: sanitizeSvg(row.svg), custom: row.custom };
   if (row.shapes && row.shapes.length) def.shapes = row.shapes;
   return def;
 }

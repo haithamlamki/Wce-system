@@ -6,8 +6,10 @@
 // ============================================================================
 import { useReducer, useRef, useState } from 'react';
 import { useProject } from '../state/ProjectContext';
+import { safeColor } from '../lib/sanitizeSvg';
 import { SYM, type SymbolDef } from '../lib/symbols';
 import SymbolDrawer from './SymbolDrawer';
+import SvgMarkup from './SvgMarkup';
 
 /** True for raster image files we can embed as an <image> (PNG/JPG/GIF/WebP). */
 function isRasterImage(file: File): boolean {
@@ -137,7 +139,7 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
       <div key={key} style={{ ...card, ...(kind !== 'built-in' ? { borderColor: 'var(--accent)' } : {}) }}>
         <div style={{ height: 84, display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
           <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width="100%" height={84} preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
-            <g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
+            <SvgMarkup svg={s.svg} style={{ color: safeColor(s.color) }} />
           </svg>
         </div>
         <div style={{ fontSize: 12, fontWeight: 600, textAlign: 'center', lineHeight: 1.25, minHeight: 30, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.name}</div>
@@ -190,7 +192,7 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
                 <div key={key} style={{ ...card, opacity: 0.6 }}>
                   <div style={{ height: 72, display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
                     <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width="100%" height={72} preserveAspectRatio="xMidYMid meet">
-                      <g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
+                      <SvgMarkup svg={s.svg} style={{ color: safeColor(s.color) }} />
                     </svg>
                   </div>
                   <div style={{ fontSize: 11.5, fontWeight: 600, textAlign: 'center' }}>{s.name}</div>

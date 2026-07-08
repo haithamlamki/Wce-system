@@ -4,6 +4,7 @@
 //  Each symbol: key, display name, category, base w/h, identity colour, and
 //  raw SVG artwork drawn on a 0..w / 0..h canvas with N/E/S/W connection ports.
 // ============================================================================
+import { safeColor, sanitizeSvg } from './sanitizeSvg';
 
 export interface SymbolDef {
   /** Display name, e.g. "Annular BOP" */
@@ -96,8 +97,9 @@ export const SYM_ORDER: string[] = ["BOP Stack", "Wellhead & Tree", "Valves", "M
 /** Categories whose adjacent items auto-connect with routed piping. */
 export const AUTOCONNECT: Set<string> = new Set(['BOP Stack','Wellhead & Tree','Valves','Manifold']);
 
-/** Wrap a symbol's inner SVG in a sized <svg> for standalone rendering. */
+/** Wrap a symbol's inner SVG in a sized <svg> for standalone rendering.
+ *  Sanitized here too (F1) — svg/color may be user-authored (custom symbol). */
 export function symSVG(type: SymbolKey): string {
   const s = SYM[type];
-  return `<svg viewBox="-4 -4 ${s.w + 8} ${s.h + 8}"><g style="color:${s.color}">${s.svg}</g></svg>`;
+  return `<svg viewBox="-4 -4 ${s.w + 8} ${s.h + 8}"><g style="color:${safeColor(s.color)}">${sanitizeSvg(s.svg)}</g></svg>`;
 }

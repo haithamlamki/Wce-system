@@ -10,6 +10,7 @@ import { useProject } from '../state/ProjectContext';
 import PropertiesPanel from '../components/PropertiesPanel';
 import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
+import { safeColor } from '../lib/sanitizeSvg';
 import {
   box, edgeNodes, fitView, GRID, innerTransform, isoDepth, isoPlacement, pickNode,
   PIPE_KINDS, pipeColor, pipeParts, ports, proj, routeEdgePoints,
@@ -19,6 +20,7 @@ import { parseDrawing } from '../lib/layoutImport';
 import ExportDialog from '../components/ExportDialog';
 import AnnotationLayer from '../components/AnnotationLayer';
 import SymbolLibrary from '../components/SymbolLibrary';
+import SvgMarkup from '../components/SvgMarkup';
 import type { Component, PortName } from '../types';
 
 interface PortRef { id: string; port?: PortName }
@@ -415,7 +417,7 @@ export default function PidFullView() {
                           onMouseEnter={() => setPalHover(key as SymbolKey)}
                           onMouseLeave={() => setPalHover((h) => (h === key ? null : h))}>
                           <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={44} height={36}>
-                            <g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
+                            <SvgMarkup svg={s.svg} style={{ color: safeColor(s.color) }} />
                           </svg>
                           <span style={{ fontSize: 10, color: 'var(--dim)', textAlign: 'center' }}>{s.name}</span>
                         </div>
@@ -724,7 +726,7 @@ export default function PidFullView() {
       {showPalette && palHover && SYM[palHover] && (
         <div style={palPreview}>
           <svg viewBox={`-4 -4 ${SYM[palHover].w + 8} ${SYM[palHover].h + 8}`} width={130} height={104}>
-            <g style={{ color: SYM[palHover].color }} dangerouslySetInnerHTML={{ __html: SYM[palHover].svg }} />
+            <SvgMarkup svg={SYM[palHover].svg} style={{ color: safeColor(SYM[palHover].color) }} />
           </svg>
           <div style={{ fontWeight: 600, fontSize: 12.5, marginTop: 6 }}>{SYM[palHover].name}</div>
           <div style={{ fontSize: 10.5, color: 'var(--faint)' }}>{SYM[palHover].cat}{SYM[palHover].defaults?.size ? ` · ${SYM[palHover].defaults!.size}` : ''}</div>
@@ -799,7 +801,7 @@ function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso
   const ip = iso ? isoPlacement(n) : null;
   const outer = iso ? `translate(${ip!.x},${ip!.y})` : `translate(${n.x},${n.y})`;
   return (
-    <g transform={outer} opacity={n.removed ? 0.28 : 1} style={{ color: s.color }}>
+    <g transform={outer} opacity={n.removed ? 0.28 : 1} style={{ color: safeColor(s.color) }}>
       {iso && (
         <>
           <ellipse cx={ew / 2} cy={ip!.lift + eh / 2 + 4} rx={ew * 0.5} ry={ew * 0.2} fill="#0b1a2655" />
@@ -818,7 +820,7 @@ function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso
       {n.locked && !iso && (
         <text x={ew - 2} y={eh + 1} textAnchor="end" style={{ font: '10px var(--body)' }}>🔒</text>
       )}
-      <g transform={innerTransform(n)} dangerouslySetInnerHTML={{ __html: s.svg }} opacity={pending ? 0.85 : 1}
+      <SvgMarkup svg={s.svg} transform={innerTransform(n)} opacity={pending ? 0.85 : 1}
         filter={shadow && !pending ? 'url(#symShadow)' : undefined}
         style={pending ? { filter: 'none' } : undefined} strokeDasharray={pending ? '5 3' : undefined} />
       <circle cx={ew - 2} cy={-2} r={5.5} fill="var(--panel)" stroke={STATUS_COLOR[st]} strokeWidth={2.5} />
@@ -835,7 +837,7 @@ function Tooltip({ h, refDate }: { h: Hover; refDate: Date }) {
   return (
     <div style={{ position: 'fixed', left: h.x + 16, top: h.y + 12, zIndex: 90, width: 248, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 11, boxShadow: 'var(--shadow)', overflow: 'hidden', pointerEvents: 'none' }}>
       <div style={{ padding: '10px 13px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 9 }}>
-        <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={34} height={28}><g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} /></svg>
+        <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={34} height={28}><SvgMarkup svg={s.svg} style={{ color: safeColor(s.color) }} /></svg>
         <div>
           <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 13 }}>{n.tag || '—'}{n.removed && ' · REMOVED'}</div>
           <div style={{ fontSize: 10.5, color: 'var(--dim)' }}>{s.name}</div>

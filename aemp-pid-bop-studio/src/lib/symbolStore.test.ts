@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sanitizeSvg } from './sanitizeSvg';
 import { defToRowFields, mergeLibraryRows, rowToDef, type SymbolRow } from './symbolStore';
 import type { SymbolDef } from './symbols';
 
@@ -10,7 +11,9 @@ const baseRow: SymbolRow = {
 describe('rowToDef', () => {
   it('maps a row to a SymbolDef and preserves the custom flag', () => {
     const def = rowToDef(baseRow);
-    expect(def).toMatchObject({ name: 'Widget', cat: 'Custom', w: 40, h: 30, color: '#123456', svg: '<rect/>', custom: true });
+    // svg is sanitized on ingest (F1) — content is unchanged, DOMPurify just
+    // normalises self-closing tags (`<rect/>`) to explicit ones (`<rect></rect>`).
+    expect(def).toMatchObject({ name: 'Widget', cat: 'Custom', w: 40, h: 30, color: '#123456', svg: sanitizeSvg('<rect/>'), custom: true });
     expect(def.shapes).toBeUndefined();
   });
   it('carries shapes through when present', () => {
@@ -44,9 +47,9 @@ describe('mergeLibraryRows', () => {
     const existing: Record<string, SymbolDef> = {
       annular: { name: 'Annular BOP', cat: 'BOP Stack', w: 84, h: 60, color: '#cf3a30', svg: '<orig/>', bopHeight: 1.5, defaults: { size: '13-5/8"' } },
     };
-    const rows: SymbolRow[] = [{ ...baseRow, key: 'annular', name: 'Annular BOP', cat: 'BOP Stack', svg: '<edited/>', custom: false }];
+    const rows: SymbolRow[] = [{ ...baseRow, key: 'annular', name: 'Annular BOP', cat: 'BOP Stack', svg: '<circle/>', custom: false }];
     const { merged } = mergeLibraryRows(existing, rows);
-    expect(merged.annular.svg).toBe('<edited/>');       // edited art applied
+    expect(merged.annular.svg).toBe(sanitizeSvg('<circle/>'));  // edited art applied (sanitized on ingest)
     expect(merged.annular.bopHeight).toBe(1.5);          // built-in field survives
     expect(merged.annular.defaults).toEqual({ size: '13-5/8"' });
   });
@@ -55,9 +58,9 @@ describe('mergeLibraryRows', () => {
     const existing: Record<string, SymbolDef> = {
       gate: { name: 'Gate Valve', cat: 'Valves', w: 50, h: 40, color: '#abc', svg: '<orig/>' },
     };
-    const rows: SymbolRow[] = [{ ...baseRow, key: 'gate', name: 'Gate Valve', cat: 'Valves', svg: '<edited/>', custom: false, hidden: true }];
+    const rows: SymbolRow[] = [{ ...baseRow, key: 'gate', name: 'Gate Valve', cat: 'Valves', svg: '<circle/>', custom: false, hidden: true }];
     const { merged, hidden } = mergeLibraryRows(existing, rows);
     expect(hidden).toEqual(['gate']);
-    expect(merged.gate.svg).toBe('<edited/>');           // art retained despite hidden
+    expect(merged.gate.svg).toBe(sanitizeSvg('<circle/>'));  // art retained despite hidden (sanitized)
   });
 });
