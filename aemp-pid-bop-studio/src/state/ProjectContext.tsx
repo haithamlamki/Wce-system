@@ -12,6 +12,7 @@ import { buildBopStack, type HoleSection } from '../lib/bop';
 import { box, snap } from '../lib/geometry';
 import { SYM, SYM_ORDER, type SymbolDef, type SymbolKey } from '../lib/symbols';
 import { mergeCustomSymbols, newCustomKey, registerBuiltins, unregisterSymbol } from '../lib/customSymbols';
+import { sanitizeSvg, safeColor } from '../lib/sanitizeSvg';
 import { listSymbols, upsertSymbol, deleteSymbolRow, setSymbolHidden, mergeLibraryRows, readSymbolCache, type SymbolRow } from '../lib/symbolStore';
 import { REWARDS, rewardStats } from '../lib/rewards';
 import { validate, type Issue } from '../lib/validation';
@@ -869,18 +870,20 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // ---- custom symbols (Symbol Library / Drawer) -----------------------------
   const addCustomSymbol = useCallback((def: SymbolDef) => {
     const key = newCustomKey(project.customSymbols ?? {});
-    SYM[key] = { ...def, custom: true }; // make available immediately
-    setProject((p) => ({ ...p, customSymbols: { ...(p.customSymbols ?? {}), [key]: { ...def, custom: true } } }));
-    void upsertSymbol(key, { ...def, custom: true }, { custom: true, hidden: false })
+    const clean = { ...def, svg: sanitizeSvg(def.svg), color: safeColor(def.color), custom: true };
+    SYM[key] = clean; // make available immediately
+    setProject((p) => ({ ...p, customSymbols: { ...(p.customSymbols ?? {}), [key]: clean } }));
+    void upsertSymbol(key, clean, { custom: true, hidden: false })
       .catch((e) => console.error('Symbol not saved to the shared library:', e));
     return key;
   }, [project.customSymbols]);
 
   const updateCustomSymbol = useCallback((key: string, def: SymbolDef) => {
-    SYM[key] = { ...def, custom: true };
-    setProject((p) => ({ ...p, customSymbols: { ...(p.customSymbols ?? {}), [key]: { ...def, custom: true } } }));
     const isCustom = key.startsWith('custom_');
-    void upsertSymbol(key, { ...def, custom: isCustom }, { custom: isCustom, hidden: false })
+    const clean = { ...def, svg: sanitizeSvg(def.svg), color: safeColor(def.color), custom: true };
+    SYM[key] = clean;
+    setProject((p) => ({ ...p, customSymbols: { ...(p.customSymbols ?? {}), [key]: clean } }));
+    void upsertSymbol(key, { ...clean, custom: isCustom }, { custom: isCustom, hidden: false })
       .catch((e) => console.error('Symbol change not saved to the shared library:', e));
   }, []);
 
