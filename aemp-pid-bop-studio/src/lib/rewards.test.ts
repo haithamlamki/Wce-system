@@ -45,4 +45,18 @@ describe('achievements', () => {
     const s = rewardStats(proj({ nodes: [mk({ tag: 'A' })] }), ref);
     expect(first.on(s)).toBe(true);
   });
+
+  it('does not award All Clear while an invalid-dated item is outstanding (F10)', () => {
+    const clear = ACHIEVEMENTS.find((a) => a.id === 'clear')!;
+    const s = rewardStats(proj({ nodes: [mk({ tag: 'A', int_due: '31/12/2025' })] }), ref);
+    expect(s.invalid).toBe(1);
+    expect(s.over).toBe(0);
+    expect(clear.on(s)).toBe(false);
+  });
+
+  it('awards All Clear once there are no overdue or invalid items', () => {
+    const clear = ACHIEVEMENTS.find((a) => a.id === 'clear')!;
+    const s = rewardStats(proj({ nodes: [mk({ tag: 'A', int_due: '2027-01-01' })] }), ref);
+    expect(clear.on(s)).toBe(true);
+  });
 });

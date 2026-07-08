@@ -35,6 +35,16 @@ describe('nextSeqSeed', () => {
     p.annotations = [{ id: 'g2000' } as NonNullable<Project['annotations']>[number]];
     expect(nextSeqSeed(p, 1000)).toBeGreaterThan(2000);
   });
+  it('also scans node groupIds — a group id shares the same seq counter (F-idSeq)', () => {
+    const p = emptyProject();
+    p.nodes = [{ id: 'n1', groupId: 'g3000' } as Project['nodes'][number]];
+    expect(nextSeqSeed(p, 1000)).toBeGreaterThan(3000);
+  });
+  it('ignores nodes with no groupId', () => {
+    const p = emptyProject();
+    p.nodes = [{ id: 'n1' } as Project['nodes'][number]];
+    expect(nextSeqSeed(p, 1000)).toBe(1000);
+  });
   it('leaves the counter as-is for an empty project', () => {
     expect(nextSeqSeed(emptyProject(), 1000)).toBe(1000);
   });

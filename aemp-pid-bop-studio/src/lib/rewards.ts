@@ -4,7 +4,7 @@
 //  prototype. Point values are configurable (FR-50).
 // ============================================================================
 import type { Component, Project } from '../types';
-import { statusOf } from './status';
+import { summarize } from './status';
 
 export interface Tier {
   n: string;
@@ -36,6 +36,7 @@ export interface RewardStats {
   ok: number;
   over: number;
   due: number;
+  invalid: number; // F10: tagged items with an unparseable due date — never "clear"
   comp: number; // compliance ratio (in-date / tagged)
   bop: number;
   pipes: number;
@@ -57,7 +58,9 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'full', name: 'Fully Tagged', desc: 'Every item tagged', on: (s) => s.total > 0 && s.tagged === s.total },
   { id: 'dated', name: 'On the Calendar', desc: 'Add due dates to 20 items', on: (s) => s.dated >= 20 },
   { id: 'stack', name: 'Stack Builder', desc: 'Build a BOP scheme', on: (s) => s.bop > 0 },
-  { id: 'clear', name: 'All Clear', desc: 'No overdue equipment', on: (s) => s.tagged > 0 && s.over === 0 },
+  // F10: an invalid (unparseable) due date is un-triaged and safety-relevant —
+  // "All Clear" must not be earnable while one is outstanding.
+  { id: 'clear', name: 'All Clear', desc: 'No overdue equipment', on: (s) => s.tagged > 0 && s.over === 0 && s.invalid === 0 },
   { id: 'comp', name: 'Compliance Pro', desc: '90%+ in date', on: (s) => s.tagged > 0 && s.comp >= 0.9 },
   { id: 'perfect', name: 'Perfect Stack', desc: '100% tagged & in date', on: (s) => s.total > 0 && s.tagged === s.total && s.comp === 1 },
 ];
@@ -82,19 +85,23 @@ export function rewardStats(project: Project, refDate?: Date): RewardStats {
   const n: Component[] = project.nodes;
   const tagged = n.filter((x) => x.tag);
   const dated = tagged.filter((x) => x.int_due || x.maj_due);
-  const ok = tagged.filter((x) => statusOf(x, refDate) === 'ok');
-  const over = tagged.filter((x) => statusOf(x, refDate) === 'over');
-  const due = tagged.filter((x) => statusOf(x, refDate) === 'due');
-  const comp = tagged.length ? ok.length / tagged.length : 0;
+  // Reuse the status engine's one-pass summarize() (F10) so invalid-dated
+  // items are tracked alongside ok/due/over instead of silently vanishing.
+  const counts = summarize(tagged, refDate);
+  const comp = tagged.length ? counts.ok / tagged.length : 0;
   const bop = project.bop?.items?.length ?? 0;
   const pipes = project.pipes?.length ?? 0;
   const pts =
     tagged.length * POINTS.tag +
     dated.length * POINTS.dueDates +
-    ok.length * POINTS.inDate +
+    counts.ok * POINTS.inDate +
     (bop ? POINTS.bop : 0) +
     (pipes ? POINTS.master : 0);
-  return { total: n.length, tagged: tagged.length, dated: dated.length, ok: ok.length, over: over.length, due: due.length, comp, bop, pipes, pts };
+  return {
+    total: n.length, tagged: tagged.length, dated: dated.length,
+    ok: counts.ok, over: counts.over, due: counts.due, invalid: counts.invalid,
+    comp, bop, pipes, pts,
+  };
 }
 
 /** Highest tier reached at a given point total. */

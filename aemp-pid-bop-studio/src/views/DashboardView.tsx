@@ -14,9 +14,17 @@ import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
 type DateStatus = 'ok' | 'due' | 'over' | 'none';
 const MS = 864e5;
 
-function dueStatus(int_due: string, maj_due: string, ref: Date): { status: DateStatus; daysToNext: number | null } {
-  const ds = [int_due, maj_due].filter(Boolean).map((x) => new Date(x + 'T00:00').getTime());
-  if (!ds.length) return { status: 'none', daysToNext: null };
+/** F10: an unparseable due date must never silently read as "ok" — a NaN
+ *  timestamp would otherwise fail every comparison below (min < 0, min <= 60)
+ *  and fall through to the final `return 'ok'`, inflating the fleet KPI.
+ *  Classify it as 'over' instead so it counts against compliance and shows
+ *  up in the overdue/attention bucket rather than in-date. Exported for
+ *  unit testing (DashboardView.test.ts). */
+export function dueStatus(int_due: string, maj_due: string, ref: Date): { status: DateStatus; daysToNext: number | null } {
+  const raw = [int_due, maj_due].filter(Boolean);
+  if (!raw.length) return { status: 'none', daysToNext: null };
+  const ds = raw.map((x) => new Date(x + 'T00:00').getTime());
+  if (ds.some((t) => Number.isNaN(t))) return { status: 'over', daysToNext: null };
   const days = ds.map((t) => (t - ref.getTime()) / MS);
   const min = Math.min(...days);
   if (min < 0) return { status: 'over', daysToNext: min };

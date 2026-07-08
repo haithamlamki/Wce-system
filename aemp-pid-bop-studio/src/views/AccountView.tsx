@@ -22,12 +22,18 @@ export default function AccountView() {
   const next = TIERS[idx + 1];
   const progress = next ? Math.min(1, (s.pts - tier.min) / (next.min - tier.min)) : 1;
 
-  // FR-53: the user's actual overdue / due-soon items, overdue first
+  // FR-53 / F10: the user's actual overdue / due-soon / invalid-date items.
+  // An unparseable due date (statusOf === 'invalid') is a safety-relevant,
+  // un-triaged alert — it must never be silently dropped from this queue
+  // (that would let the empty-state below claim "All clear" incorrectly).
+  // Sort worst-first: overdue, then invalid (unknown/unresolved), then due-soon.
+  const queueRank = { over: 0, invalid: 1, due: 2 } as const;
   const queue = useMemo(
     () => project.nodes
       .map((n) => ({ n, st: statusOf(n, refDate) }))
-      .filter((x) => x.st === 'over' || x.st === 'due')
-      .sort((a, b) => (a.st === 'over' ? 0 : 1) - (b.st === 'over' ? 0 : 1)),
+      .filter((x): x is { n: typeof x.n; st: 'over' | 'due' | 'invalid' } =>
+        x.st === 'over' || x.st === 'due' || x.st === 'invalid')
+      .sort((a, b) => queueRank[a.st] - queueRank[b.st]),
     [project.nodes, refDate],
   );
   const fix = (id: string) => { requestFocus(id); navigate('/full'); };
@@ -63,7 +69,7 @@ export default function AccountView() {
         <section style={card}>
           <H>Action queue</H>
           {queue.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: 'var(--green)' }}>✓ All clear — nothing overdue or due soon.</div>
+            <div style={{ fontSize: 12.5, color: 'var(--green)' }}>✓ All clear — nothing overdue, due soon, or with an invalid date.</div>
           ) : (
             <div style={{ maxHeight: 230, overflowY: 'auto' }}>
               {queue.map(({ n, st }) => (

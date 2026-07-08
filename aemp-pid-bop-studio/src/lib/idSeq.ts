@@ -31,8 +31,11 @@ function maxTail(ids: Iterable<string>): number {
 /**
  * Next safe seed for the node/edge/annotation `nextId` counter given a
  * loaded/restored project: one past the highest numeric suffix found across
- * `nodes[]`, `edges[]` and `annotations[]`. Never lower than `current` — it
- * can only advance the counter, never rewind it.
+ * `nodes[]`, `nodes[].groupId`, `edges[]` and `annotations[]`. Group ids are
+ * minted via `nextId('g')` from this SAME shared `seq` counter (see
+ * ProjectContext's `groupSelection`), so a group id left off the scan could
+ * be reissued to a fresh node/edge/annotation after a reseed. Never lower
+ * than `current` — it can only advance the counter, never rewind it.
  */
 export function nextSeqSeed(
   project: Pick<Project, 'nodes' | 'edges' | 'annotations'> | null | undefined,
@@ -41,6 +44,7 @@ export function nextSeqSeed(
   if (!project) return current;
   const ids: string[] = [
     ...project.nodes.map((n) => n.id),
+    ...project.nodes.map((n) => n.groupId).filter((g): g is string => !!g),
     ...project.edges.map((e) => e.id),
     ...(project.annotations ?? []).map((a) => a.id),
   ];
