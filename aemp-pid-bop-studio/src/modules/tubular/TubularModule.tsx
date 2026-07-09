@@ -11,6 +11,8 @@ import { visibleTabs } from './lib/permissions';
 import DataEntryView from './views/DataEntryView';
 import FleetInventoryView from './views/FleetInventoryView';
 import ImportView from './views/ImportView';
+import MasterRegisterView from './views/MasterRegisterView';
+import TubularDashboardView from './views/TubularDashboardView';
 
 function Placeholder({ title, note }: { title: string; note: string }) {
   return (
@@ -18,17 +20,6 @@ function Placeholder({ title, note }: { title: string; note: string }) {
       <strong>{title}</strong>
       {note}
     </div>
-  );
-}
-
-function DashboardStub() {
-  const { units, loading } = useTubular();
-  if (loading) return <Placeholder title="Tubular Dashboard" note="Loading your access…" />;
-  return (
-    <Placeholder
-      title="Tubular Dashboard"
-      note={`You have access to ${units.length} unit${units.length === 1 ? '' : 's'}. KPI dashboard arrives with the reporting release; Data Entry and Fleet Inventory come first.`}
-    />
   );
 }
 
@@ -71,10 +62,10 @@ function AccessGate() {
       </nav>
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <Routes>
-          <Route index element={<DashboardStub />} />
+          <Route index element={<TubularDashboardView />} />
           <Route path="inventory" element={<FleetInventoryView />} />
           <Route path="entry" element={<DataEntryView />} />
-          <Route path="master" element={<Placeholder title="Master Register" note="Arrives with the reporting release." />} />
+          <Route path="master" element={<MasterRegisterView />} />
           <Route path="contracts" element={<Placeholder title="Contracts" note="Arrives with the contracts release." />} />
           <Route path="orders" element={<Placeholder title="Order Pipe & Delivery" note="Arrives with the orders release." />} />
           <Route path="map" element={<Placeholder title="Asset & Logistics Map" note="Arrives with the logistics release." />} />
