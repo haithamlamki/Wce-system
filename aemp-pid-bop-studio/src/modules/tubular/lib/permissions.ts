@@ -44,25 +44,29 @@ export function canAccessModule(role: Role | null, granted: ReadonlySet<string>)
 export interface TubularTab {
   to: string;
   label: string;
+  /** Tab glyph shown in the nav. */
+  icon: string;
+  /** Tab number (zero-padded, prototype style). */
+  num: string;
   /** Permission needed to see the tab; null = any module access. */
   requires: TubularPermission | null;
 }
 
-/** Module navigation. Unrouted pages render a placeholder until their PR lands. */
+/** Module navigation — the original 10 tabs in prototype order + 3 platform tabs. */
 export const TUBULAR_TABS: TubularTab[] = [
-  { to: '/tubular', label: 'Dashboard', requires: null },
-  { to: '/tubular/inventory', label: 'Fleet Inventory', requires: null },
-  { to: '/tubular/entry', label: 'Data Entry', requires: 'data_entry' },
-  { to: '/tubular/master', label: 'Master Register', requires: 'view_fleet' },
-  { to: '/tubular/transfers', label: 'Transfers', requires: null },
-  { to: '/tubular/contracts', label: 'Contracts', requires: null },
-  { to: '/tubular/orders', label: 'Order Pipe', requires: null },
-  { to: '/tubular/map', label: 'Asset Map', requires: null },
-  { to: '/tubular/reference', label: 'Reference', requires: null },
-  { to: '/tubular/training', label: 'Training', requires: null },
-  { to: '/tubular/manual', label: 'Manual', requires: null },
-  { to: '/tubular/assistant', label: 'Assistant', requires: null },
-  { to: '/tubular/import', label: 'Import', requires: 'import' },
+  { to: '/tubular', label: 'Dashboard', icon: '▦', num: '01', requires: null },
+  { to: '/tubular/inventory', label: 'Fleet Inventory', icon: '⊟', num: '02', requires: null },
+  { to: '/tubular/entry', label: 'Data Entry', icon: '✎', num: '03', requires: 'data_entry' },
+  { to: '/tubular/assistant', label: 'AI Assistant', icon: '◈', num: '04', requires: null },
+  { to: '/tubular/contracts', label: 'Contracts', icon: '▤', num: '05', requires: null },
+  { to: '/tubular/reference', label: 'Reference', icon: '◐', num: '06', requires: null },
+  { to: '/tubular/map', label: 'Asset Map', icon: '◎', num: '07', requires: null },
+  { to: '/tubular/orders', label: 'Order Pipe', icon: '⛟', num: '08', requires: null },
+  { to: '/tubular/manual', label: 'Manual', icon: '📘', num: '09', requires: null },
+  { to: '/tubular/training', label: 'Training', icon: '🎓', num: '10', requires: null },
+  { to: '/tubular/master', label: 'Master Register', icon: '▥', num: '11', requires: 'view_fleet' },
+  { to: '/tubular/transfers', label: 'Transfers', icon: '⇄', num: '12', requires: null },
+  { to: '/tubular/import', label: 'Import', icon: '⬆', num: '13', requires: 'import' },
 ];
 
 export function visibleTabs(role: Role | null, granted: ReadonlySet<string>): TubularTab[] {

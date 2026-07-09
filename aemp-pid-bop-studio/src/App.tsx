@@ -1,5 +1,6 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState, useSyncExternalStore } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { applyTheme, getThemeMode, setThemeMode, subscribeTheme } from './lib/theme';
 import { ProjectProvider, useProject } from './state/ProjectContext';
 import { AuthProvider, useAuth } from './state/AuthContext';
 import { AccountChip, LoginScreen } from './components/Auth';
@@ -20,16 +21,6 @@ import HomeView from './views/HomeView';
 const TubularModule = lazy(() => import('./modules/tubular/TubularModule'));
 
 type ThemeMode = 'auto' | 'light' | 'dark';
-
-function applyTheme(mode: ThemeMode) {
-  const resolved =
-    mode === 'auto'
-      ? matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-      : mode;
-  document.documentElement.setAttribute('data-theme', resolved);
-}
 
 const TABS = [
   { to: '/home', label: '⌂ Modules' },
@@ -94,17 +85,19 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
   const [aiOpen, setAiOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   const { pathname } = useLocation();
-  // WCE editor chrome (project chip, file menu, admin/field toggle, …) only
-  // makes sense inside the WCE views; the landing page and the Tubular module
-  // get a minimal header. WCE deep links (/full, /bop, …) are unchanged.
-  const inWce = !pathname.startsWith('/tubular') && pathname !== '/home';
+  // The Tubular module renders its own full prototype shell (topbar + tabnav),
+  // so the WCE appbar is hidden entirely there. On /home a minimal header
+  // remains; WCE deep links (/full, /bop, …) are unchanged.
+  const inTubular = pathname.startsWith('/tubular');
+  const inWce = !inTubular && pathname !== '/home';
   return (
     <>
+      {!inTubular && (
       <header className="appbar">
         <div className="brand">
           <img className="logo" src="/brand/abraj-mark.png" alt="Abraj" />
           <div>
-            <h1>{pathname.startsWith('/tubular') ? 'Tubular Fleet Management' : 'P&ID · BOP Studio'}</h1>
+            <h1>P&amp;ID · BOP Studio</h1>
             <div className="sub">Abraj Energy Services</div>
           </div>
         </div>
@@ -128,6 +121,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
         </button>
         <AccountChip />
       </header>
+      )}
 
       <main className="viewport">
         <Routes>
@@ -175,18 +169,14 @@ function Gate({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void 
 }
 
 export default function App() {
-  const [theme, setTheme] = useState<ThemeMode>('auto');
+  // Theme is owned by the shared store (src/lib/theme.ts) so the Tubular
+  // module's 3-button toggle and this header's cycle button stay in sync.
+  const theme = useSyncExternalStore(subscribeTheme, getThemeMode, getThemeMode);
 
-  useEffect(() => {
-    applyTheme(theme);
-    const mq = matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => theme === 'auto' && applyTheme('auto');
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [theme]);
+  useEffect(() => { applyTheme(); }, []);
 
   const cycleTheme = () =>
-    setTheme((t) => (t === 'auto' ? 'light' : t === 'light' ? 'dark' : 'auto'));
+    setThemeMode(theme === 'auto' ? 'light' : theme === 'light' ? 'dark' : 'auto');
 
   return (
     <AuthProvider>
