@@ -13,7 +13,7 @@ import { replaceRigEquipment, type EquipmentInput } from '../lib/cloud';
 import { exportEquipmentCsv } from '../lib/exporters';
 import { exportWorkbook } from '../lib/xlsxExport';
 import ImportDialog, { type DupMode } from '../components/ImportDialog';
-import type { MappedRow } from '../lib/importMap';
+import { MAX_IMPORT_ROWS, type MappedRow } from '../lib/importMap';
 import type { Component, InspectionStatus } from '../types';
 
 const nz = (v: string) => (v && v.trim() ? v : null);
@@ -72,6 +72,7 @@ export default function RegisterView() {
         ? await parseXlsx(await file.arrayBuffer())
         : parseCsv(await file.text());
       if (!rows.length) { alert('No rows found in that file.'); return; }
+      if (rows.length > MAX_IMPORT_ROWS) throw new Error(`Too many rows to import (max ${MAX_IMPORT_ROWS}).`);
       const headers = Object.keys(rows[0]);
       setImportData({ rows, headers });
     } catch (e) {
@@ -135,6 +136,7 @@ export default function RegisterView() {
         <Counter n={counts.due} label="Due Soon" color="var(--amber)" />
         <Counter n={counts.over} label="Overdue" color="var(--red)" />
         <Counter n={counts.untag} label="Untagged" color="var(--faint)" />
+        <Counter n={counts.invalid} label="Invalid Date" color="var(--status-invalid)" />
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -145,6 +147,7 @@ export default function RegisterView() {
           <option value="due">Due soon</option>
           <option value="ok">In date</option>
           <option value="untag">Untagged</option>
+          <option value="invalid">Invalid date</option>
         </select>
         <span className="spacer" style={{ flex: 1 }} />
         {canEdit && <button style={btn} onClick={() => importAEMP()}>Import from AEMP</button>}

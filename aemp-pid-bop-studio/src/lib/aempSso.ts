@@ -18,6 +18,23 @@ import { supabase } from './supabase';
 
 const FN_URL = import.meta.env.VITE_AEMP_AUTH_FN_URL as string | undefined;
 
+/** Allowlisted origins permitted to post an `aemp:token` message (comma-separated env var). */
+const ALLOWED_ORIGINS = (import.meta.env.VITE_AEMP_ORIGIN as string | undefined)
+  ?.split(',')
+  .map((s) => s.trim())
+  .filter(Boolean) ?? [];
+
+let warnedMissingAllowlist = false;
+
+/**
+ * Pure allowlist check for the `aemp:token` postMessage channel. Fails CLOSED:
+ * an empty allowlist means no origin is trusted (production must set VITE_AEMP_ORIGIN).
+ */
+export function isAllowedAempOrigin(origin: string, allowed: string[]): boolean {
+  if (allowed.length === 0) return false;
+  return allowed.includes(origin);
+}
+
 /** True when the host app has enabled the AEMP SSO path. */
 export const aempSsoEnabled =
   import.meta.env.VITE_AEMP_SSO_ENABLED === 'true' && Boolean(FN_URL);
@@ -36,7 +53,16 @@ export function readInboundAempToken(): string | null {
 /** Subscribe to an AEMP token delivered by the embedding parent via postMessage. */
 export function onAempToken(handler: (token: string) => void): () => void {
   const listener = (e: MessageEvent) => {
-    // TODO(prod): verify e.origin against the AEMP host origin before trusting.
+    if (!isAllowedAempOrigin(e.origin, ALLOWED_ORIGINS)) {
+      if (ALLOWED_ORIGINS.length === 0 && !warnedMissingAllowlist) {
+        warnedMissingAllowlist = true;
+        console.warn(
+          'aempSso: VITE_AEMP_ORIGIN is unset — the aemp:token postMessage channel is disabled ' +
+            '(failing closed) until an origin allowlist is configured.'
+        );
+      }
+      return;
+    }
     if (e.data && e.data.type === 'aemp:token' && typeof e.data.token === 'string') {
       handler(e.data.token);
     }

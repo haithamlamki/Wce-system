@@ -33,4 +33,34 @@ describe('mergeCustomSymbols', () => {
     expect(SYM.test_widget.custom).toBe(true);
     expect(SYM_ORDER).toContain('Custom');
   });
+
+  it('sanitizes a malicious svg payload on ingest (F1)', () => {
+    const malicious = '<rect width="10" height="10" onload="alert(1)"/><script>alert(1)</script><image href="x" onerror="alert(1)"/>';
+    mergeCustomSymbols({ evil_widget: { name: 'Evil Widget', cat: 'Custom', w: 40, h: 30, color: '#123456', svg: malicious } });
+    const stored = SYM.evil_widget.svg;
+    expect(stored).not.toContain('<script');
+    expect(stored).not.toMatch(/on\w+\s*=/i);
+    expect(stored).not.toContain('javascript:');
+  });
+});
+
+describe('serializeShapes — malicious color ingest (F1)', () => {
+  it('falls back unsafe fill/stroke values to a safe color instead of passing them through', () => {
+    const s: DrawShape = {
+      type: 'rect',
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+      // attempted attribute-breakout / javascript: URI payloads
+      fill: '"><script>alert(1)</script>',
+      stroke: 'url(javascript:alert(1))',
+      sw: 1,
+    };
+    const out = serializeShapes([s]);
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('javascript:');
+    expect(out).toContain('fill="currentColor"');
+    expect(out).toContain('stroke="currentColor"');
+  });
 });

@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: { port: 5173, open: true },
+  // jsdom: sanitizeSvg (DOMPurify) needs a DOM window, in tests as in the browser.
+  test: { environment: 'jsdom' },
   build: {
     rollupOptions: {
       output: {

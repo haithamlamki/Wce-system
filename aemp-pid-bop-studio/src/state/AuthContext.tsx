@@ -3,9 +3,10 @@
 //  configured the app runs unauthenticated (local-only). Role comes from the
 //  `profiles` table (admin / field / manager) and is exposed to gate edit UI.
 // ============================================================================
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { AuthRaceGuard } from '../lib/authRace';
 
 export type Role = 'admin' | 'field' | 'manager';
 
@@ -34,13 +35,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [fullName, setFullName] = useState('');
   const [rig, setRig] = useState<string | null>(null);
 
+  // F13: onAuthStateChange/getSession can fire overlapping, un-awaited
+  // loadProfile calls (e.g. a sign-out racing an in-flight fetch, or two
+  // rapid sign-ins). Guard against the LAST-TO-RESOLVE winning regardless of
+  // event order — only the most recently started (or explicitly invalidated
+  // by sign-out) result may apply.
+  const raceGuard = useRef(new AuthRaceGuard()).current;
+
   const loadProfile = useCallback(async (uid: string, fallbackName: string) => {
     if (!supabase) return;
-    const { data } = await supabase.from('profiles').select('role, full_name, rig').eq('id', uid).single();
+    const myToken = raceGuard.start();
+    const { data, error } = await supabase.from('profiles').select('role, full_name, rig').eq('id', uid).single();
+    if (error) console.error('Failed to load profile:', error);
+    if (!raceGuard.isCurrent(myToken)) return; // superseded by a newer load or a sign-out — discard
     setRole((data?.role as Role) ?? 'field');
     setFullName(data?.full_name || fallbackName);
     setRig(data?.rig ?? null);
-  }, []);
+  }, [raceGuard]);
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
@@ -52,10 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       if (s) loadProfile(s.user.id, s.user.email ?? '');
-      else { setRole(null); setFullName(''); setRig(null); }
+      else { raceGuard.invalidate(); setRole(null); setFullName(''); setRig(null); }
     });
     return () => sub.subscription.unsubscribe();
-  }, [loadProfile]);
+  }, [loadProfile, raceGuard]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) throw new Error('Cloud not configured');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBopStack, stackMetrics, toFeet, toMetres } from './bop';
+import { buildBopStack, seedBopSeq, stackMetrics, toFeet, toMetres } from './bop';
 
 describe('buildBopStack', () => {
   it('builds a surface-section stack without a shear ram', () => {
@@ -53,5 +53,16 @@ describe('unit conversion', () => {
   it('round-trips metres and feet', () => {
     expect(toFeet(0.3048)).toBeCloseTo(1, 6);
     expect(toMetres(1)).toBeCloseTo(0.3048, 6);
+  });
+});
+
+describe('seedBopSeq (F8)', () => {
+  it('reseeds the b<n> counter past ids already present in a loaded scheme', () => {
+    seedBopSeq([{ id: 'b500', type: 'gate', tag: '', description: '', height: 0.4 }]);
+    const items = buildBopStack('26');
+    const ids = items.map((i) => i.id);
+    expect(ids.every((id) => id !== 'b500')).toBe(true);
+    const nums = ids.map((id) => parseInt(id.slice(1), 10));
+    expect(Math.min(...nums)).toBeGreaterThan(500);
   });
 });

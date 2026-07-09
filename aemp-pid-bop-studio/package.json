@@ -10,23 +10,34 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "lint": "eslint .",
     "seed": "node --env-file=.env.local scripts/seed-equipment.mjs",
     "db:pull": "prisma db pull",
     "db:generate": "prisma generate"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
+    "dompurify": "^3.4.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/dompurify": "^3.0.5",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0",
+    "jsdom": "^29.1.1",
     "prisma": "^7.8.0",
     "typescript": "^5.5.4",
+    "typescript-eslint": "^8.63.0",
     "vite": "^5.4.2",
     "vitest": "^2.1.9"
   }

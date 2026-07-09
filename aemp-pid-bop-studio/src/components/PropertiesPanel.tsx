@@ -3,9 +3,11 @@
 // delete (FR-17), and "apply to all of this type" (FR-18).
 import { useState } from 'react';
 import { useProject } from '../state/ProjectContext';
+import { safeColor } from '../lib/sanitizeSvg';
 import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import type { Component } from '../types';
+import SvgMarkup from './SvgMarkup';
 
 const SECTIONS = ['BOP/Kill/Choke', 'Well Control', 'Choke Manifold', 'Koomey Unit', 'Mud Pumps', 'Mud System', 'Standpipe Manifold', 'Cement Lines', 'Instruments'];
 
@@ -90,7 +92,7 @@ export default function PropertiesPanel() {
     <aside style={panel}>
       <div style={{ padding: '15px 16px', borderBottom: '1px solid var(--line2)', display: 'flex', alignItems: 'center', gap: 12 }}>
         <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={46} height={40}>
-          <g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
+          <SvgMarkup svg={s.svg} style={{ color: safeColor(s.color) }} />
         </svg>
         <div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 15, fontWeight: 600 }}>{n.tag || '—'}</div>

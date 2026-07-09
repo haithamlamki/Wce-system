@@ -4,6 +4,16 @@
 // ============================================================================
 import { SYM, SYM_ORDER, type SymbolKey } from './symbols';
 
+/** Escape user-authored text before interpolating into the (dangerouslySetInnerHTML'd) guide HTML. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export const USER_MANUAL_HTML = `
 <h1>AEMP P&amp;ID &amp; BOP Studio — User Manual</h1>
 <p>This studio builds a rig's High-Pressure Well Control (HPWC) P&amp;ID once, links every
@@ -94,7 +104,7 @@ display name, category, identity colour and four N/E/S/W connection ports.</p>${
     html += '<ul>';
     for (const k of keys) {
       const s = SYM[k];
-      html += `<li><b>${s.name}</b> <span style="color:#8d9dab">(${k})</span>${s.custom ? ' — custom' : ''}${s.defaults?.size ? ` · default size ${s.defaults.size}` : ''}</li>`;
+      html += `<li><b>${escapeHtml(s.name)}</b> <span style="color:#8d9dab">(${escapeHtml(k)})</span>${s.custom ? ' — custom' : ''}${s.defaults?.size ? ` · default size ${escapeHtml(String(s.defaults.size))}` : ''}</li>`;
     }
     html += '</ul>';
   }

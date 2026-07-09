@@ -1,6 +1,6 @@
 // Cloud projects panel (PRD FR-59) — save the current project to Supabase,
 // reopen any saved project, and browse/restore its revision history.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useProject } from '../state/ProjectContext';
 import type { ProjectSummary, ProjectVersionSummary } from '../lib/cloud';
 
@@ -13,8 +13,11 @@ export default function CloudPanel({ open, onClose }: { open: boolean; onClose: 
   const [histFor, setHistFor] = useState<string | null>(null);
   const [versions, setVersions] = useState<ProjectVersionSummary[] | null>(null);
 
-  const refresh = () => listCloud().then(setRows).catch((e) => setMsg(e.message));
-  useEffect(() => { if (open) refresh(); /* eslint-disable-next-line */ }, [open]);
+  // listCloud is a stable useCallback ([] deps in ProjectContext), so wrapping
+  // refresh keeps ITS identity stable too — the effect below still fires only
+  // when `open` actually changes, not on every render.
+  const refresh = useCallback(() => listCloud().then(setRows).catch((e) => setMsg(e.message)), [listCloud]);
+  useEffect(() => { if (open) refresh(); }, [open, refresh]);
 
   if (!open) return null;
 

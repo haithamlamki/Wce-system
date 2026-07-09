@@ -5,21 +5,25 @@
 //  Field: pan-and-read; click toggles installed/removed; hover tooltips.
 //  Pan / wheel-zoom / fit-to-view, title block + legend overlay, 3D iso view.
 // ============================================================================
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useProject } from '../state/ProjectContext';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useProject, type Mode } from '../state/ProjectContext';
 import PropertiesPanel from '../components/PropertiesPanel';
-import { SYM, SYM_ORDER, type SymbolKey } from '../lib/symbols';
+import { SYM, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
+import { safeColor } from '../lib/sanitizeSvg';
 import {
-  box, edgeNodes, fitView, GRID, innerTransform, isoDepth, isoPlacement, pickNode,
-  PIPE_KINDS, pipeColor, pipeParts, ports, proj, routeEdgePoints,
+  box, buildNodeMap, fitView, GRID, innerTransform, isoDepth, isoPlacement, pickNode,
+  PIPE_KINDS, pipeColor, pipeParts, pipeSwatch, ports, proj, routeEdgePoints,
   screenToWorld, snap, type PipeKindDef, type View,
 } from '../lib/geometry';
-import { parseDrawing } from '../lib/layoutImport';
 import ExportDialog from '../components/ExportDialog';
 import AnnotationLayer from '../components/AnnotationLayer';
-import SymbolLibrary from '../components/SymbolLibrary';
-import type { Component, PortName } from '../types';
+import SvgMarkup from '../components/SvgMarkup';
+import SymbolPalette from '../components/pid/SymbolPalette';
+import PipeTypeMenu from '../components/pid/PipeTypeMenu';
+import PipeEditMenu from '../components/pid/PipeEditMenu';
+import SelectionToolbar from '../components/pid/SelectionToolbar';
+import type { Component, Edge, PortName } from '../types';
 
 interface PortRef { id: string; port?: PortName }
 interface ConnectState { from: PortRef; to: { x: number; y: number }; target?: PortRef }
@@ -69,7 +73,19 @@ export default function PidFullView() {
   const { project, refDate, mode } = p;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragRef = useRef<Drag | null>(null);
-  const drawingRef = useRef<HTMLInputElement | null>(null);
+  // F16: a node drag used to call p.moveMany (→ global project state → whole
+  // view re-render) on EVERY raw pointermove, which can fire far more often
+  // than the screen repaints. Batch commits to once per animation frame
+  // instead — same final call chain (moveMany still commits every frame, so
+  // pipes/PropertiesPanel keep live-following the drag) and still coalesces
+  // into exactly one undo step, just without redundant intra-frame renders.
+  const dragRafRef = useRef<number | null>(null);
+  const pendingMoveRef = useRef<Array<{ id: string; x: number; y: number }> | null>(null);
+  const flushPendingMove = useCallback(() => {
+    dragRafRef.current = null;
+    if (pendingMoveRef.current) { p.moveMany(pendingMoveRef.current); pendingMoveRef.current = null; }
+  }, [p]);
+  useEffect(() => () => { if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current); }, []);
   const [view, setView] = useState<View>({ x: 60, y: 60, k: 1 });
   const [connect, setConnect] = useState<ConnectState | null>(null);
   const [pipeMenu, setPipeMenu] = useState<PipeMenu | null>(null);
@@ -83,10 +99,6 @@ export default function PidFullView() {
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [showWarnings, setShowWarnings] = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [palQuery, setPalQuery] = useState('');
-  const [palCollapsed, setPalCollapsed] = useState<Set<string>>(new Set());
-  const [palHover, setPalHover] = useState<SymbolKey | null>(null);
-  const [showLibrary, setShowLibrary] = useState(false);
 
   const editable = mode === 'admin' && !iso;
   // drop-shadow depth is per-node SVG filter work — only worth it on smaller
@@ -95,6 +107,9 @@ export default function PidFullView() {
   const selSet = useMemo(() => new Set(p.selectedIds), [p.selectedIds]);
   // nodes implicated in any validation issue → red ring (report §2.4)
   const flagged = useMemo(() => new Set(p.issues.flatMap((i) => i.nodeIds)), [p.issues]);
+  // F16: id → node lookup so hot paths (edge endpoint resolution, connect/
+  // focus handling) don't re-scan the whole node array with `.find`.
+  const nodeMap = useMemo(() => buildNodeMap(project.nodes), [project.nodes]);
 
   // selection bounding box (world) → for the floating mini-toolbar
   const selBounds = useMemo(() => {
@@ -115,57 +130,89 @@ export default function PidFullView() {
     if (r) setView(fitView(project.nodes, r.width, r.height));
   }, [project.nodes]);
 
-  useEffect(() => { if (project.nodes.length) doFit(); /* eslint-disable-next-line */ }, [project.revision]);
+  // F18: this must fit ONLY when a new project/layout lands (revision bump),
+  // never on incidental node edits — but `doFit` closes over `project.nodes`,
+  // which changes on every edit too, so a naive `[project.revision]` dep array
+  // was previously eslint-disabled. Instead: list every dep honestly (so the
+  // effect re-runs on incidental edits too) and gate the actual work behind a
+  // "have we already fit this revision" ref — semantically identical to the
+  // old behavior (fit exactly once per new revision) with no lint suppression.
+  const lastFitRevision = useRef<number | null>(null);
+  useEffect(() => {
+    const rev = project.revision ?? 0;
+    if (rev === lastFitRevision.current) return;
+    lastFitRevision.current = rev;
+    if (project.nodes.length) doFit();
+  }, [project.revision, project.nodes, doFit]);
 
   // FR-27: when the register requests focus, re-center on that node (in 2D).
+  // F18: gated the same way as the fit effect above (only act on a genuinely
+  // new focusSeq) so `view.k` and `nodeMap` can be honest dependencies without
+  // re-centering every time the user merely pans/zooms or edits the project —
+  // and because `view.k` is now a real dependency, the effect always reads the
+  // CURRENT zoom (no more stale `view.k`).
+  const lastFocusSeq = useRef(0);
   useEffect(() => {
-    if (!p.focusSeq || !p.focusId) return;
-    const node = project.nodes.find((n) => n.id === p.focusId);
+    if (p.focusSeq === lastFocusSeq.current) return;
+    lastFocusSeq.current = p.focusSeq;
+    if (!p.focusId) return;
+    const node = nodeMap.get(p.focusId);
     const r = svgRef.current?.getBoundingClientRect();
     if (!node || !r) return;
     setIso(false);
     const b = box(node);
     const k = Math.max(view.k, 1);
     setView({ k, x: r.width / 2 - (node.x + b.w / 2) * k, y: r.height / 2 - (node.y + b.h / 2) * k });
-    /* eslint-disable-next-line */
-  }, [p.focusSeq]);
+  }, [p.focusSeq, p.focusId, nodeMap, view.k]);
+
+  // F18: keep the latest values the keydown handler needs in refs, updated
+  // every render, so the `window` listener can be attached exactly ONCE
+  // (empty dep array) instead of being torn down/re-added on every state
+  // change (previously deps were `[editable, p, selectedEdgeId]`).
+  const pRef = useRef(p);
+  pRef.current = p;
+  const editableRef = useRef(editable);
+  editableRef.current = editable;
+  const selectedEdgeIdRef = useRef(selectedEdgeId);
+  selectedEdgeIdRef.current = selectedEdgeId;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
-      if (!editable) return;
+      if (!editableRef.current) return;
+      const proj = pRef.current;
       const mod = e.ctrlKey || e.metaKey;
       // undo / redo
-      if (mod && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) { e.preventDefault(); p.undo(); return; }
-      if (mod && ((e.key === 'z' || e.key === 'Z') && e.shiftKey || e.key === 'y' || e.key === 'Y')) { e.preventDefault(); p.redo(); return; }
+      if (mod && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) { e.preventDefault(); proj.undo(); return; }
+      if (mod && ((e.key === 'z' || e.key === 'Z') && e.shiftKey || e.key === 'y' || e.key === 'Y')) { e.preventDefault(); proj.redo(); return; }
       // clipboard + select-all work on the whole selection
-      if (mod && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); p.copySelection(); return; }
-      if (mod && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); p.cutSelection(); return; }
-      if (mod && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); p.pasteClipboard(); return; }
-      if (mod && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); p.selectAll(); return; }
-      if (e.key === 'Escape') { p.clearSelection(); setConnect(null); setPortHover(null); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(null); return; }
+      if (mod && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); proj.copySelection(); return; }
+      if (mod && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); proj.cutSelection(); return; }
+      if (mod && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); proj.pasteClipboard(); return; }
+      if (mod && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); proj.selectAll(); return; }
+      if (e.key === 'Escape') { proj.clearSelection(); setConnect(null); setPortHover(null); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(null); return; }
       // a selected pipe (no node selection) can be deleted with Del/Backspace
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdgeId && !p.selectedIds.length) {
-        e.preventDefault(); p.deleteEdge(selectedEdgeId); setSelectedEdgeId(null); return;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdgeIdRef.current && !proj.selectedIds.length) {
+        e.preventDefault(); proj.deleteEdge(selectedEdgeIdRef.current); setSelectedEdgeId(null); return;
       }
-      if (!p.selectedIds.length) return;
+      if (!proj.selectedIds.length) return;
       const arrow = ARROW_DELTA[e.key];
       if (arrow) {
         e.preventDefault();
         const step = e.shiftKey ? 1 : GRID; // Shift = 1px fine nudge, else one grid cell
-        const sel = new Set(p.selectedIds);
-        p.moveMany(project.nodes.filter((n) => sel.has(n.id)).map((n) => ({ id: n.id, x: n.x + arrow[0] * step, y: n.y + arrow[1] * step })));
+        const sel = new Set(proj.selectedIds);
+        proj.moveMany(proj.project.nodes.filter((n) => sel.has(n.id)).map((n) => ({ id: n.id, x: n.x + arrow[0] * step, y: n.y + arrow[1] * step })));
         return;
       }
-      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); p.deleteSelection(); }
-      else if (e.key === 'r' || e.key === 'R') p.rotateSelection(e.shiftKey);
-      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); p.duplicateSelection(); }
-      else if (e.key === 'f' || e.key === 'F') p.flipSelection();
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); proj.deleteSelection(); }
+      else if (e.key === 'r' || e.key === 'R') proj.rotateSelection(e.shiftKey);
+      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); proj.duplicateSelection(); }
+      else if (e.key === 'f' || e.key === 'F') proj.flipSelection();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editable, p, selectedEdgeId]);
+  }, []);
 
   // ---- pointer interactions (one unified mode) ------------------------------
   //  • hover an item       → its N/E/S/W connection handles appear
@@ -242,7 +289,8 @@ export default function PidFullView() {
     else if (d.kind === 'node' && d.starts) {
       const dx = (px - d.sx) / view.k;
       const dy = (py - d.sy) / view.k;
-      p.moveMany(d.starts.map((s) => ({ id: s.id, x: snap(s.x + dx), y: snap(s.y + dy) })));
+      pendingMoveRef.current = d.starts.map((s) => ({ id: s.id, x: snap(s.x + dx), y: snap(s.y + dy) }));
+      if (dragRafRef.current == null) dragRafRef.current = requestAnimationFrame(flushPendingMove);
     } else if (d.kind === 'marquee') {
       const w = screenToWorld(px, py, view);
       setMarquee((m) => (m ? { ...m, x1: w.x, y1: w.y } : m));
@@ -261,6 +309,11 @@ export default function PidFullView() {
   function onPointerUp() {
     const d = dragRef.current;
     dragRef.current = null;
+    // F16: flush any move batched for the next animation frame synchronously,
+    // so the final drop position always commits (never lost to a cancelled
+    // rAF), and this frame's drag ends in exactly one settled position.
+    if (dragRafRef.current != null) { cancelAnimationFrame(dragRafRef.current); dragRafRef.current = null; }
+    if (pendingMoveRef.current) { p.moveMany(pendingMoveRef.current); pendingMoveRef.current = null; }
     if (d?.kind === 'marquee' && marquee) {
       const xMin = Math.min(marquee.x0, marquee.x1), xMax = Math.max(marquee.x0, marquee.x1);
       const yMin = Math.min(marquee.y0, marquee.y1), yMax = Math.max(marquee.y0, marquee.y1);
@@ -275,8 +328,8 @@ export default function PidFullView() {
       // complete only when released on another item's port → offer the pipe-type
       // picker (positioned at the mid-point of the new run, in screen space)
       if (d.from && d.target && d.target.id !== d.from.id) {
-        const fromN = project.nodes.find((n) => n.id === d.from!.id);
-        const toN = project.nodes.find((n) => n.id === d.target!.id);
+        const fromN = nodeMap.get(d.from.id);
+        const toN = nodeMap.get(d.target.id);
         if (fromN && toN) {
           const fp = ports(fromN)[d.from.port as PortName];
           const tp = ports(toN)[d.target.port as PortName];
@@ -299,13 +352,29 @@ export default function PidFullView() {
   }
 
   // ---- pipe editing (select / double-click to insert or branch) -------------
-  function selectEdge(id: string) { p.clearSelection(); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(id); }
-  function openPipeEdit(e: React.MouseEvent, edgeId: string) {
-    const { px, py } = local(e);
+  // F19 (PR7 review): both are passed to EdgeG (React.memo) as onSelect/onEdit —
+  // wrapped in useCallback so their identity is stable across renders (incl.
+  // every drag tick), letting EdgeG's memo actually bail. `clearSelection` is
+  // a stable useCallback ([] deps in ProjectContext); the setState setters are
+  // stable by React guarantee. Destructured to a plain identifier (rather than
+  // called as `p.clearSelection()`) so exhaustive-deps can track it precisely
+  // instead of asking for the whole (per-edit-unstable) `p` object — same
+  // function reference either way, just expressed so the lint rule proves it.
+  const { clearSelection } = p;
+  const selectEdge = useCallback((id: string) => {
+    clearSelection(); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(id);
+  }, [clearSelection]);
+  const openPipeEdit = useCallback((e: React.MouseEvent, edgeId: string) => {
+    // inlined equivalent of `local(e)` — that helper is a plain closure
+    // recreated every render, so calling it here would drag a fresh identity
+    // into this callback's deps and defeat the memoization above; svgRef is a
+    // ref (stable) so this keeps the callback's identity tied only to `view`.
+    const r = svgRef.current!.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
     const w = screenToWorld(px, py, view);
-    p.clearSelection(); setPipeMenu(null); setSelectedEdgeId(edgeId);
+    clearSelection(); setPipeMenu(null); setSelectedEdgeId(edgeId);
     setPipeEdit({ edgeId, wx: w.x, wy: w.y, sx: px, sy: py });
-  }
+  }, [view, clearSelection]);
   /** Insert a junction on the pipe at the clicked point (splits A→B into A→J→B).
    *  `inline` selects the junction for retyping to real equipment; branch leaves
    *  it as a tee ready to connect a side item. Both keep the pipe type/colour. */
@@ -363,80 +432,13 @@ export default function PidFullView() {
     p.addAnnotation({ kind: 'text', x: snap(w.x), y: snap(w.y), w: 140, h: 24, text: 'Note' });
   }
 
-  async function onImportDrawing(file: File) {
-    try {
-      const { template, pipes, source } = parseDrawing(await file.text());
-      const n = p.loadLayout(template, pipes);
-      alert(`Imported ${n} items + ${pipes.length} pipe runs (${source}). Equipment was matched to library symbols; review tags before saving.`);
-    } catch (e) {
-      alert(`Could not import drawing: ${(e as Error).message}`);
-    }
-  }
-
   const showPalette = mode === 'admin' && !iso;
   const hasNodes = project.nodes.length > 0;
-  const pendingNode = project.nodes.find((n) => n.id === pendingId) ?? null;
+  const pendingNode = (pendingId && nodeMap.get(pendingId)) ?? null;
 
   return (
     <>
-      {showPalette && (
-        <aside style={paletteStyle}>
-          <div style={palHeader}>
-            <button style={primaryBtn} onClick={p.loadMaster}>Build Full P&amp;ID</button>
-            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => p.importAEMP()}>Import from AEMP</button>
-            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => drawingRef.current?.click()}>Import drawing…</button>
-            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => setShowLibrary(true)}>⊞ Symbol library</button>
-            <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--red)', marginBottom: 0 }}
-              onClick={() => { if (confirm('Clear the entire canvas — all equipment, piping and annotations?')) p.clearCanvas(); }}>Clear canvas</button>
-            <input ref={drawingRef} type="file" accept=".html,.htm,.json,.js,text/html,application/json" style={{ display: 'none' }}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportDrawing(f); e.target.value = ''; }} />
-            <input placeholder="Search symbols…" value={palQuery} onChange={(e) => setPalQuery(e.target.value)} style={palSearch} />
-          </div>
-          <div style={palScroll}>
-          {(() => {
-            const q = palQuery.trim().toLowerCase();
-            const hidden = new Set(p.project.hiddenSymbols ?? []);
-            return SYM_ORDER.map((cat) => {
-              const items = Object.entries(SYM).filter(([key, s]) => s.cat === cat && !hidden.has(key) && (!q || s.name.toLowerCase().includes(q) || key.includes(q)));
-              if (!items.length) return null;
-              const collapsed = !q && palCollapsed.has(cat);
-              return (
-                <div key={cat}>
-                  <div style={palHead} onClick={() => !q && setPalCollapsed((cs) => { const n = new Set(cs); n.has(cat) ? n.delete(cat) : n.add(cat); return n; })}>
-                    <span>{q ? '' : (collapsed ? '▸ ' : '▾ ')}{cat}</span>
-                    <span style={{ opacity: 0.6 }}>{items.length}</span>
-                  </div>
-                  {!collapsed && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      {items.map(([key, s]) => (
-                        <div key={key} title={s.name} style={palCard} draggable
-                          onDragStart={(e) => e.dataTransfer.setData('type', key)}
-                          onClick={() => placeCentre(key as SymbolKey)}
-                          onMouseEnter={() => setPalHover(key as SymbolKey)}
-                          onMouseLeave={() => setPalHover((h) => (h === key ? null : h))}>
-                          <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={44} height={36}>
-                            <g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
-                          </svg>
-                          <span style={{ fontSize: 10, color: 'var(--dim)', textAlign: 'center' }}>{s.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            });
-          })()}
-          <div style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.6, padding: '12px 4px', borderTop: '1px solid var(--line)', marginTop: 12 }}>
-            Click a symbol to place &amp; approve, or drag it onto the canvas.<br />
-            <b>Hover an item</b> for its connection handles · <b>drag a handle</b> to another item to connect.<br />
-            <b>Drag the body</b> to move · <b>middle-mouse drag</b> to pan · <b>wheel</b> to zoom.<br />
-            <b>Shift-click</b> or <b>drag a box</b> to multi-select · <b>Ctrl+A</b> all · <b>Esc</b> clear.<br />
-            <b>Ctrl+C/X/V</b> copy/cut/paste · <b>R</b> rotate (⇧R type) · <b>D</b> duplicate · <b>F</b> flip · <b>Del</b> remove.<br />
-            <b>Arrow keys</b> nudge by grid · <b>Shift+Arrow</b> nudge 1px · <b>Ctrl+Z/⇧Z</b> undo/redo.
-          </div>
-          </div>
-        </aside>
-      )}
+      {showPalette && <SymbolPalette onPlaceCentre={placeCentre} />}
 
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: 'var(--sunk)' }}>
         {/* left toolbar (admin, 2D) */}
@@ -502,60 +504,18 @@ export default function PidFullView() {
 
         {/* pipe-type picker — shown only while creating a new connection */}
         {pipeMenu && (
-          <div style={{ ...pipeMenuBox, left: pipeMenu.sx, top: pipeMenu.sy }}
-            onPointerDown={(e) => e.stopPropagation()}>
-            <div style={pipeMenuHead}>Select pipe line type</div>
-            {PIPE_KINDS.map((k) => (
-              <button key={k.key} style={pipeMenuRow} onClick={() => choosePipe(k)}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                <span style={{ width: 24, height: 7, borderRadius: 4, flex: '0 0 auto', background: `linear-gradient(${`color-mix(in srgb, ${k.color} 55%, #000)`}, ${`color-mix(in srgb, ${k.color} 20%, #fff)`} 45%, ${`color-mix(in srgb, ${k.color} 55%, #000)`})` }} />
-                <span>{k.label}</span>
-              </button>
-            ))}
-            <button style={{ ...pipeMenuRow, color: 'var(--faint)', justifyContent: 'center' }}
-              onClick={() => setPipeMenu(null)}>Cancel</button>
-          </div>
+          <PipeTypeMenu sx={pipeMenu.sx} sy={pipeMenu.sy} onChoose={choosePipe} onCancel={() => setPipeMenu(null)} />
         )}
 
         {/* pipe edit menu — double-click an existing pipe: insert / branch /
             change type / delete. Only shown while editing that pipe. */}
         {pipeEdit && (
-          <div style={{ ...pipeMenuBox, left: pipeEdit.sx, top: pipeEdit.sy }}
-            onPointerDown={(e) => e.stopPropagation()}>
-            <div style={pipeMenuHead}>Edit pipe connection</div>
-            <button style={pipeMenuRow} onClick={() => insertOnPipe(true)}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-              <span style={{ fontSize: 15, width: 18, textAlign: 'center' }}>⊕</span>
-              <span style={{ display: 'grid' }}>Insert equipment here
-                <small style={{ color: 'var(--faint)', fontWeight: 400 }}>Splits pipe: A → new item → B</small></span>
-            </button>
-            <button style={pipeMenuRow} onClick={() => insertOnPipe(false)}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-              <span style={{ fontSize: 15, width: 18, textAlign: 'center' }}>⌥</span>
-              <span style={{ display: 'grid' }}>Add branch point
-                <small style={{ color: 'var(--faint)', fontWeight: 400 }}>Adds a tee — drag from it to a new item</small></span>
-            </button>
-            <div style={{ ...pipeMenuHead, paddingTop: 8 }}>Change line type</div>
-            <div style={{ display: 'flex', gap: 5, padding: '2px 6px 6px' }}>
-              {PIPE_KINDS.map((k) => (
-                <button key={k.key} title={k.label} onClick={() => changeEdgeType(k)}
-                  style={{ flex: 1, height: 16, borderRadius: 4, border: '1px solid var(--line2)', cursor: 'pointer', background: `linear-gradient(${`color-mix(in srgb, ${k.color} 55%, #000)`}, ${`color-mix(in srgb, ${k.color} 20%, #fff)`} 45%, ${`color-mix(in srgb, ${k.color} 55%, #000)`})` }} />
-              ))}
-            </div>
-            <button style={{ ...pipeMenuRow, color: 'var(--red)' }} onClick={deleteEdgeFromMenu}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--panel2)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-              <span style={{ fontSize: 14, width: 18, textAlign: 'center' }}>🗑</span> Delete connection
-            </button>
-            <button style={{ ...pipeMenuRow, color: 'var(--faint)', justifyContent: 'center' }}
-              onClick={() => { setPipeEdit(null); setSelectedEdgeId(null); }}>Cancel</button>
-          </div>
+          <PipeEditMenu sx={pipeEdit.sx} sy={pipeEdit.sy} onInsert={insertOnPipe} onChangeType={changeEdgeType}
+            onDelete={deleteEdgeFromMenu} onCancel={() => { setPipeEdit(null); setSelectedEdgeId(null); }} />
         )}
 
         <svg ref={svgRef} width="100%" height="100%"
+          role="application" tabIndex={0} aria-label="P&ID editor canvas"
           style={{ position: 'absolute', inset: 0, cursor: iso || mode === 'field' ? 'grab' : connect || portHover?.port ? 'crosshair' : 'default', touchAction: 'none' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
           onPointerLeave={() => { onPointerUp(); setHover(null); }}
@@ -583,30 +543,19 @@ export default function PidFullView() {
                 The route recomputes from live node positions every render, so it
                 follows the items when they move. */}
             {project.edges.map((e) => {
-              const pr = edgeNodes(e, project.nodes);
-              if (!pr) return null;
+              const a = nodeMap.get(e.from);
+              const b = nodeMap.get(e.to);
+              if (!a || !b) return null;
               const color = e.color || pipeColor(e.lineType) || 'var(--accent2)';
               if (iso) {
-                const ba = box(pr.a), bb = box(pr.b);
-                const a = proj(pr.a.x + ba.w / 2, pr.a.y + ba.h / 2);
-                const b = proj(pr.b.x + bb.w / 2, pr.b.y + bb.h / 2);
-                return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={2.2} opacity={0.55} />;
+                const ba = box(a), bb = box(b);
+                const pa = proj(a.x + ba.w / 2, a.y + ba.h / 2);
+                const pb = proj(b.x + bb.w / 2, b.y + bb.h / 2);
+                return <line key={e.id} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} stroke={color} strokeWidth={2.2} opacity={0.55} />;
               }
-              const pts = routeEdgePoints(pr.a, pr.b, e);
-              const hitD = pts.map((pt, i) => `${i ? 'L' : 'M'} ${pt.x} ${pt.y}`).join(' ');
               return (
-                <g key={e.id}>
-                  <Pipe pts={pts} color={color} selected={selectedEdgeId === e.id} />
-                  {/* wide invisible hit-line: click selects the pipe, double-click
-                      opens the edit menu — the pipe itself is never dragged. */}
-                  {mode === 'admin' && (
-                    <path d={hitD} stroke="transparent" strokeWidth={18} fill="none"
-                      strokeLinecap="round" strokeLinejoin="round" pointerEvents="stroke"
-                      style={{ cursor: 'pointer' }}
-                      onPointerDown={(ev) => { ev.stopPropagation(); selectEdge(e.id); }}
-                      onDoubleClick={(ev) => { ev.stopPropagation(); openPipeEdit(ev, e.id); }} />
-                  )}
-                </g>
+                <EdgeG key={e.id} edge={e} a={a} b={b} color={color} selected={selectedEdgeId === e.id}
+                  mode={mode} onSelect={selectEdge} onEdit={openPipeEdit} />
               );
             })}
             {/* connection handles — auto-shown on the hovered item, the connection
@@ -616,7 +565,7 @@ export default function PidFullView() {
               if (hover) ids.add(hover.n.id);
               if (connect) { ids.add(connect.from.id); if (connect.target) ids.add(connect.target.id); }
               return [...ids].map((id) => {
-                const n = project.nodes.find((x) => x.id === id);
+                const n = nodeMap.get(id);
                 if (!n) return null;
                 const ps = ports(n);
                 return (['N', 'E', 'S', 'W'] as PortName[]).map((k) => {
@@ -636,11 +585,11 @@ export default function PidFullView() {
             ))}
             {/* live connection rubber-band (from the source port to the cursor / snapped target port) */}
             {connect && !iso && (() => {
-              const fromN = project.nodes.find((x) => x.id === connect.from.id);
+              const fromN = nodeMap.get(connect.from.id);
               if (!fromN) return null;
               const a = ports(fromN)[connect.from.port as PortName];
               let b = connect.to;
-              if (connect.target) { const tn = project.nodes.find((x) => x.id === connect.target!.id); if (tn) b = ports(tn)[connect.target.port as PortName]; }
+              if (connect.target) { const tn = nodeMap.get(connect.target.id); if (tn) b = ports(tn)[connect.target.port as PortName]; }
               return <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--accent2)" strokeWidth={2.2 / view.k}
                 strokeDasharray={`${6 / view.k} ${4 / view.k}`} opacity={0.95} pointerEvents="none" />;
             })()}
@@ -655,28 +604,7 @@ export default function PidFullView() {
         <AnnotationLayer view={view} editable={editable} />
 
         {/* floating selection mini-toolbar */}
-        {editable && selBounds && !marquee && p.selectedIds.length > 0 && (() => {
-          const sx = selBounds.cx * view.k + view.x;
-          const sy = selBounds.top * view.k + view.y;
-          const above = sy > 52;
-          const multi = p.selectedIds.length > 1;
-          return (
-            <div style={{ position: 'absolute', left: sx, top: above ? sy - 46 : sy + 16, transform: 'translateX(-50%)', zIndex: 18, display: 'flex', gap: 3, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 9, padding: 4, boxShadow: 'var(--shadow)' }}>
-              <button style={miniBtn} title="Rotate 90° (R)" onClick={() => p.rotateSelection()}>⟳</button>
-              <button style={miniBtn} title="Flip (F)" onClick={() => p.flipSelection()}>⇄</button>
-              <button style={miniBtn} title="Duplicate (D)" onClick={() => p.duplicateSelection()}>⧉</button>
-              <button style={miniBtn} title="Copy (Ctrl+C)" onClick={() => p.copySelection()}>⎘</button>
-              {multi && <>
-                <span style={{ width: 1, background: 'var(--line2)', margin: '2px 1px' }} />
-                <button style={miniBtn} title="Align left" onClick={() => p.alignSelection('left')}>⤙</button>
-                <button style={miniBtn} title="Align top" onClick={() => p.alignSelection('top')}>⤒</button>
-                {p.selectedIds.length > 2 && <button style={miniBtn} title="Distribute horizontally" onClick={() => p.distributeSelection('h')}>↔</button>}
-              </>}
-              <span style={{ width: 1, background: 'var(--line2)', margin: '2px 1px' }} />
-              <button style={{ ...miniBtn, color: 'var(--red)' }} title="Delete (Del)" onClick={() => p.deleteSelection()}>🗑</button>
-            </div>
-          );
-        })()}
+        <SelectionToolbar editable={editable} selBounds={selBounds} hasMarquee={!!marquee} view={view} />
 
         {/* zoom controls */}
         <div style={zoombar}>
@@ -692,7 +620,7 @@ export default function PidFullView() {
             <b style={legendHead}>PIPING &amp; LINES</b>
             {PIPE_LEGEND.map(([c, label]) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
-                <span style={{ width: 22, height: 6, borderRadius: 3, background: `linear-gradient(${`color-mix(in srgb, ${c} 55%, #000)`}, ${`color-mix(in srgb, ${c} 20%, #fff)`} 45%, ${`color-mix(in srgb, ${c} 55%, #000)`})` }} />{label}
+                <span style={{ width: 22, height: 6, borderRadius: 3, background: pipeSwatch(c) }} />{label}
               </div>
             ))}
           </div>
@@ -720,16 +648,6 @@ export default function PidFullView() {
       {mode === 'admin' && !iso && <PropertiesPanel />}
       {hover && !iso && !connect && <Tooltip h={hover} refDate={refDate} />}
       {showExport && <ExportDialog project={project} refDate={refDate} onClose={() => setShowExport(false)} />}
-      {showLibrary && <SymbolLibrary onClose={() => setShowLibrary(false)} />}
-      {showPalette && palHover && SYM[palHover] && (
-        <div style={palPreview}>
-          <svg viewBox={`-4 -4 ${SYM[palHover].w + 8} ${SYM[palHover].h + 8}`} width={130} height={104}>
-            <g style={{ color: SYM[palHover].color }} dangerouslySetInnerHTML={{ __html: SYM[palHover].svg }} />
-          </svg>
-          <div style={{ fontWeight: 600, fontSize: 12.5, marginTop: 6 }}>{SYM[palHover].name}</div>
-          <div style={{ fontSize: 10.5, color: 'var(--faint)' }}>{SYM[palHover].cat}{SYM[palHover].defaults?.size ? ` · ${SYM[palHover].defaults!.size}` : ''}</div>
-        </div>
-      )}
     </>
   );
 }
@@ -758,7 +676,9 @@ function tube(d: string, color: string, scale = 1) {
  * one continuous line. Every shade derives from the line colour, so the elbow
  * always matches its pipe's type/colour.
  */
-function Pipe({ pts, color, selected }: { pts: Pt[]; color: string; selected?: boolean }) {
+// F16: memoized so an unrelated re-render (e.g. another node's drag tick)
+// doesn't re-run this pipe's fitting geometry when its own props are unchanged.
+const Pipe = memo(function Pipe({ pts, color, selected }: { pts: Pt[]; color: string; selected?: boolean }) {
   const { segments, elbows } = pipeParts(pts, 14);
   const dark = `color-mix(in srgb, ${color} 55%, #000)`;
   const seg = (a: Pt, b: Pt) => `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
@@ -789,9 +709,37 @@ function Pipe({ pts, color, selected }: { pts: Pt[]; color: string; selected?: b
       })}
     </g>
   );
-}
+});
 
-function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso }: { n: Component; selected: boolean; connecting: boolean; pending: boolean; flagged: boolean; shadow: boolean; refDate: Date; iso: boolean }) {
+/**
+ * One edge's route + hit-target, split out of the edges.map loop so its route
+ * (routeEdgePoints) only recomputes when ITS OWN endpoints/edge/selection
+ * actually change (memoized here + React.memo), instead of on every render of
+ * the whole canvas (F16 — "edge routes recomputed inside the render loop").
+ */
+const EdgeG = memo(function EdgeG({ edge, a, b, color, selected, mode, onSelect, onEdit }: {
+  edge: Edge; a: Component; b: Component; color: string; selected: boolean; mode: Mode;
+  onSelect: (id: string) => void; onEdit: (e: React.MouseEvent, edgeId: string) => void;
+}) {
+  const pts = useMemo(() => routeEdgePoints(a, b, edge), [a, b, edge]);
+  const hitD = useMemo(() => pts.map((pt, i) => `${i ? 'L' : 'M'} ${pt.x} ${pt.y}`).join(' '), [pts]);
+  return (
+    <g>
+      <Pipe pts={pts} color={color} selected={selected} />
+      {/* wide invisible hit-line: click selects the pipe, double-click
+          opens the edit menu — the pipe itself is never dragged. */}
+      {mode === 'admin' && (
+        <path d={hitD} stroke="transparent" strokeWidth={18} fill="none"
+          strokeLinecap="round" strokeLinejoin="round" pointerEvents="stroke"
+          style={{ cursor: 'pointer' }}
+          onPointerDown={(ev) => { ev.stopPropagation(); onSelect(edge.id); }}
+          onDoubleClick={(ev) => { ev.stopPropagation(); onEdit(ev, edge.id); }} />
+      )}
+    </g>
+  );
+});
+
+const NodeG = memo(function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso }: { n: Component; selected: boolean; connecting: boolean; pending: boolean; flagged: boolean; shadow: boolean; refDate: Date; iso: boolean }) {
   const s = SYM[n.type as SymbolKey];
   if (!s) return null;
   const { w: ew, h: eh } = box(n);
@@ -799,7 +747,9 @@ function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso
   const ip = iso ? isoPlacement(n) : null;
   const outer = iso ? `translate(${ip!.x},${ip!.y})` : `translate(${n.x},${n.y})`;
   return (
-    <g transform={outer} opacity={n.removed ? 0.28 : 1} style={{ color: s.color }}>
+    <g transform={outer} opacity={n.removed ? 0.28 : 1} style={{ color: safeColor(s.color) }}>
+      {/* accessible name (F20): so AT can identify a placed item by tag + type */}
+      <title>{`${n.tag || s.name}${n.tag ? ` — ${s.name}` : ''}${n.removed ? ' (removed)' : ''}`}</title>
       {iso && (
         <>
           <ellipse cx={ew / 2} cy={ip!.lift + eh / 2 + 4} rx={ew * 0.5} ry={ew * 0.2} fill="#0b1a2655" />
@@ -818,7 +768,7 @@ function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso
       {n.locked && !iso && (
         <text x={ew - 2} y={eh + 1} textAnchor="end" style={{ font: '10px var(--body)' }}>🔒</text>
       )}
-      <g transform={innerTransform(n)} dangerouslySetInnerHTML={{ __html: s.svg }} opacity={pending ? 0.85 : 1}
+      <SvgMarkup svg={s.svg} transform={innerTransform(n)} opacity={pending ? 0.85 : 1}
         filter={shadow && !pending ? 'url(#symShadow)' : undefined}
         style={pending ? { filter: 'none' } : undefined} strokeDasharray={pending ? '5 3' : undefined} />
       <circle cx={ew - 2} cy={-2} r={5.5} fill="var(--panel)" stroke={STATUS_COLOR[st]} strokeWidth={2.5} />
@@ -826,7 +776,7 @@ function NodeG({ n, selected, connecting, pending, flagged, shadow, refDate, iso
       <text x={ew / 2} y={eh + 26} textAnchor="middle" style={{ font: '9px var(--body)', fill: 'var(--dim)' }}>{(n.description || '').slice(0, 24)}</text>
     </g>
   );
-}
+});
 
 function Tooltip({ h, refDate }: { h: Hover; refDate: Date }) {
   const { n } = h;
@@ -835,7 +785,7 @@ function Tooltip({ h, refDate }: { h: Hover; refDate: Date }) {
   return (
     <div style={{ position: 'fixed', left: h.x + 16, top: h.y + 12, zIndex: 90, width: 248, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 11, boxShadow: 'var(--shadow)', overflow: 'hidden', pointerEvents: 'none' }}>
       <div style={{ padding: '10px 13px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 9 }}>
-        <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={34} height={28}><g style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} /></svg>
+        <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width={34} height={28}><SvgMarkup svg={s.svg} style={{ color: safeColor(s.color) }} /></svg>
         <div>
           <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 13 }}>{n.tag || '—'}{n.removed && ' · REMOVED'}</div>
           <div style={{ fontSize: 10.5, color: 'var(--dim)' }}>{s.name}</div>
@@ -860,15 +810,6 @@ const TBRow = ({ k, v }: { k: string; v: string }) => (
 );
 
 // ---- styles ----------------------------------------------------------------
-const paletteStyle: React.CSSProperties = { width: 230, flex: '0 0 auto', background: 'var(--panel)', borderRight: '1px solid var(--line2)', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 12 };
-// Buttons + search stay pinned; only the symbol list below scrolls.
-const palHeader: React.CSSProperties = { flex: '0 0 auto', paddingBottom: 10, borderBottom: '1px solid var(--line)' };
-const palScroll: React.CSSProperties = { flex: '1 1 auto', overflowY: 'auto', minHeight: 0, marginRight: -6, paddingRight: 6 };
-const primaryBtn: React.CSSProperties = { width: '100%', background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '9px 11px', fontWeight: 600, fontSize: 12, marginBottom: 8, cursor: 'pointer' };
-const palHead: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1.6, color: 'var(--faint)', textTransform: 'uppercase', margin: '15px 4px 8px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' };
-const palSearch: React.CSSProperties = { width: '100%', boxSizing: 'border-box', background: 'var(--panel2)', border: '1px solid var(--line2)', color: 'var(--ink)', padding: '7px 9px', borderRadius: 7, fontSize: 12, margin: '4px 0 4px' };
-const palPreview: React.CSSProperties = { position: 'absolute', left: 238, top: 120, zIndex: 30, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 11, boxShadow: 'var(--shadow)', padding: 12, width: 168, textAlign: 'center', pointerEvents: 'none' };
-const palCard: React.CSSProperties = { background: 'var(--panel2)', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 4px 7px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: 'grab' };
 const toolbar: React.CSSProperties = { position: 'absolute', left: 16, top: 16, display: 'flex', gap: 5, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: 5, zIndex: 10, boxShadow: 'var(--shadow)' };
 const tbtn: React.CSSProperties = { width: 36, height: 36, border: 0, background: 'transparent', borderRadius: 7, color: 'var(--dim)', fontSize: 16, cursor: 'pointer' };
 const miniBtn: React.CSSProperties = { width: 28, height: 28, border: 0, background: 'transparent', borderRadius: 6, color: 'var(--ink)', fontSize: 14, cursor: 'pointer', display: 'grid', placeItems: 'center' };
@@ -880,9 +821,6 @@ const approveBar: React.CSSProperties = { position: 'absolute', top: 16, left: '
 const primarySm: React.CSSProperties = { background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '7px 12px', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
 const ghostSm: React.CSSProperties = { background: 'var(--panel2)', color: 'var(--ink)', border: '1px solid var(--line2)', borderRadius: 7, padding: '7px 12px', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
 const zoombar: React.CSSProperties = { position: 'absolute', right: 16, bottom: 16, display: 'flex', gap: 6, alignItems: 'center', background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: '5px 8px', zIndex: 10, boxShadow: 'var(--shadow)' };
-const pipeMenuBox: React.CSSProperties = { position: 'absolute', transform: 'translate(-50%, 12px)', zIndex: 40, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: 6, minWidth: 190 };
-const pipeMenuHead: React.CSSProperties = { fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--faint)', padding: '4px 8px 6px', fontWeight: 600 };
-const pipeMenuRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '8px 9px', background: 'transparent', border: 0, borderRadius: 7, cursor: 'pointer', fontSize: 12.5, color: 'var(--ink)', fontWeight: 600 };
 const zbtn: React.CSSProperties = { width: 26, height: 26, border: 0, background: 'var(--sunk)', color: 'var(--ink)', borderRadius: 6, fontSize: 16, cursor: 'pointer' };
 const legend: React.CSSProperties = { position: 'absolute', left: 16, bottom: 16, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: '9px 13px', zIndex: 10, fontSize: 11, color: 'var(--dim)', boxShadow: 'var(--shadow)' };
 const legendHead: React.CSSProperties = { color: 'var(--ink)', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1, display: 'block', marginBottom: 6 };

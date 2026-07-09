@@ -16,6 +16,7 @@ html[data-theme='light'] {
   --shadow: 0 1px 3px rgba(20, 40, 60, 0.08), 0 6px 24px rgba(20, 40, 60, 0.07);
   --green: #1f9d57; --amber: #cf8a00; --red: #d8453d; --blue: #1769b0;
   --gold: #c9981c; --gold-deep: #a37c12; --gold-soft: #fbf1d6;
+  --status-invalid: #a5279e;
 }
 html[data-theme='dark'] {
   --bg: #0c1116; --panel: #121a22; --panel2: #0f161d; --sunk: #0b1117;
@@ -25,6 +26,7 @@ html[data-theme='dark'] {
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.35);
   --green: #3ddc84; --amber: #f5a623; --red: #ff5d5d; --blue: #4ea1ff;
   --gold: #e8b53a; --gold-deep: #c9981c; --gold-soft: #2c2611;
+  --status-invalid: #d866d0;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }

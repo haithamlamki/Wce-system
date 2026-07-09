@@ -24,6 +24,16 @@ export function pipeColor(kind?: PipeKind): string | undefined {
   return kind ? PIPE_KINDS.find((k) => k.key === kind)?.color : undefined;
 }
 
+/** CSS `background` value for a pipe-type swatch: a short gradient bar shaded
+ *  from `color`, used by every "pick / change pipe type" UI (the connect
+ *  picker, the edit-pipe menu, and the canvas legend) so they render
+ *  identically instead of each re-deriving the same color-mix expression. */
+export function pipeSwatch(color: string): string {
+  const dark = `color-mix(in srgb, ${color} 55%, #000)`;
+  const light = `color-mix(in srgb, ${color} 20%, #fff)`;
+  return `linear-gradient(${dark}, ${light} 45%, ${dark})`;
+}
+
 export interface View {
   x: number;
   y: number;
@@ -99,6 +109,13 @@ export function pickNode(nodes: Component[], wx: number, wy: number): Component 
     if (hitNode(nodes[i], wx, wy)) return nodes[i];
   }
   return null;
+}
+
+/** Build an id → node lookup so hot render/handler paths (edge endpoint
+ *  resolution, port/handle lookups, focus-by-id) don't re-scan the whole node
+ *  array with `.find` on every call — callers memoize this on `nodes`. */
+export function buildNodeMap(nodes: Component[]): Map<string, Component> {
+  return new Map(nodes.map((n) => [n.id, n]));
 }
 
 type Pt = { x: number; y: number };
@@ -345,10 +362,3 @@ export function isoPlacement(n: Component) {
 
 /** Iso depth key — back-to-front draw order. */
 export const isoDepth = (n: Component) => n.x + n.y;
-
-/** Resolve the two endpoints of a logical edge to their nodes. */
-export function edgeNodes(edge: Edge, nodes: Component[]) {
-  const a = nodes.find((n) => n.id === edge.from);
-  const b = nodes.find((n) => n.id === edge.to);
-  return a && b ? { a, b } : null;
-}

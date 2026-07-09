@@ -8,9 +8,11 @@ import { useState } from 'react';
 import { useProject } from '../state/ProjectContext';
 import { SECTION_NAMES, stackMetrics, toFeet, toMetres, type HoleSection } from '../lib/bop';
 import { printBop } from '../lib/printExport';
+import { safeColor } from '../lib/sanitizeSvg';
 import { SYM, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import type { BopItem } from '../types';
+import SvgMarkup from '../components/SvgMarkup';
 
 const W = 520;
 const H = 680;
@@ -30,6 +32,7 @@ export default function BopSchemeView() {
   const { project, refDate, buildBop, setProject } = useProject();
   const { bop } = project;
   const [hover, setHover] = useState<{ it: BopItem; x: number; y: number } | null>(null);
+  const [section, setSection] = useState<HoleSection>('12.25');
 
   const m = stackMetrics(bop);
   const toUnit = (v: number) => (bop.unit === 'ft' ? toFeet(v) : v);
@@ -80,7 +83,7 @@ export default function BopSchemeView() {
           return (
             <g key={it.id} onPointerMove={(e) => setHover({ it, x: e.clientX, y: e.clientY })} onPointerLeave={() => setHover(null)} style={{ cursor: 'default' }}>
               <circle cx={cx} cy={oy} r={3} fill="var(--line2)" />
-              <g transform={`translate(${cx - dw / 2},${oy - dh - 6}) scale(${sc})`} style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
+              <SvgMarkup svg={s.svg} transform={`translate(${cx - dw / 2},${oy - dh - 6}) scale(${sc})`} style={{ color: safeColor(s.color) }} />
               <circle cx={cx + dw / 2 - 2} cy={oy - dh - 8} r={4} fill="var(--panel)" stroke={STATUS_COLOR[st]} strokeWidth={2} />
               <text x={cx} y={oy + 14} textAnchor="middle" style={{ font: '8.5px var(--mono)', fill: 'var(--ink)' }}>{it.tag}</text>
             </g>
@@ -158,8 +161,8 @@ export default function BopSchemeView() {
                   onPointerLeave={() => setHover(null)} style={{ cursor: 'default' }}>
                   {/* status bar on the band */}
                   <rect x={STACK_CX - 66} y={yT} width={4} height={bandH} fill={STATUS_COLOR[st]} rx={2} />
-                  <g transform={`translate(${STACK_CX - dw / 2},${yT + (bandH - dh) / 2}) scale(${scale})`}
-                    style={{ color: s.color }} dangerouslySetInnerHTML={{ __html: s.svg }} />
+                  <SvgMarkup svg={s.svg} transform={`translate(${STACK_CX - dw / 2},${yT + (bandH - dh) / 2}) scale(${scale})`}
+                    style={{ color: safeColor(s.color) }} />
                   <text x={STACK_CX + 78} y={yT + bandH / 2 - 3} style={{ font: '600 11px var(--mono)', fill: 'var(--ink)' }}>{it.tag}</text>
                   <text x={STACK_CX + 78} y={yT + bandH / 2 + 11} style={{ font: '9.5px var(--body)', fill: 'var(--dim)' }}>{fmt(it.height)} {bop.unit}</text>
                 </g>
@@ -193,12 +196,12 @@ export default function BopSchemeView() {
         <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '14px 0' }} />
 
         <Field label="Hole section">
-          <select id="section" defaultValue="12.25" style={inp}>
+          <select id="section" value={section} onChange={(e) => setSection(e.target.value as HoleSection)} style={inp}>
             {(Object.keys(SECTION_NAMES) as HoleSection[]).map((s) => (<option key={s} value={s}>{SECTION_NAMES[s]}</option>))}
           </select>
         </Field>
         <button style={{ width: '100%', background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '9px', fontWeight: 600, cursor: 'pointer' }}
-          onClick={() => buildBop((document.getElementById('section') as HTMLSelectElement).value as HoleSection)}>
+          onClick={() => buildBop(section)}>
           AI-build BOP stack
         </button>
         {bop.items.length > 0 && (

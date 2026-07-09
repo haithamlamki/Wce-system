@@ -9,8 +9,9 @@ import { SYM, type SymbolKey } from './symbols';
 import { box, innerTransform } from './geometry';
 import { statusOf } from './status';
 import { stackMetrics, toFeet } from './bop';
+import { safeColor, sanitizeSvg } from './sanitizeSvg';
 
-const STATUS_HEX: Record<string, string> = { ok: '#1f9d57', due: '#cf8a00', over: '#d8453d', untag: '#8d9dab' };
+const STATUS_HEX: Record<string, string> = { ok: '#1f9d57', due: '#cf8a00', over: '#d8453d', untag: '#8d9dab', invalid: '#a5279e' };
 const esc = (s: string) => (s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!));
 
 function header(project: Project, subtitle: string): string {
@@ -63,8 +64,8 @@ export function buildPidSvg(project: Project, refDate: Date, layers: Layers = AL
       ? `<text x="${ew / 2}" y="${eh + 15}" text-anchor="middle" style="font:600 11px monospace;fill:#1b2a38">${esc(n.tag || '—')}</text>` +
         `<text x="${ew / 2}" y="${eh + 26}" text-anchor="middle" style="font:9px sans-serif;fill:#5a6b7b">${esc((n.description || '').slice(0, 24))}</text>`
       : '';
-    return `<g transform="translate(${n.x},${n.y})" style="color:${s.color}"${n.removed ? ' opacity="0.3"' : ''}>` +
-      `<g transform="${innerTransform(n)}">${s.svg}</g>` +
+    return `<g transform="translate(${n.x},${n.y})" style="color:${safeColor(s.color)}"${n.removed ? ' opacity="0.3"' : ''}>` +
+      `<g transform="${innerTransform(n)}">${sanitizeSvg(s.svg)}</g>` +
       `<circle cx="${ew - 2}" cy="-2" r="5.5" fill="#fff" stroke="${ring}" stroke-width="2.5"/>` +
       labels +
       `</g>`;
@@ -98,7 +99,7 @@ export function buildBopSvg(project: Project): string {
     const s = SYM[it.type as SymbolKey];
     const yT = y(t), bh = (t - b) * ppu, sc = Math.min((bh * 0.9) / s.h, 110 / s.w);
     const dw = s.w * sc, dh = s.h * sc;
-    return `<g transform="translate(${cx - dw / 2},${yT + (bh - dh) / 2}) scale(${sc})" style="color:${s.color}">${s.svg}</g>` +
+    return `<g transform="translate(${cx - dw / 2},${yT + (bh - dh) / 2}) scale(${sc})" style="color:${safeColor(s.color)}">${sanitizeSvg(s.svg)}</g>` +
       `<text x="${cx + 78}" y="${yT + bh / 2}" style="font:600 11px monospace;fill:#1b2a38">${esc(it.tag)} (${conv(it.height)} ${bop.unit})</text>`;
   }).join('');
 

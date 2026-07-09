@@ -4,7 +4,7 @@
 // ============================================================================
 import type { SymbolDef, SymbolKey } from './lib/symbols';
 
-export type InspectionStatus = 'ok' | 'due' | 'over' | 'untag';
+export type InspectionStatus = 'ok' | 'due' | 'over' | 'untag' | 'invalid';
 
 /** A placed equipment item on the P&ID canvas. */
 export interface Component {

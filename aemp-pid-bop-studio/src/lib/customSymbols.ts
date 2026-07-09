@@ -4,35 +4,42 @@
 //  live on the project (travel with save/load) and are merged into the shared
 //  SYM registry so every consumer (palette, canvas, BOP, export) sees them.
 // ============================================================================
+import { safeColor, sanitizeSvg } from './sanitizeSvg';
 import { SYM, SYM_ORDER, type DrawShape, type SymbolDef } from './symbols';
 
 const r = (v: number) => Math.round(v * 10) / 10;
 
-/** Serialise drawn primitives into inner SVG markup (no <svg> wrapper). */
+/** Serialise drawn primitives into inner SVG markup (no <svg> wrapper).
+ *  stroke/fill are user-picked but pass through `safeColor` (F1) so the
+ *  produced markup can never carry an injected attribute/URI. */
 export function serializeShapes(shapes: DrawShape[]): string {
   return shapes
     .map((s) => {
-      const f = s.fill === 'none' ? 'none' : s.fill;
+      const f = s.fill === 'none' ? 'none' : safeColor(s.fill);
+      const stroke = safeColor(s.stroke);
       if (s.type === 'rect') {
         const x = Math.min(s.x!, s.x! + s.w!), y = Math.min(s.y!, s.y! + s.h!);
-        return `<rect x="${r(x)}" y="${r(y)}" width="${r(Math.abs(s.w!))}" height="${r(Math.abs(s.h!))}" fill="${f}" stroke="${s.stroke}" stroke-width="${s.sw}"/>`;
+        return `<rect x="${r(x)}" y="${r(y)}" width="${r(Math.abs(s.w!))}" height="${r(Math.abs(s.h!))}" fill="${f}" stroke="${stroke}" stroke-width="${s.sw}"/>`;
       }
       if (s.type === 'ellipse')
-        return `<ellipse cx="${r(s.x! + s.w! / 2)}" cy="${r(s.y! + s.h! / 2)}" rx="${r(Math.abs(s.w! / 2))}" ry="${r(Math.abs(s.h! / 2))}" fill="${f}" stroke="${s.stroke}" stroke-width="${s.sw}"/>`;
+        return `<ellipse cx="${r(s.x! + s.w! / 2)}" cy="${r(s.y! + s.h! / 2)}" rx="${r(Math.abs(s.w! / 2))}" ry="${r(Math.abs(s.h! / 2))}" fill="${f}" stroke="${stroke}" stroke-width="${s.sw}"/>`;
       if (s.type === 'line')
-        return `<line x1="${r(s.x!)}" y1="${r(s.y!)}" x2="${r(s.x! + s.w!)}" y2="${r(s.y! + s.h!)}" stroke="${s.stroke}" stroke-width="${s.sw}"/>`;
+        return `<line x1="${r(s.x!)}" y1="${r(s.y!)}" x2="${r(s.x! + s.w!)}" y2="${r(s.y! + s.h!)}" stroke="${stroke}" stroke-width="${s.sw}"/>`;
       if (s.type === 'poly')
-        return `<polygon points="${(s.points ?? []).map((p) => r(p[0]) + ',' + r(p[1])).join(' ')}" fill="${f}" stroke="${s.stroke}" stroke-width="${s.sw}"/>`;
+        return `<polygon points="${(s.points ?? []).map((p) => r(p[0]) + ',' + r(p[1])).join(' ')}" fill="${f}" stroke="${stroke}" stroke-width="${s.sw}"/>`;
       return '';
     })
     .join('');
 }
 
-/** Register a project's custom symbols into the shared SYM registry. */
+/** Register a project's custom symbols into the shared SYM registry.
+ *  Sanitizes `svg` on ingest (F1) — a project (and its custom symbols) may
+ *  have been shared/imported from another user, so SYM never holds
+ *  unsanitized art regardless of where a project file came from. */
 export function mergeCustomSymbols(custom: Record<string, SymbolDef> | undefined): void {
   if (!custom) return;
   for (const [k, d] of Object.entries(custom)) {
-    SYM[k] = { ...d, custom: true };
+    SYM[k] = { ...d, svg: sanitizeSvg(d.svg), custom: true };
     if (!SYM_ORDER.includes(d.cat)) SYM_ORDER.push(d.cat);
   }
 }

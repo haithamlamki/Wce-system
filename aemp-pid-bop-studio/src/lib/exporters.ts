@@ -13,7 +13,14 @@ export function download(content: BlobPart, filename: string, mime: string): voi
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+/** Neutralize spreadsheet formula injection (=, +, -, @, tab, CR) without mangling plain numbers. */
+export function neutralizeFormula(v: unknown): string {
+  const s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s) && !Number.isFinite(Number(s))) return `'${s}`;
+  return s;
+}
+
+const csvCell = (v: unknown) => `"${neutralizeFormula(v).replace(/"/g, '""')}"`;
 
 /** Build the AEMP-compatible equipment register CSV (FR-28). */
 export function buildEquipmentCsv(nodes: Component[], refDate: Date): string {
