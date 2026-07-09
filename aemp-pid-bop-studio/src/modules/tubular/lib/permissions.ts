@@ -54,6 +54,7 @@ export const TUBULAR_TABS: TubularTab[] = [
   { to: '/tubular/inventory', label: 'Fleet Inventory', requires: null },
   { to: '/tubular/entry', label: 'Data Entry', requires: 'data_entry' },
   { to: '/tubular/master', label: 'Master Register', requires: 'view_fleet' },
+  { to: '/tubular/transfers', label: 'Transfers', requires: null },
   { to: '/tubular/contracts', label: 'Contracts', requires: null },
   { to: '/tubular/orders', label: 'Order Pipe', requires: null },
   { to: '/tubular/map', label: 'Asset Map', requires: null },

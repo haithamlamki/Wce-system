@@ -12,6 +12,7 @@ import DataEntryView from './views/DataEntryView';
 import FleetInventoryView from './views/FleetInventoryView';
 import ImportView from './views/ImportView';
 import MasterRegisterView from './views/MasterRegisterView';
+import MovementsView from './views/MovementsView';
 import TubularDashboardView from './views/TubularDashboardView';
 
 function Placeholder({ title, note }: { title: string; note: string }) {
@@ -66,6 +67,7 @@ function AccessGate() {
           <Route path="inventory" element={<FleetInventoryView />} />
           <Route path="entry" element={<DataEntryView />} />
           <Route path="master" element={<MasterRegisterView />} />
+          <Route path="transfers" element={<MovementsView />} />
           <Route path="contracts" element={<Placeholder title="Contracts" note="Arrives with the contracts release." />} />
           <Route path="orders" element={<Placeholder title="Order Pipe & Delivery" note="Arrives with the orders release." />} />
           <Route path="map" element={<Placeholder title="Asset & Logistics Map" note="Arrives with the logistics release." />} />
