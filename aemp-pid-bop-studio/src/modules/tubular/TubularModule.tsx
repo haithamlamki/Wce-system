@@ -14,6 +14,7 @@ import ImportView from './views/ImportView';
 import MasterRegisterView from './views/MasterRegisterView';
 import MovementsView from './views/MovementsView';
 import ContractsView from './views/ContractsView';
+import OrdersView from './views/OrdersView';
 import TubularDashboardView from './views/TubularDashboardView';
 
 function Placeholder({ title, note }: { title: string; note: string }) {
@@ -70,7 +71,7 @@ function AccessGate() {
           <Route path="master" element={<MasterRegisterView />} />
           <Route path="transfers" element={<MovementsView />} />
           <Route path="contracts" element={<ContractsView />} />
-          <Route path="orders" element={<Placeholder title="Order Pipe & Delivery" note="Arrives with the orders release." />} />
+          <Route path="orders" element={<OrdersView />} />
           <Route path="map" element={<Placeholder title="Asset & Logistics Map" note="Arrives with the logistics release." />} />
           <Route path="reference" element={<Placeholder title="API RP 7G Reference" note="Arrives with the reference release." />} />
           <Route path="training" element={<Placeholder title="Training" note="Arrives with the training release." />} />
