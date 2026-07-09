@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { Suspense, lazy, useEffect, useState } from 'react';
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ProjectProvider, useProject } from './state/ProjectContext';
 import { AuthProvider, useAuth } from './state/AuthContext';
 import { AccountChip, LoginScreen } from './components/Auth';
@@ -14,6 +14,10 @@ import RegisterView from './views/RegisterView';
 import AccountView from './views/AccountView';
 import DashboardView from './views/DashboardView';
 import HelpView from './views/HelpView';
+import HomeView from './views/HomeView';
+
+// Tubular Fleet Management is code-split so the WCE bundle is unaffected.
+const TubularModule = lazy(() => import('./modules/tubular/TubularModule'));
 
 type ThemeMode = 'auto' | 'light' | 'dark';
 
@@ -28,6 +32,7 @@ function applyTheme(mode: ThemeMode) {
 }
 
 const TABS = [
+  { to: '/home', label: '⌂ Modules' },
   { to: '/full', label: 'P&ID Full' },
   { to: '/bop', label: 'BOP Scheme' },
   { to: '/register', label: 'Equipment Sheet' },
@@ -88,31 +93,36 @@ function UnitsButton() {
 function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void }) {
   const [aiOpen, setAiOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const { pathname } = useLocation();
+  // WCE editor chrome (project chip, file menu, admin/field toggle, …) only
+  // makes sense inside the WCE views; the landing page and the Tubular module
+  // get a minimal header. WCE deep links (/full, /bop, …) are unchanged.
+  const inWce = !pathname.startsWith('/tubular') && pathname !== '/home';
   return (
     <>
       <header className="appbar">
         <div className="brand">
           <img className="logo" src="/brand/abraj-mark.png" alt="Abraj" />
           <div>
-            <h1>P&amp;ID · BOP Studio</h1>
+            <h1>{pathname.startsWith('/tubular') ? 'Tubular Fleet Management' : 'P&ID · BOP Studio'}</h1>
             <div className="sub">Abraj Energy Services</div>
           </div>
         </div>
-        <ProjectChip />
-        <StatusChip />
+        {inWce && <ProjectChip />}
+        {inWce && <StatusChip />}
         <nav className="tabs">
-          {TABS.map((t) => (
+          {(inWce ? TABS : TABS.slice(0, 1)).map((t) => (
             <NavLink key={t.to} to={t.to} className={({ isActive }) => (isActive ? 'active' : '')}>
               {t.label}
             </NavLink>
           ))}
         </nav>
         <div className="spacer" />
-        <button style={{ ...hdrBtn, borderColor: aiOpen ? 'var(--accent)' : 'var(--line2)', color: aiOpen ? 'var(--accent)' : 'var(--ink)' }} onClick={() => setAiOpen((v) => !v)} title="AI assistant (preview)">✦ AI</button>
-        <UnitsButton />
-        <CloudButton onOpen={() => setCloudOpen(true)} />
-        <FileMenu />
-        <ModeToggle />
+        {inWce && <button style={{ ...hdrBtn, borderColor: aiOpen ? 'var(--accent)' : 'var(--line2)', color: aiOpen ? 'var(--accent)' : 'var(--ink)' }} onClick={() => setAiOpen((v) => !v)} title="AI assistant (preview)">✦ AI</button>}
+        {inWce && <UnitsButton />}
+        {inWce && <CloudButton onOpen={() => setCloudOpen(true)} />}
+        {inWce && <FileMenu />}
+        {inWce && <ModeToggle />}
         <button className="tabs" onClick={cycleTheme} title={`Theme: ${theme}`} style={{ cursor: 'pointer' }}>
           <a>Theme: {theme}</a>
         </button>
@@ -121,7 +131,16 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
 
       <main className="viewport">
         <Routes>
-          <Route path="/" element={<Navigate to="/full" replace />} />
+          <Route path="/" element={<Navigate to="/home" replace />} />
+          <Route path="/home" element={<HomeView />} />
+          <Route
+            path="/tubular/*"
+            element={
+              <Suspense fallback={<div className="placeholder">Loading Tubular Fleet Management…</div>}>
+                <TubularModule />
+              </Suspense>
+            }
+          />
           <Route path="/full" element={<PidFullView />} />
           <Route path="/bop" element={<BopSchemeView />} />
           <Route path="/register" element={<RegisterView />} />
