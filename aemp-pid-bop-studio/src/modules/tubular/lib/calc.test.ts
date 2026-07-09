@@ -62,7 +62,7 @@ describe('workbook formula parity', () => {
   });
 });
 
-describe('override variance (the 87 legacy workbook rows)', () => {
+describe('override variance (the 85 legacy workbook rows)', () => {
   it('Rig 103 r21 — HWDP: classes sum 10, typed D=30 (damaged 20) → variance +20', () => {
     expect(overrideVariance(q(43, 10), 30)).toBe(20);
   });

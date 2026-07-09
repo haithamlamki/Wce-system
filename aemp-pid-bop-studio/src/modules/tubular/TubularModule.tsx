@@ -10,6 +10,7 @@ import { TubularProvider, useTubular } from './state/TubularContext';
 import { visibleTabs } from './lib/permissions';
 import DataEntryView from './views/DataEntryView';
 import FleetInventoryView from './views/FleetInventoryView';
+import ImportView from './views/ImportView';
 
 function Placeholder({ title, note }: { title: string; note: string }) {
   return (
@@ -80,6 +81,7 @@ function AccessGate() {
           <Route path="reference" element={<Placeholder title="API RP 7G Reference" note="Arrives with the reference release." />} />
           <Route path="training" element={<Placeholder title="Training" note="Arrives with the training release." />} />
           <Route path="manual" element={<Placeholder title="User Manual" note="Arrives with the documentation release." />} />
+          <Route path="import" element={<ImportView />} />
           <Route path="*" element={<Placeholder title="Not found" note="This Tubular page does not exist." />} />
         </Routes>
       </div>

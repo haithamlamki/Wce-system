@@ -14,7 +14,7 @@
 --    render "OK" when contract_delta >= 0 (the O-column rule). Class 3, Scrap
 --    and Needs Inspection can never count toward contract compliance because
 --    the database computes the delta itself.
---    on_board_override exists ONLY for the 87 legacy workbook rows whose typed
+--    on_board_override exists ONLY for the 85 legacy workbook rows whose typed
 --    On Board Total differs from the class sum; it is settable exclusively by
 --    the import pipeline (a later migration) — submit_tubular_entry() does not
 --    accept it, enforcing "On Board Total is not manually editable" at the
@@ -87,7 +87,10 @@ create table if not exists public.tubular_submissions (
   id              uuid primary key default gen_random_uuid(),
   unit_id         uuid not null references public.units(id) on delete restrict,
   submitted_by    uuid not null references auth.users(id),
-  submitted_at    timestamptz not null default now(),
+  -- clock_timestamp (not now()): the real insert instant, so submissions made
+  -- later within one transaction still order correctly against import commits
+  -- (rollback_import's newer-submissions check relies on this ordering).
+  submitted_at    timestamptz not null default clock_timestamp(),
   source          public.submission_source not null default 'data_entry',
   entry_date      date,          -- the sheet's "Date of Update"
   import_batch_id uuid,          -- FK added by the import migration
