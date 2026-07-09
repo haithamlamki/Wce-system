@@ -12,7 +12,7 @@ import {
   fetchCatalog, fetchVisibleRecords,
   type CatalogItem, type TubularCategory, type TubularRecordRow,
 } from '../lib/records';
-import { aggregate, fleetStatus, serviceable } from '../lib/calc';
+import { aggregate, fleetStatus } from '../lib/calc';
 
 const qtyOf = (r: TubularRecordRow) => ({
   onContract: r.onContract, premium: r.premium, class2: r.class2,
@@ -23,7 +23,7 @@ const ST_CLASS: Record<string, string> = {
   short: 'short', surplus: 'surplus', met: 'balanced', uncontracted: 'unctr', no_data: 'nodata',
 };
 const ST_LABEL: Record<string, string> = {
-  short: 'SHORT', surplus: 'SURPLUS', met: 'BALANCED', uncontracted: 'UNCONTR.', no_data: 'NO DATA',
+  short: 'SHORT', surplus: 'SURPLUS', met: 'BALANCED', uncontracted: 'UNCONTRACTED', no_data: 'NO DATA',
 };
 
 const CAT_FILTERS: Array<{ value: 'all' | TubularCategory; label: string }> = [
@@ -33,17 +33,6 @@ const CAT_FILTERS: Array<{ value: 'all' | TubularCategory; label: string }> = [
   { value: 'drill_collar', label: 'Drill Collar' },
   { value: 'pup_joint', label: 'Pup Joint' },
 ];
-
-function ClsCell({ value, band }: { value: number; band: string }) {
-  return (
-    <td className="num">
-      <span className="cls-cell">
-        <span className={`cls-band ${band}`} />
-        {value.toLocaleString()}
-      </span>
-    </td>
-  );
-}
 
 export default function FleetInventoryView() {
   const { units } = useTubular();
@@ -74,9 +63,11 @@ export default function FleetInventoryView() {
   const unitCards = useMemo(() => {
     const byUnit = new Map<string, TubularRecordRow[]>();
     for (const r of records) byUnit.set(r.unitId, [...(byUnit.get(r.unitId) ?? []), r]);
-    return units
+    return [...units]
+      .sort((a, b) => (a.unitType === b.unitType
+        ? a.name.localeCompare(b.name, undefined, { numeric: true })
+        : a.unitType === 'rig' ? -1 : 1))
       .map((u) => ({ unit: u, rows: byUnit.get(u.id) ?? [] }))
-      .filter((x) => x.rows.length > 0)
       .map((x) => ({ ...x, t: aggregate(x.rows.map(qtyOf)) }));
   }, [records, units]);
 
@@ -137,10 +128,10 @@ export default function FleetInventoryView() {
               else { setMode('single'); setUnitId(unit.id); }
             }}>
             <div className="name">{unit.name}</div>
-            <div className="type">{unit.unitType === 'hoist' ? 'Hoist' : 'Rig'}</div>
+            <div className="type">{unit.unitType === 'hoist' ? 'Hoist' : 'Rig'} · Joints</div>
             <div className="stats">
-              <span>{t.rows} tubulars</span>
-              <span className="total">{t.onBoard.toLocaleString()} jt</span>
+              <span>{t.rows} rows</span>
+              <span className="total">{t.onBoard.toLocaleString()}</span>
             </div>
           </div>
         ))}
@@ -151,10 +142,13 @@ export default function FleetInventoryView() {
           <thead>
             <tr>
               <th>Unit</th><th>Category</th><th>Tubular Description</th>
-              <th className="mono">Contract</th><th className="mono">Premium</th>
-              <th className="mono">Class 2</th><th className="mono">Class 3</th>
-              <th className="mono">Scrap</th><th className="mono">Needs Insp.</th>
-              <th className="mono">On-Board</th><th className="mono">Variance</th><th>Status</th>
+              <th className="num">Contract</th>
+              <th className="num"><span className="cls-cell"><span className="cls-band premium" />Premium</span></th>
+              <th className="num"><span className="cls-cell"><span className="cls-band c2" />Class 2</span></th>
+              <th className="num"><span className="cls-cell"><span className="cls-band c3" />Class 3</span></th>
+              <th className="num"><span className="cls-cell"><span className="cls-band scrap" />Scrap</span></th>
+              <th className="num"><span className="cls-cell"><span className="cls-band needs" />Needs Insp.</span></th>
+              <th className="num">On-Board</th><th className="num">Variance</th><th>Status</th>
             </tr>
           </thead>
           <tbody id="fleet-body">
@@ -164,21 +158,21 @@ export default function FleetInventoryView() {
             {filtered.map((r) => {
               const item = catById.get(r.catalogItemId)!;
               const st = fleetStatus(qtyOf(r));
-              const variance = serviceable(r) - r.onContract;
+              const variance = r.onBoard - r.onContract;
               return (
                 <tr key={r.id}>
-                  <td className="mono">{unitById.get(r.unitId)?.name}</td>
-                  <td>{CATEGORY_LABEL[item.category]}</td>
-                  <td>{item.description}{r.remarks ? <span style={{ color: 'var(--text-4)' }}> · {r.remarks}</span> : null}</td>
+                  <td className="mono" style={{ color: 'var(--copper-2)', fontWeight: 600 }}>{unitById.get(r.unitId)?.name}</td>
+                  <td style={{ fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{CATEGORY_LABEL[item.category]}</td>
+                  <td>{item.description}</td>
                   <td className="num">{r.onContract.toLocaleString()}</td>
-                  <ClsCell value={r.premium} band="premium" />
-                  <ClsCell value={r.class2} band="c2" />
-                  <ClsCell value={r.class3} band="c3" />
-                  <ClsCell value={r.scrap} band="scrap" />
-                  <ClsCell value={r.needsInspection} band="needs" />
-                  <td className="num">{r.onBoard.toLocaleString()}{r.onBoardOverride != null && <span title={`Reported total ${r.onBoardOverride} (legacy import)`} style={{ color: 'var(--copper-2)' }}> ⚑</span>}</td>
-                  <td className="num" style={{ color: variance < 0 ? 'var(--red-2)' : variance > 0 ? 'var(--green)' : undefined }}>
-                    {variance > 0 ? `+${variance}` : variance}
+                  <td className="num">{r.premium.toLocaleString()}</td>
+                  <td className="num" style={{ color: r.class2 > 0 ? 'var(--c-class2)' : 'var(--text-3)' }}>{r.class2.toLocaleString()}</td>
+                  <td className="num" style={{ color: r.class3 > 0 ? 'var(--c-class3)' : 'var(--text-3)' }}>{r.class3.toLocaleString()}</td>
+                  <td className="num" style={{ color: r.scrap > 0 ? 'var(--red-2)' : 'var(--text-3)' }}>{r.scrap.toLocaleString()}</td>
+                  <td className="num" style={{ color: r.needsInspection > 0 ? '#c084fc' : 'var(--text-3)' }}>{r.needsInspection.toLocaleString()}</td>
+                  <td className="num" style={{ color: 'var(--text)' }}>{r.onBoard.toLocaleString()}{r.onBoardOverride != null && <span title={`Reported total ${r.onBoardOverride} (legacy import)`} style={{ color: 'var(--copper-2)' }}> ⚑</span>}</td>
+                  <td className="num" style={{ color: variance < 0 ? 'var(--red-2)' : variance > 0 ? 'var(--green-2)' : 'var(--text-2)' }}>
+                    {variance >= 0 ? `+${variance.toLocaleString()}` : variance.toLocaleString()}
                   </td>
                   <td><span className={`st ${ST_CLASS[st]}`}>{ST_LABEL[st]}</span></td>
                 </tr>

@@ -55,7 +55,7 @@ export default function AssistantView() {
   const [chat, setChat] = useState<ChatEntry[]>([{
     who: 'ai',
     time: now(),
-    text: 'Hello! I\'m your inventory assistant. I answer from the live tubular data your account can see — your authorized units only. Try one of the suggestions, or ask about counts, shortfalls, scrap, inspections or rig comparisons.',
+    text: 'Hello — I\'m the Abraj Inventory Assistant. I can answer questions about your tubular fleet data: counts, classifications, surplus/shortfall, which rigs have what, and so on.\n\nEvery answer is computed from the live records your account is authorized to see. Try a question from the panel on the right, or just ask anything about the inventory.',
   }]);
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
@@ -112,7 +112,7 @@ export default function AssistantView() {
               <div key={i} className={`msg ${m.who}`}>
                 <div className="avatar">{m.who === 'ai' ? 'A' : 'U'}</div>
                 <div className="bubble">
-                  {m.text}
+                  <span style={{ whiteSpace: 'pre-line' }}>{m.text}</span>
                   {m.rows && m.rows.length > 0 && (
                     <table>
                       <thead><tr><th>Unit</th><th>Tubular</th><th>Detail</th></tr></thead>
@@ -127,7 +127,6 @@ export default function AssistantView() {
                       </tbody>
                     </table>
                   )}
-                  <div className="time">{m.time}</div>
                 </div>
               </div>
             ))}

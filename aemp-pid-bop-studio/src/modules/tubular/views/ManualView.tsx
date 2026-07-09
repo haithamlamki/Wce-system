@@ -70,7 +70,7 @@ const SECTIONS: ManualSection[] = [
     ],
   },
   {
-    id: 'man-theme', ico: '☀☾', title: 'Theme & Personalization',
+    id: 'man-theme', ico: '☀/☾', title: 'Theme',
     body: [
       'Use the topbar toggle to pick Light, Dark or Auto. Auto follows your device\'s light/dark preference. The choice is remembered on this device and also applies to the P&ID / BOP Studio module.',
     ],
@@ -97,13 +97,12 @@ export default function ManualView() {
     <section className="view" id="view-manual">
       <div className="section-head">
         <div className="section-title">User Manual</div>
-        <div className="section-sub">How every page works · production behavior</div>
+        <div className="section-sub">A complete guide to every page in the Abraj Tubular Inventory system</div>
       </div>
 
       <div className="unit-bar">
         <span className="lbl">Jump to</span>
-        <select id="manual-jump" value={jump} onChange={(e) => jumpTo(e.target.value)}>
-          <option value="">— section —</option>
+        <select id="manual-jump" value={jump || 'man-dashboard'} onChange={(e) => jumpTo(e.target.value)}>
           {SECTIONS.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
           <option value="man-faq">FAQ &amp; Troubleshooting</option>
         </select>

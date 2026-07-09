@@ -38,6 +38,13 @@ interface TubularCtx {
 
 const Ctx = createContext<TubularCtx | null>(null);
 
+// Prototype unit ordering: rigs first, then hoists, numeric within each type.
+function sortUnits(list: TubularUnit[]): TubularUnit[] {
+  return [...list].sort((a, b) => (a.unitType === b.unitType
+    ? a.name.localeCompare(b.name, undefined, { numeric: true })
+    : a.unitType === 'rig' ? -1 : 1));
+}
+
 export function TubularProvider({ children }: { children: ReactNode }) {
   const { session, role } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -62,12 +69,12 @@ export function TubularProvider({ children }: { children: ReactNode }) {
           .order('name');
         if (error) throw error;
         setGranted(new Set());
-        setUnits((data ?? []).map((u) => ({
+        setUnits(sortUnits((data ?? []).map((u) => ({
           id: u.id as string,
           name: u.name as string,
           unitType: (u.unit_type as 'rig' | 'hoist') ?? 'rig',
           active: (u.active as boolean) ?? true,
-        })));
+        }))));
       } else {
         const [permsRes, unitsRes] = await Promise.all([
           supabase.from('user_module_permissions').select('permission').eq('user_id', session.user.id),
@@ -79,7 +86,7 @@ export function TubularProvider({ children }: { children: ReactNode }) {
         if (permsRes.error) throw permsRes.error;
         if (unitsRes.error) throw unitsRes.error;
         setGranted(new Set((permsRes.data ?? []).map((r) => r.permission as string)));
-        setUnits(((unitsRes.data ?? []) as unknown as Array<{ units: { id: string; name: string; unit_type: string; active: boolean } | null }>)
+        setUnits(sortUnits(((unitsRes.data ?? []) as unknown as Array<{ units: { id: string; name: string; unit_type: string; active: boolean } | null }>)
           .map((r) => r.units)
           .filter((u): u is NonNullable<typeof u> => !!u && u.active !== false)
           .map((u) => ({
@@ -87,7 +94,7 @@ export function TubularProvider({ children }: { children: ReactNode }) {
             name: u.name,
             unitType: (u.unit_type as 'rig' | 'hoist') ?? 'rig',
             active: u.active ?? true,
-          })));
+          }))));
       }
     } catch (e) {
       console.error('Failed to load tubular access:', e);

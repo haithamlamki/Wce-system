@@ -222,7 +222,7 @@ export default function OrdersView() {
         <div className="panel">
           <div className="panel-head">
             <h3>Available Pipe (Fleet Pool)</h3>
-            <span className="badge" id="avail-badge">{pool.length} types · P+C2 minus holds</span>
+            <span className="badge" id="avail-badge">{pool.length} types</span>
           </div>
           <div className="tbl-scroll">
             <table className="avail-tbl">

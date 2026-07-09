@@ -16,7 +16,7 @@ import {
   fetchCatalog, fetchVisibleRecords,
   type CatalogItem, type TubularRecordRow,
 } from '../lib/records';
-import { aggregate, fleetStatus, fleetUtilization, needsAttention, serviceable } from '../lib/calc';
+import { aggregate, fleetStatus, fleetUtilization, needsAttention } from '../lib/calc';
 
 Chart.register(BarController, BarElement, DoughnutController, ArcElement, CategoryScale, LinearScale, Legend, Tooltip);
 
@@ -110,13 +110,18 @@ export default function TubularDashboardView() {
   const agg = useMemo(() => aggregate(scoped.map(qtyOf)), [scoped]);
   const util = fleetUtilization(agg);
   const activeOrders = orders.filter((o) => !['delivered', 'cancelled'].includes(o.status)).length;
+  const inTransit = orders.filter((o) => o.status === 'in_transit').length;
   const unitsWithData = useMemo(() => new Set(scoped.map((r) => r.unitId)).size, [scoped]);
   const pct = (n: number) => (agg.onBoard > 0 ? `${((n / agg.onBoard) * 100).toFixed(1)}% of on-board` : '—');
+  const lastUpdate = useMemo(() => {
+    const recent = scoped.reduce<string | null>((m, r) => (m == null || r.updatedAt > m ? r.updatedAt : m), null);
+    if (!recent) return '—';
+    return new Date(recent).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }, [scoped]);
 
   const attention = useMemo(() =>
     scoped.filter((r) => needsAttention(qtyOf(r)))
-      .sort((a, b) => a.contractDelta - b.contractDelta)
-      .slice(0, 30),
+      .sort((a, b) => ((a.onBoard - a.onContract) - (b.onBoard - b.onContract)) || (b.scrap - a.scrap)),
   [scoped]);
 
   // ---- charts ---------------------------------------------------------------
@@ -148,12 +153,12 @@ export default function TubularDashboardView() {
         options: {
           indexAxis: 'y', responsive: true, maintainAspectRatio: false,
           plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 11, color: TICK, font: { size: 10 } } },
+            legend: { position: 'bottom', labels: { boxWidth: 11, padding: 10, font: { size: 10 } } },
             tooltip: TOOLTIP_STYLE,
           },
           scales: {
-            x: { stacked: true, grid: { color: GRID }, ticks: { color: TICK, font: { size: 10 } } },
-            y: { stacked: true, grid: { color: GRID }, ticks: { color: '#a4adc0', font: { size: 10 } } },
+            x: { stacked: true, grid: { color: GRID }, ticks: { color: TICK } },
+            y: { stacked: true, grid: { display: false }, ticks: { color: '#a4adc0', font: { size: 9.5 } } },
           },
         },
       }));
@@ -173,7 +178,7 @@ export default function TubularDashboardView() {
         options: {
           responsive: true, maintainAspectRatio: false, cutout: '62%',
           plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 11, color: TICK, font: { size: 10 } } },
+            legend: { position: 'bottom', labels: { padding: 10, boxWidth: 10, font: { size: 10.5 } } },
             tooltip: {
               ...TOOLTIP_STYLE,
               callbacks: {
@@ -193,8 +198,8 @@ export default function TubularDashboardView() {
     for (const r of scoped) byUnit.set(r.unitId, [...(byUnit.get(r.unitId) ?? []), r]);
     const unitAgg = [...byUnit.entries()]
       .map(([id, rows]) => ({ unit: unitById.get(id), t: aggregate(rows.map(qtyOf)) }))
-      .filter((x) => x.unit)
-      .sort((a, b) => a.unit!.name.localeCompare(b.unit!.name, undefined, { numeric: true }));
+      .filter((x) => x.unit && x.t.onBoard > 0)
+      .sort((a, b) => b.t.onBoard - a.t.onBoard);
     if (chUnitRef.current) {
       chartsRef.current.push(new Chart(chUnitRef.current, {
         type: 'bar',
@@ -213,18 +218,16 @@ export default function TubularDashboardView() {
             tooltip: { ...TOOLTIP_STYLE, callbacks: { label: (ctx) => ` ${(ctx.parsed.y as number).toLocaleString()} joints` } },
           },
           scales: {
-            x: { grid: { color: GRID }, ticks: { color: TICK, font: { size: 9.5 }, minRotation: 45, maxRotation: 60 } },
-            y: { beginAtZero: true, grid: { color: GRID }, ticks: { color: TICK, font: { size: 10 } } },
+            x: { grid: { display: false }, ticks: { color: '#a4adc0', font: { size: 10 }, minRotation: 45, maxRotation: 60 } },
+            y: { beginAtZero: true, grid: { color: GRID }, ticks: { color: TICK } },
           },
         },
       }));
     }
 
-    const variance = descAgg
-      .filter((x) => x.t.onContract > 0 || x.t.onBoard > 0)
+    const variance = top12
       .map((x) => ({ label: shortLabel(x.item!.description), v: x.t.onBoard - x.t.onContract }))
-      .sort((a, b) => a.v - b.v)
-      .slice(0, 14);
+      .sort((a, b) => a.v - b.v);
     if (chVarRef.current) {
       chartsRef.current.push(new Chart(chVarRef.current, {
         type: 'bar',
@@ -243,8 +246,8 @@ export default function TubularDashboardView() {
             tooltip: { ...TOOLTIP_STYLE, callbacks: { label: (ctx) => { const v = ctx.parsed.x as number; return ` ${v > 0 ? '+' : ''}${v.toLocaleString()} joints`; } } },
           },
           scales: {
-            x: { grid: { color: GRID }, ticks: { color: TICK, font: { size: 10 } } },
-            y: { grid: { color: GRID }, ticks: { color: '#a4adc0', font: { size: 10 } } },
+            x: { grid: { color: GRID }, ticks: { color: TICK } },
+            y: { grid: { display: false }, ticks: { color: '#a4adc0', font: { size: 9.5 } } },
           },
         },
       }));
@@ -261,7 +264,7 @@ export default function TubularDashboardView() {
       <div className="section-head">
         <div className="section-title">Fleet Overview</div>
         <div className="section-sub" id="dash-sub">
-          {unitsWithData} units reporting · {agg.rows} records
+          Total on-board: {agg.onBoard.toLocaleString()} joints · Last update: {lastUpdate}
         </div>
       </div>
 
@@ -279,8 +282,8 @@ export default function TubularDashboardView() {
       <div className="kpi-grid">
         <div className="kpi">
           <div className="lbl">Total Units</div>
-          <div className="val" id="k-units">{unitsWithData}</div>
-          <div className="delta" id="k-units-sub">{units.filter((u) => u.unitType === 'rig').length} rigs · {units.filter((u) => u.unitType === 'hoist').length} hoists</div>
+          <div className="val" id="k-units">{units.length}</div>
+          <div className="delta" id="k-units-sub">{unitsWithData} active · {units.length - unitsWithData} empty</div>
         </div>
         <div className="kpi">
           <div className="lbl">On Contract</div>
@@ -313,12 +316,12 @@ export default function TubularDashboardView() {
         <div className="kpi">
           <div className="lbl">🚚 Active Pipe Orders</div>
           <div className="val" id="k-live-orders">{activeOrders}</div>
-          <div className="delta" id="k-live-orders-sub">{orders.length} total requests</div>
+          <div className="delta" id="k-live-orders-sub">{inTransit} in transit right now</div>
         </div>
         <div className="kpi">
           <div className="lbl">📄 Contracts Needing Attention</div>
           <div className="val" id="k-live-contracts">{contractsAttn.attn}</div>
-          <div className="delta" id="k-live-contracts-sub">{contractsAttn.total} contracts tracked</div>
+          <div className="delta" id="k-live-contracts-sub">{contractsAttn.total} total contracts</div>
         </div>
         <div className="kpi">
           <div className="lbl">⚙ Fleet Utilization</div>
@@ -396,7 +399,7 @@ export default function TubularDashboardView() {
               )}
               {attention.map((r) => {
                 const st = fleetStatus(qtyOf(r));
-                const variance = serviceable(r) - r.onContract;
+                const variance = r.onBoard - r.onContract;
                 return (
                   <tr key={r.id}>
                     <td className="mono">{unitById.get(r.unitId)?.name}</td>

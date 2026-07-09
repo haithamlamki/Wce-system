@@ -16,7 +16,7 @@ import {
   fetchCatalog, fetchUnitRecords, submitEntry,
   type CatalogItem, type TubularCategory, type TubularRecordRow,
 } from '../lib/records';
-import { contractuallyLess, fleetStatus, serviceable } from '../lib/calc';
+import { contractuallyLess, fleetStatus } from '../lib/calc';
 import { parseTubularWorkbook } from '../lib/workbookImport';
 import { downloadJson } from '../lib/downloadJson';
 
@@ -24,7 +24,7 @@ const ST_CLASS: Record<string, string> = {
   short: 'short', surplus: 'surplus', met: 'balanced', uncontracted: 'unctr', no_data: 'nodata',
 };
 const ST_LABEL: Record<string, string> = {
-  short: 'SHORT', surplus: 'SURPLUS', met: 'BALANCED', uncontracted: 'UNCONTR.', no_data: 'NO DATA',
+  short: 'SHORT', surplus: 'SURPLUS', met: 'BALANCED', uncontracted: 'UNCONTRACTED', no_data: 'NO DATA',
 };
 
 type QtyKey = 'onContract' | 'premium' | 'class2' | 'class3' | 'scrap' | 'needsInspection'
@@ -69,6 +69,16 @@ const emptyForm = (): FormState => ({
   },
   rentalDate: '', remarks: '',
 });
+
+// Prototype form-card header: orange numbered square + Oswald copper caption.
+function FormHead({ num, children }: { num: string; children: React.ReactNode }) {
+  return (
+    <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 13, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--copper-2)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <span style={{ background: 'var(--copper)', color: '#fff', width: 22, height: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>{num}</span>
+      {children}
+    </div>
+  );
+}
 
 export default function DataEntryView() {
   const { units, hasPerm } = useTubular();
@@ -226,7 +236,7 @@ export default function DataEntryView() {
       <div className="section-head">
         <div className="section-title">Data Entry</div>
         <div className="section-sub" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          Update tubular inventory · saved to the cloud database
+          Add or update tubular records for a Rig/Hoist
           <button className="btn alt sm" onClick={() => setGridMode((v) => !v)}>
             {gridMode ? '✎ Form Mode' : '⊞ Batch Grid Mode'}
           </button>
@@ -238,7 +248,7 @@ export default function DataEntryView() {
       ) : (
         <>
           <div className="form-card">
-            <div className="section-title" style={{ marginBottom: 16 }}>① Select Unit &amp; Tubular</div>
+            <FormHead num="1">Select Unit &amp; Tubular</FormHead>
             <div className="form-row three">
               <div className="form-field">
                 <label>Rig / Hoist <span className="req">*</span></label>
@@ -270,7 +280,7 @@ export default function DataEntryView() {
                 <label>Tubular Description <span className="req">*</span></label>
                 <select id="e-desc" value={form.catalogItemId}
                   onChange={(e) => setForm((f) => ({ ...f, catalogItemId: e.target.value }))}>
-                  <option value="">— Choose description —</option>
+                  <option value="">{form.category ? '— Choose description —' : '— Choose category first —'}</option>
                   {descOptions.map((c) => <option key={c.id} value={c.id}>{c.description}</option>)}
                 </select>
                 <span className="help">Per API RP 7G classification</span>
@@ -279,7 +289,7 @@ export default function DataEntryView() {
           </div>
 
           <div className="form-card">
-            <div className="section-title" style={{ marginBottom: 16 }}>② Quantities — API RP 7G Classification</div>
+            <FormHead num="2">Quantities — API RP 7G Classification</FormHead>
             <div className="form-row six">
               {QTY_DEFS.map((q) => (
                 <div className="form-field" key={q.key}>
@@ -296,7 +306,7 @@ export default function DataEntryView() {
           </div>
 
           <div className="form-card">
-            <div className="section-title" style={{ marginBottom: 16 }}>③ Movement, Repair &amp; Rental (Optional)</div>
+            <FormHead num="3">Movement, Repair &amp; Rental (Optional)</FormHead>
             <div className="form-row four">
               {MOVE_DEFS.map((m) => (
                 <div className="form-field" key={m.key}>
@@ -334,7 +344,7 @@ export default function DataEntryView() {
           </div>
 
           <div className="form-card" id="sync-card">
-            <div className="section-title" style={{ marginBottom: 16 }}>↻ Spreadsheet Sync</div>
+            <FormHead num="↻">Spreadsheet Sync</FormHead>
             <div className="form-row three">
               <div className="form-field">
                 <label>Workbook File</label>
@@ -370,16 +380,16 @@ export default function DataEntryView() {
 
           <div className="panel">
             <div className="panel-head">
-              <h3>Existing Records — <span id="entry-unit-label">{unitName || 'All Units'}</span></h3>
+              <h3>Existing Records — <span id="entry-unit-label" style={{ color: 'var(--copper-2)' }}>{unitName || 'All Units'}</span></h3>
               <span className="badge" id="entry-count">{records.length} records</span>
             </div>
             <div className="tbl-scroll">
               <table>
                 <thead>
                   <tr>
-                    <th>Tubular</th><th className="mono">Contract</th><th className="mono">Premium</th>
-                    <th className="mono">C2</th><th className="mono">C3</th><th className="mono">Scrap</th>
-                    <th className="mono">Needs</th><th className="mono">Variance</th><th>Status</th><th>Actions</th>
+                    <th>Tubular</th><th className="num">Contract</th><th className="num">Premium</th>
+                    <th className="num">C2</th><th className="num">C3</th><th className="num">Scrap</th>
+                    <th className="num">Needs</th><th className="num">Variance</th><th>Status</th><th style={{ width: 140 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="entry-body">
@@ -388,23 +398,23 @@ export default function DataEntryView() {
                   )}
                   {records.map((r) => {
                     const st = fleetStatus({ onContract: r.onContract, premium: r.premium, class2: r.class2 });
-                    const variance = serviceable(r) - r.onContract;
+                    const variance = r.onBoard - r.onContract;
                     return (
                       <tr key={r.id}>
                         <td>{catById.get(r.catalogItemId)?.description}{r.remarks ? <span style={{ color: 'var(--text-4)' }}> · {r.remarks}</span> : null}</td>
-                        <td className="num">{r.onContract}</td>
-                        <td className="num">{r.premium}</td>
-                        <td className="num">{r.class2}</td>
-                        <td className="num">{r.class3}</td>
-                        <td className="num">{r.scrap}</td>
-                        <td className="num">{r.needsInspection}</td>
-                        <td className="num" style={{ color: variance < 0 ? 'var(--red-2)' : 'var(--green)' }}>
-                          {variance > 0 ? `+${variance}` : variance}
+                        <td className="num">{r.onContract.toLocaleString()}</td>
+                        <td className="num">{r.premium.toLocaleString()}</td>
+                        <td className="num" style={{ color: r.class2 > 0 ? 'var(--c-class2)' : 'var(--text-3)' }}>{r.class2.toLocaleString()}</td>
+                        <td className="num" style={{ color: r.class3 > 0 ? 'var(--c-class3)' : 'var(--text-3)' }}>{r.class3.toLocaleString()}</td>
+                        <td className="num" style={{ color: r.scrap > 0 ? 'var(--red-2)' : 'var(--text-3)' }}>{r.scrap.toLocaleString()}</td>
+                        <td className="num" style={{ color: r.needsInspection > 0 ? '#c084fc' : 'var(--text-3)' }}>{r.needsInspection.toLocaleString()}</td>
+                        <td className="num" style={{ color: variance < 0 ? 'var(--red-2)' : variance > 0 ? 'var(--green-2)' : 'var(--text-2)' }}>
+                          {variance >= 0 ? `+${variance.toLocaleString()}` : variance.toLocaleString()}
                         </td>
                         <td><span className={`st ${ST_CLASS[st]}`}>{ST_LABEL[st]}</span></td>
                         <td>
                           <button className="btn-tr" onClick={() => editRecord(r)}>Edit</button>{' '}
-                          <button className="btn-tr danger" onClick={() => void deleteRecord(r)}>Delete</button>
+                          <button className="btn-tr danger" onClick={() => void deleteRecord(r)}>Del</button>
                         </td>
                       </tr>
                     );
