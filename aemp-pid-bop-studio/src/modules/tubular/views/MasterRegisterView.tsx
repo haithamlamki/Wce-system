@@ -1,8 +1,9 @@
 // ============================================================================
-//  Master Register — the database-driven consolidated view across all units
-//  the caller may see (replaces the Excel Master sheet's SUMIF copies). One
-//  row per RECORD (duplicates preserved); filters, search, sort, CSV export
-//  (formula-injection hardened). No stored totals anywhere.
+//  Master Register — database-driven consolidated view across all visible
+//  units (one row per record, duplicates preserved), re-skinned in the
+//  prototype design language (unit-bar filters, tbl-wrap table, st badges).
+//  Logic unchanged: filters, search, sort, hardened CSV export gated on the
+//  export permission.
 // ============================================================================
 import { useEffect, useMemo, useState } from 'react';
 import { useTubular } from '../state/TubularContext';
@@ -16,15 +17,15 @@ import { downloadCsv } from '../lib/exportCsv';
 
 type SortKey = 'unit' | 'description' | 'onContract' | 'serviceable' | 'delta' | 'updatedAt';
 
-const tdS: React.CSSProperties = { border: '1px solid var(--line)', padding: '5px 8px', font: '12px var(--mono)', textAlign: 'right', whiteSpace: 'nowrap' };
-const thS: React.CSSProperties = { ...tdS, background: 'var(--sunk)', color: 'var(--dim)', cursor: 'pointer', userSelect: 'none' };
+const ST_CLASS: Record<string, string> = {
+  short: 'short', surplus: 'surplus', met: 'balanced', uncontracted: 'unctr', no_data: 'nodata',
+};
 
 export default function MasterRegisterView() {
   const { units, hasPerm } = useTubular();
   const [records, setRecords] = useState<TubularRecordRow[]>([]);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [unitFilter, setUnitFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'rig' | 'hoist'>('all');
   const [catFilter, setCatFilter] = useState<'all' | TubularCategory>('all');
@@ -37,8 +38,6 @@ export default function MasterRegisterView() {
       try {
         const [cat, recs] = await Promise.all([fetchCatalog(), fetchVisibleRecords()]);
         setCatalog(cat); setRecords(recs);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
       } finally { setLoading(false); }
     })();
   }, []);
@@ -81,6 +80,7 @@ export default function MasterRegisterView() {
 
   const onSort = (key: SortKey) =>
     setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : 1 }));
+  const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === 1 ? ' ▲' : ' ▼') : '');
 
   const exportCsv = () => {
     downloadCsv(
@@ -101,81 +101,89 @@ export default function MasterRegisterView() {
     );
   };
 
-  if (loading) return <div className="placeholder">Loading master register…</div>;
-  if (error) return <div className="placeholder"><strong>Master Register</strong>{error}</div>;
-
-  const sel: React.CSSProperties = { background: 'var(--panel)', color: 'var(--ink)', border: '1px solid var(--line2)', borderRadius: 7, padding: '6px 8px' };
+  if (loading) {
+    return (
+      <section className="view">
+        <div className="empty-cert"><div className="ico">▥</div><div className="title">Master Register</div><div className="desc">Loading…</div></div>
+      </section>
+    );
+  }
 
   return (
-    <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: 16 }}>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <select value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)} style={sel}>
+    <section className="view" id="view-master">
+      <div className="section-head">
+        <div className="section-title">Master Register</div>
+        <div className="section-sub">Consolidated row-level register across all authorized units</div>
+      </div>
+
+      <div className="unit-bar">
+        <span className="lbl">Unit</span>
+        <select value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)}>
           <option value="all">All units</option>
           {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)} style={sel}>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}>
           <option value="all">Rigs + Hoists</option><option value="rig">Rigs</option><option value="hoist">Hoists</option>
         </select>
-        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value as typeof catFilter)} style={sel}>
+        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value as typeof catFilter)}>
           <option value="all">All categories</option>
           {CATEGORY_ORDER.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
         </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={sel}>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
           {Object.entries(FLEET_STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <input placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...sel, width: 200 }} />
-        <span style={{ color: 'var(--faint)', fontSize: 12 }}>{rows.length} rows</span>
-        <div style={{ flex: 1 }} />
-        {hasPerm('export') && (
-          <button onClick={exportCsv}
-            style={{ border: 0, background: 'var(--accent)', color: '#fff', padding: '7px 14px', borderRadius: 7, fontWeight: 700, cursor: 'pointer' }}>
-            Export CSV
-          </button>
-        )}
+        <input placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)}
+          style={{ background: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--text)', padding: '8px 12px', fontFamily: "'JetBrains Mono',monospace", fontSize: 12.5, outline: 'none', width: 200 }} />
+        <span className="meta-chip">Rows: <span className="v">{rows.length}</span></span>
+        <span className="spacer" />
+        {hasPerm('export') && <button className="btn sm" onClick={exportCsv}>⬇ Export CSV</button>}
       </div>
 
-      <table style={{ borderCollapse: 'collapse', width: '100%', background: 'var(--panel)' }}>
-        <thead>
-          <tr>
-            <th style={{ ...thS, textAlign: 'left' }} onClick={() => onSort('unit')}>UNIT {sort.key === 'unit' ? (sort.dir === 1 ? '▲' : '▼') : ''}</th>
-            <th style={{ ...thS, textAlign: 'left' }} onClick={() => onSort('description')}>DESCRIPTION {sort.key === 'description' ? (sort.dir === 1 ? '▲' : '▼') : ''}</th>
-            <th style={thS} onClick={() => onSort('onContract')}>CONTRACT</th>
-            <th style={thS}>ON BOARD</th>
-            <th style={thS}>PREM</th><th style={thS}>C2</th><th style={thS}>C3</th><th style={thS}>SCRAP</th>
-            <th style={thS}>NEEDS</th><th style={thS}>DMG</th><th style={thS}>REPAIR</th><th style={thS}>TO RIG</th><th style={thS}>FROM RIG</th>
-            <th style={thS} onClick={() => onSort('serviceable')}>SERVICEABLE</th>
-            <th style={thS} onClick={() => onSort('delta')}>DELTA</th>
-            <th style={thS}>STATUS</th>
-            <th style={{ ...thS, textAlign: 'left' }}>REMARKS</th>
-            <th style={thS} onClick={() => onSort('updatedAt')}>UPDATED {sort.key === 'updatedAt' ? (sort.dir === 1 ? '▲' : '▼') : ''}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const item = catById.get(r.catalogItemId);
-            const st = fleetStatus({ onContract: r.onContract, premium: r.premium, class2: r.class2 });
-            return (
-              <tr key={r.id}>
-                <td style={{ ...tdS, textAlign: 'left' }}>{unitById.get(r.unitId)?.name}</td>
-                <td style={{ ...tdS, textAlign: 'left', fontFamily: 'var(--body)', whiteSpace: 'normal' }}>{item?.description}</td>
-                <td style={tdS}>{r.onContract}</td>
-                <td style={tdS} title={r.onBoardOverride != null ? `Reported ${r.onBoardOverride} (legacy import)` : undefined}>
-                  {r.onBoard}{r.onBoardOverride != null && <span style={{ color: 'var(--amber)' }}> ⚑</span>}
-                </td>
-                <td style={tdS}>{r.premium}</td><td style={tdS}>{r.class2}</td><td style={tdS}>{r.class3}</td>
-                <td style={tdS}>{r.scrap}</td><td style={tdS}>{r.needsInspection}</td><td style={tdS}>{r.damagedOnLocation}</td>
-                <td style={tdS}>{r.sendToRepair}</td><td style={tdS}>{r.toOtherRig}</td><td style={tdS}>{r.receiveFromRig}</td>
-                <td style={tdS}>{serviceable(r)}</td>
-                <td style={{ ...tdS, color: r.contractDelta < 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>{r.contractDelta}</td>
-                <td style={{ ...tdS, textAlign: 'center', fontWeight: 700, color: st === 'short' ? 'var(--red)' : st === 'met' ? 'var(--green)' : st === 'surplus' ? 'var(--blue)' : 'var(--faint)' }}>{FLEET_STATUS_LABEL[st]}</td>
-                <td style={{ ...tdS, textAlign: 'left', fontFamily: 'var(--body)', whiteSpace: 'normal', color: 'var(--dim)' }}>{r.remarks}</td>
-                <td style={{ ...tdS, color: 'var(--faint)' }}>{new Date(r.updatedAt).toLocaleDateString()}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+      <div className="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style={{ cursor: 'pointer' }} onClick={() => onSort('unit')}>Unit{arrow('unit')}</th>
+              <th style={{ cursor: 'pointer' }} onClick={() => onSort('description')}>Description{arrow('description')}</th>
+              <th className="mono" style={{ cursor: 'pointer' }} onClick={() => onSort('onContract')}>Contract{arrow('onContract')}</th>
+              <th className="mono">On-Board</th>
+              <th className="mono">Prem</th><th className="mono">C2</th><th className="mono">C3</th><th className="mono">Scrap</th>
+              <th className="mono">Needs</th><th className="mono">Dmg</th><th className="mono">Repair</th><th className="mono">To Rig</th><th className="mono">From Rig</th>
+              <th className="mono" style={{ cursor: 'pointer' }} onClick={() => onSort('serviceable')}>Serviceable{arrow('serviceable')}</th>
+              <th className="mono" style={{ cursor: 'pointer' }} onClick={() => onSort('delta')}>Delta{arrow('delta')}</th>
+              <th>Status</th>
+              <th>Remarks</th>
+              <th className="mono" style={{ cursor: 'pointer' }} onClick={() => onSort('updatedAt')}>Updated{arrow('updatedAt')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr><td colSpan={18} style={{ textAlign: 'center', color: 'var(--text-3)' }}>No rows match the current filters.</td></tr>
+            )}
+            {rows.map((r) => {
+              const item = catById.get(r.catalogItemId);
+              const st = fleetStatus({ onContract: r.onContract, premium: r.premium, class2: r.class2 });
+              return (
+                <tr key={r.id}>
+                  <td className="mono">{unitById.get(r.unitId)?.name}</td>
+                  <td>{item?.description}</td>
+                  <td className="num">{r.onContract}</td>
+                  <td className="num">{r.onBoard}{r.onBoardOverride != null && <span title={`Reported ${r.onBoardOverride} (legacy import)`} style={{ color: 'var(--copper-2)' }}> ⚑</span>}</td>
+                  <td className="num">{r.premium}</td><td className="num">{r.class2}</td><td className="num">{r.class3}</td>
+                  <td className="num">{r.scrap}</td><td className="num">{r.needsInspection}</td><td className="num">{r.damagedOnLocation}</td>
+                  <td className="num">{r.sendToRepair}</td><td className="num">{r.toOtherRig}</td><td className="num">{r.receiveFromRig}</td>
+                  <td className="num">{serviceable(r)}</td>
+                  <td className="num" style={{ color: r.contractDelta < 0 ? 'var(--red-2)' : 'var(--green)' }}>{r.contractDelta}</td>
+                  <td><span className={`st ${ST_CLASS[st]}`}>{FLEET_STATUS_LABEL[st]}</span></td>
+                  <td style={{ whiteSpace: 'normal', color: 'var(--text-3)' }}>{r.remarks}</td>
+                  <td className="num">{new Date(r.updatedAt).toLocaleDateString()}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

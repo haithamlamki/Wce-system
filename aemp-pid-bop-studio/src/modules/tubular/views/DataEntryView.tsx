@@ -1,395 +1,430 @@
 // ============================================================================
-//  Data Entry — the Excel-like Rig/Hoist grid (workbook sheet parity).
-//  Columns follow the sheet: Category (derived) · Description (dropdown) ·
-//  On Contract · On Board (computed, read-only) · Premium · Class 2 · Class 3 ·
-//  Scrap · Needs Insp · Damaged · To Repair · To Other Rig · From Rig ·
-//  Rental Date · Contractually Less (computed) · Remarks.
-//  Excel-style usability: arrow/Tab/Enter navigation, paste-from-Excel into
-//  the numeric block, batch save (one submission), unsaved-change warning.
-//  On Board is NOT editable (computed server-side; legacy import overrides
-//  show as a badge). Invalid input is an error, never coerced to 0.
+//  Data Entry — pixel-faithful port of the prototype's #view-entry: numbered
+//  form-cards (① unit & tubular ② API RP 7G quantities ③ movement/rental
+//  ④ actions), the ↻ Spreadsheet Sync card (wired to the real staged
+//  importer) and the Existing Records table with edit/delete. Saves go
+//  through submit_tubular_entry (single line; archive on delete). The batch
+//  grid remains available behind a toggle (user decision 2026-07-10).
 // ============================================================================
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTubular } from '../state/TubularContext';
+import { useToast } from '../components/shell/Toast';
+import EntryGrid from '../components/EntryGrid';
 import {
   CATEGORY_LABEL, CATEGORY_ORDER,
-  fetchCatalog, fetchLastSubmission, fetchUnitRecords, submitEntry,
-  type CatalogItem, type EntryLineInput, type SubmissionInfo, type TubularCategory,
+  fetchCatalog, fetchUnitRecords, submitEntry,
+  type CatalogItem, type TubularCategory, type TubularRecordRow,
 } from '../lib/records';
-import { contractuallyLess, onBoardTotal, overrideVariance, parseClipboardBlock, parseQuantity } from '../lib/calc';
+import { contractuallyLess, fleetStatus } from '../lib/calc';
+import { parseTubularWorkbook } from '../lib/workbookImport';
+import { downloadJson } from '../lib/downloadJson';
 
-const QTY_FIELDS = [
-  'onContract', 'premium', 'class2', 'class3', 'scrap',
-  'needsInspection', 'damagedOnLocation', 'sendToRepair', 'toOtherRig', 'receiveFromRig',
-] as const;
-type QtyField = (typeof QTY_FIELDS)[number];
-
-const QTY_LABEL: Record<QtyField, string> = {
-  onContract: 'ON CONTRACT', premium: 'PREMIUM ●● White', class2: 'CLASS 2 ● Yellow',
-  class3: 'CLASS 3 ● Orange', scrap: 'SCRAP ● Red', needsInspection: 'NEEDS INSP',
-  damagedOnLocation: 'DAMAGED', sendToRepair: 'TO REPAIR', toOtherRig: 'TO OTHER RIG',
-  receiveFromRig: 'FROM RIG',
+const ST_CLASS: Record<string, string> = {
+  short: 'short', surplus: 'surplus', met: 'balanced', uncontracted: 'unctr', no_data: 'nodata',
+};
+const ST_LABEL: Record<string, string> = {
+  short: 'SHORT', surplus: 'SURPLUS', met: 'BALANCED', uncontracted: 'UNCONTRACTED', no_data: 'NO DATA',
 };
 
-interface DraftRow {
-  key: string;
-  recordId: string | null;
-  category: TubularCategory;
+type QtyKey = 'onContract' | 'premium' | 'class2' | 'class3' | 'scrap' | 'needsInspection'
+  | 'damagedOnLocation' | 'sendToRepair' | 'toOtherRig' | 'receiveFromRig';
+
+const QTY_DEFS: Array<{ key: QtyKey; label: string; band?: string; help: string }> = [
+  { key: 'onContract', label: 'On Contract', help: 'Required qty' },
+  { key: 'premium', label: 'Premium', band: '#ffffff', help: '≥80% wall' },
+  { key: 'class2', label: 'Class 2', band: 'var(--c-class2)', help: '≥70% wall' },
+  { key: 'class3', label: 'Class 3', band: 'var(--c-class3)', help: 'Exceeds C2 limits' },
+  { key: 'scrap', label: 'Scrap', band: 'var(--c-scrap)', help: 'Not for service' },
+  { key: 'needsInspection', label: 'Needs Insp.', band: 'var(--c-needs)', help: 'Flagged' },
+];
+const MOVE_DEFS: Array<{ key: QtyKey; label: string }> = [
+  { key: 'damagedOnLocation', label: 'Damaged On Location' },
+  { key: 'sendToRepair', label: 'Send to Repair' },
+  { key: 'toOtherRig', label: 'To Other Rig' },
+  { key: 'receiveFromRig', label: 'Receive From Rig' },
+];
+
+const CAT_ENTRY_LABEL: Record<TubularCategory, string> = {
+  drill_pipe: 'Drill Pipe',
+  hwdp: 'HWDP (Heavy Weight Drill Pipe)',
+  drill_collar: 'Drill Collar',
+  pup_joint: 'Pup Joint',
+};
+
+interface FormState {
+  editingId: string | null;
+  category: '' | TubularCategory;
   catalogItemId: string;
-  qty: Record<QtyField, string>;
+  qty: Record<QtyKey, number>;
   rentalDate: string;
   remarks: string;
-  onBoardOverride: number | null;
-  dirty: boolean;
 }
 
-let keySeq = 0;
-const newKey = () => `draft-${++keySeq}`;
+const emptyForm = (): FormState => ({
+  editingId: null, category: '', catalogItemId: '',
+  qty: {
+    onContract: 0, premium: 0, class2: 0, class3: 0, scrap: 0, needsInspection: 0,
+    damagedOnLocation: 0, sendToRepair: 0, toOtherRig: 0, receiveFromRig: 0,
+  },
+  rentalDate: '', remarks: '',
+});
 
-const emptyQty = (): Record<QtyField, string> =>
-  Object.fromEntries(QTY_FIELDS.map((f) => [f, ''])) as Record<QtyField, string>;
-
-function qtyNum(row: DraftRow) {
-  const n = (f: QtyField) => { const p = parseQuantity(row.qty[f]); return p.ok ? p.value : 0; };
-  return {
-    onContract: n('onContract'), premium: n('premium'), class2: n('class2'),
-    class3: n('class3'), scrap: n('scrap'), needsInspection: n('needsInspection'),
-  };
+// Prototype form-card header: orange numbered square + Oswald copper caption.
+function FormHead({ num, children }: { num: string; children: React.ReactNode }) {
+  return (
+    <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 13, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--copper-2)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <span style={{ background: 'var(--copper)', color: '#fff', width: 22, height: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>{num}</span>
+      {children}
+    </div>
+  );
 }
-
-function rowErrors(row: DraftRow): string[] {
-  const errs: string[] = [];
-  if (!row.catalogItemId) errs.push('description required');
-  for (const f of QTY_FIELDS) {
-    const p = parseQuantity(row.qty[f]);
-    if (!p.ok) errs.push(`${QTY_LABEL[f]}: ${p.error}`);
-  }
-  return errs;
-}
-
-const cellInput: React.CSSProperties = {
-  width: '100%', minWidth: 52, border: 0, background: 'transparent', color: 'var(--ink)',
-  font: '12.5px var(--mono)', textAlign: 'right', padding: '6px 7px', outline: 'none',
-};
-const td: React.CSSProperties = { border: '1px solid var(--line)', padding: 0 };
-const tdRo: React.CSSProperties = { ...td, background: 'var(--sunk)', textAlign: 'right', padding: '6px 7px', font: '12.5px var(--mono)', color: 'var(--dim)' };
 
 export default function DataEntryView() {
   const { units, hasPerm } = useTubular();
-  const entryUnits = units; // RLS + RPC re-verify; UI shows assigned units only
+  const toast = useToast();
+  const [gridMode, setGridMode] = useState(false);
   const [unitId, setUnitId] = useState('');
   const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [unitMeas, setUnitMeas] = useState('Joints');
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
-  const [rows, setRows] = useState<DraftRow[]>([]);
-  const [archive, setArchive] = useState<string[]>([]);
-  const [lastSub, setLastSub] = useState<SubmissionInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [records, setRecords] = useState<TubularRecordRow[]>([]);
+  const [form, setForm] = useState<FormState>(emptyForm());
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [savedAt, setSavedAt] = useState('');
-  const tableRef = useRef<HTMLTableElement>(null);
+  const [syncStatus, setSyncStatus] = useState('No import yet this session');
+  const [syncError, setSyncError] = useState('');
 
-  useEffect(() => { if (!unitId && entryUnits.length) setUnitId(entryUnits[0].id); }, [entryUnits, unitId]);
+  useEffect(() => { if (!unitId && units.length) setUnitId(units[0].id); }, [units, unitId]);
+  useEffect(() => { void fetchCatalog().then(setCatalog).catch(() => undefined); }, []);
 
-  const load = useCallback(async (uid: string) => {
-    setLoading(true); setError('');
+  const loadRecords = useCallback(async () => {
+    if (!unitId) return;
+    try { setRecords(await fetchUnitRecords(unitId)); } catch { setRecords([]); }
+  }, [unitId]);
+  useEffect(() => { void loadRecords(); }, [loadRecords]);
+
+  const catById = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
+  const descOptions = useMemo(
+    () => catalog.filter((c) => c.active && (!form.category || c.category === form.category)),
+    [catalog, form.category],
+  );
+  const unitName = units.find((u) => u.id === unitId)?.name ?? '';
+
+  const setQty = (key: QtyKey, raw: string) => {
+    const n = raw === '' ? 0 : Number(raw);
+    if (!Number.isInteger(n) || n < 0) return;
+    setForm((f) => ({ ...f, qty: { ...f.qty, [key]: n } }));
+  };
+
+  const lessDisplay = contractuallyLess(
+    { onContract: form.qty.onContract, premium: form.qty.premium, class2: form.qty.class2 },
+    !!form.catalogItemId,
+  );
+
+  const save = async () => {
+    if (!form.catalogItemId) { toast('Choose a tubular description first.', 'error'); return; }
+    setSaving(true);
     try {
-      const [cat, recs, sub] = await Promise.all([
-        catalog.length ? Promise.resolve(catalog) : fetchCatalog(),
-        fetchUnitRecords(uid),
-        fetchLastSubmission(uid),
-      ]);
-      setCatalog(cat);
-      const byId = new Map(cat.map((c) => [c.id, c]));
-      setRows(recs.map((r) => ({
-        key: r.id, recordId: r.id,
-        category: byId.get(r.catalogItemId)?.category ?? 'drill_pipe',
-        catalogItemId: r.catalogItemId,
-        qty: Object.fromEntries(QTY_FIELDS.map((f) => [f, String(r[f] ?? 0)])) as Record<QtyField, string>,
-        rentalDate: r.rentalDate ?? '', remarks: r.remarks ?? '',
-        onBoardOverride: r.onBoardOverride, dirty: false,
-      })));
-      setArchive([]);
-      setLastSub(sub);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [catalog]);
-
-  useEffect(() => { if (unitId) void load(unitId); }, [unitId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const dirty = rows.some((r) => r.dirty) || archive.length > 0;
-  useEffect(() => {
-    if (!dirty) return;
-    const onUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); };
-    window.addEventListener('beforeunload', onUnload);
-    return () => window.removeEventListener('beforeunload', onUnload);
-  }, [dirty]);
-
-  const grouped = useMemo(() => CATEGORY_ORDER.map((cat) => ({
-    cat, items: rows.filter((r) => r.category === cat && !archive.includes(r.key)),
-  })), [rows, archive]);
-
-  const flat = useMemo(() => grouped.flatMap((g) => g.items), [grouped]);
-
-  const patch = (key: string, fn: (r: DraftRow) => DraftRow) =>
-    setRows((rs) => rs.map((r) => (r.key === key ? { ...fn(r), dirty: true } : r)));
-
-  const addRow = (cat: TubularCategory) =>
-    setRows((rs) => [...rs, {
-      key: newKey(), recordId: null, category: cat, catalogItemId: '',
-      qty: emptyQty(), rentalDate: '', remarks: '', onBoardOverride: null, dirty: true,
-    }]);
-
-  const removeRow = (row: DraftRow) => {
-    if (row.recordId) setArchive((a) => [...a, row.key]);
-    else setRows((rs) => rs.filter((r) => r.key !== row.key));
-  };
-
-  // ---- keyboard navigation (roving focus over data-r / data-c cells) --------
-  const moveFocus = useCallback((rIdx: number, cIdx: number) => {
-    const el = tableRef.current?.querySelector<HTMLElement>(`[data-r="${rIdx}"][data-c="${cIdx}"]`);
-    el?.focus();
-    if (el instanceof HTMLInputElement) el.select();
-  }, []);
-
-  const onGridKey = (e: React.KeyboardEvent, rIdx: number, cIdx: number) => {
-    const nav: Record<string, [number, number]> = {
-      ArrowUp: [-1, 0], ArrowDown: [1, 0], Enter: [1, 0],
-    };
-    if (e.key in nav && !(e.target instanceof HTMLSelectElement)) {
-      e.preventDefault();
-      moveFocus(rIdx + nav[e.key][0], cIdx);
-    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.target instanceof HTMLInputElement) {
-      const input = e.target;
-      const atStart = input.selectionStart === 0 && input.selectionEnd === 0;
-      const atEnd = input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
-      if ((e.key === 'ArrowLeft' && atStart) || (e.key === 'ArrowRight' && atEnd)) {
-        e.preventDefault();
-        moveFocus(rIdx, cIdx + (e.key === 'ArrowLeft' ? -1 : 1));
-      }
-    }
-  };
-
-  // ---- paste an Excel block across the numeric columns ----------------------
-  const onPaste = (e: React.ClipboardEvent, rowKey: string, startField: QtyField) => {
-    const text = e.clipboardData.getData('text/plain');
-    if (!text.includes('\t') && !text.includes('\n')) return; // single-cell paste: default behavior
-    e.preventDefault();
-    const block = parseClipboardBlock(text);
-    const startRow = flat.findIndex((r) => r.key === rowKey);
-    const startCol = QTY_FIELDS.indexOf(startField);
-    const problems: string[] = [];
-    block.forEach((cells, dr) => cells.forEach((cell, dc) => {
-      if (cell === '') return;
-      const p = parseQuantity(cell);
-      if (!p.ok) problems.push(`row ${dr + 1}, col ${dc + 1}: ${p.error}`);
-    }));
-    if (problems.length) {
-      setError(`Paste rejected — fix these cells in Excel and retry: ${problems.slice(0, 4).join('; ')}${problems.length > 4 ? '…' : ''}`);
-      return;
-    }
-    setError('');
-    setRows((rs) => {
-      const next = [...rs];
-      block.forEach((cells, dr) => {
-        const target = flat[startRow + dr];
-        if (!target) return; // beyond the last row: ignored (no silent row creation)
-        const i = next.findIndex((r) => r.key === target.key);
-        const qty = { ...next[i].qty };
-        cells.forEach((cell, dc) => {
-          const f = QTY_FIELDS[startCol + dc];
-          if (f) qty[f] = cell;
-        });
-        next[i] = { ...next[i], qty, dirty: true };
+      const position = form.editingId
+        ? records.find((r) => r.id === form.editingId)?.position ?? records.length + 1
+        : (records.length ? Math.max(...records.map((r) => r.position)) + 1 : 1);
+      await submitEntry({
+        unitId, entryDate,
+        lines: [{
+          id: form.editingId,
+          catalog_item_id: form.catalogItemId,
+          position,
+          on_contract: form.qty.onContract,
+          premium: form.qty.premium,
+          class2: form.qty.class2,
+          class3: form.qty.class3,
+          scrap: form.qty.scrap,
+          needs_inspection: form.qty.needsInspection,
+          damaged_on_location: form.qty.damagedOnLocation,
+          send_to_repair: form.qty.sendToRepair,
+          to_other_rig: form.qty.toOtherRig,
+          receive_from_rig: form.qty.receiveFromRig,
+          rental_date: form.rentalDate || null,
+          remarks: form.remarks || null,
+        }],
+        archiveIds: [],
       });
-      return next;
+      toast(form.editingId ? 'Record updated.' : 'Record saved.', 'success');
+      setForm(emptyForm());
+      await loadRecords();
+    } catch (e) {
+      toast(`Save failed — nothing stored. ${e instanceof Error ? e.message : e}`, 'error');
+    } finally { setSaving(false); }
+  };
+
+  const editRecord = (r: TubularRecordRow) => {
+    const item = catById.get(r.catalogItemId);
+    setForm({
+      editingId: r.id,
+      category: item?.category ?? '',
+      catalogItemId: r.catalogItemId,
+      qty: {
+        onContract: r.onContract, premium: r.premium, class2: r.class2, class3: r.class3,
+        scrap: r.scrap, needsInspection: r.needsInspection,
+        damagedOnLocation: r.damagedOnLocation, sendToRepair: r.sendToRepair,
+        toOtherRig: r.toOtherRig, receiveFromRig: r.receiveFromRig,
+      },
+      rentalDate: r.rentalDate ?? '', remarks: r.remarks ?? '',
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const deleteRecord = async (r: TubularRecordRow) => {
+    try {
+      await submitEntry({ unitId, entryDate, lines: [], archiveIds: [r.id], note: 'record removed via Data Entry' });
+      toast('Record archived (history preserved).', 'success');
+      await loadRecords();
+    } catch (e) {
+      toast(`Delete failed. ${e instanceof Error ? e.message : e}`, 'error');
+    }
+  };
+
+  const exportJson = () => {
+    downloadJson(`tubular-${unitName || 'unit'}-${entryDate}.json`, {
+      unit: unitName,
+      unit_of_measure: unitMeas,
+      exported_at: new Date().toISOString(),
+      records: records.map((r) => ({
+        tubular: catById.get(r.catalogItemId)?.description,
+        category: catById.get(r.catalogItemId) ? CATEGORY_LABEL[catById.get(r.catalogItemId)!.category] : null,
+        on_contract: r.onContract, premium: r.premium, class_2: r.class2, class_3: r.class3,
+        scrap: r.scrap, needs_inspection: r.needsInspection, on_board: r.onBoard,
+        damaged_on_location: r.damagedOnLocation, send_to_repair: r.sendToRepair,
+        to_other_rig: r.toOtherRig, receive_from_rig: r.receiveFromRig,
+        rental_date: r.rentalDate, remarks: r.remarks,
+      })),
     });
   };
 
-  const save = async () => {
-    const bad = flat.map((r) => ({ r, errs: rowErrors(r) })).filter((x) => x.errs.length);
-    if (bad.length) {
-      setError(`Cannot save — ${bad.length} row(s) invalid. First: ${bad[0].errs[0]}`);
-      return;
-    }
-    setSaving(true); setError('');
+  const onSyncFile = async (f: File | undefined) => {
+    if (!f) return;
+    setSyncError('');
     try {
-      const lines: EntryLineInput[] = flat.map((r, i) => ({
-        id: r.recordId,
-        catalog_item_id: r.catalogItemId,
-        position: i + 1,
-        on_contract: qtyNum(r).onContract,
-        premium: qtyNum(r).premium,
-        class2: qtyNum(r).class2,
-        class3: qtyNum(r).class3,
-        scrap: qtyNum(r).scrap,
-        needs_inspection: qtyNum(r).needsInspection,
-        damaged_on_location: (parseQuantity(r.qty.damagedOnLocation) as { value: number }).value,
-        send_to_repair: (parseQuantity(r.qty.sendToRepair) as { value: number }).value,
-        to_other_rig: (parseQuantity(r.qty.toOtherRig) as { value: number }).value,
-        receive_from_rig: (parseQuantity(r.qty.receiveFromRig) as { value: number }).value,
-        rental_date: r.rentalDate || null,
-        remarks: r.remarks || null,
-      }));
-      const archiveIds = rows.filter((r) => archive.includes(r.key) && r.recordId).map((r) => r.recordId as string);
-      await submitEntry({ unitId, entryDate, lines, archiveIds });
-      setSavedAt(new Date().toLocaleTimeString());
-      await load(unitId); // reload = adopt server ids + recompute generated cols
+      const parsed = await parseTubularWorkbook(await f.arrayBuffer());
+      setSyncStatus(`Parsed ${parsed.stats.unitSheets} sheets · ${parsed.stats.dataRows} rows · ${parsed.stats.errorRows} errors`);
+      toast('Workbook parsed — review & commit it from the Import tab.', 'success');
     } catch (e) {
-      setError(`Save failed — nothing was stored. ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setSaving(false);
+      setSyncStatus('Import failed');
+      setSyncError(e instanceof Error ? e.message : String(e));
     }
   };
 
   if (!hasPerm('data_entry')) {
-    return <div className="placeholder"><strong>Data Entry</strong>You do not have the data-entry permission.</div>;
+    return (
+      <section className="view" id="view-entry">
+        <div className="empty-cert"><div className="ico">✎</div><div className="title">Data Entry</div>
+          <div className="desc">You do not have the data-entry permission.</div></div>
+      </section>
+    );
   }
-  if (!entryUnits.length) {
-    return <div className="placeholder"><strong>Data Entry</strong>No Rig/Hoist is assigned to your account. Ask an administrator for a unit assignment.</div>;
+  if (!units.length) {
+    return (
+      <section className="view" id="view-entry">
+        <div className="empty-cert"><div className="ico">✎</div><div className="title">Data Entry</div>
+          <div className="desc">No Rig/Hoist is assigned to your account. Ask an administrator for a unit assignment.</div></div>
+      </section>
+    );
   }
 
-  let rIdx = -1;
   return (
-    <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: 16 }}>
-      <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <label style={{ fontFamily: 'var(--disp)', fontWeight: 600 }}>
-          Rig / Hoist{' '}
-          <select value={unitId} disabled={dirty}
-            title={dirty ? 'Save or discard changes before switching units' : ''}
-            onChange={(e) => setUnitId(e.target.value)}
-            style={{ background: 'var(--panel)', color: 'var(--ink)', border: '1px solid var(--line2)', borderRadius: 7, padding: '6px 8px' }}>
-            {entryUnits.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-        </label>
-        <label style={{ fontFamily: 'var(--disp)', fontWeight: 600 }}>
-          Date of Update{' '}
-          <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)}
-            style={{ background: 'var(--panel)', color: 'var(--ink)', border: '1px solid var(--line2)', borderRadius: 7, padding: '5px 8px' }} />
-        </label>
-        <span style={{ color: 'var(--faint)', fontFamily: 'var(--mono)', fontSize: 11 }}>Unit: Joints</span>
-        <div className="spacer" style={{ flex: 1 }} />
-        {lastSub && (
-          <span style={{ color: 'var(--faint)', fontSize: 12 }}>
-            Last saved {new Date(lastSub.submittedAt).toLocaleString()} ({lastSub.source})
-          </span>
-        )}
-        {savedAt && <span style={{ color: 'var(--green)', fontSize: 12 }}>✔ Saved {savedAt}</span>}
-        {dirty && <span style={{ color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>● Unsaved changes</span>}
-        <button onClick={() => void load(unitId)} disabled={saving}
-          style={{ border: '1px solid var(--line2)', background: 'var(--panel)', color: 'var(--ink)', padding: '7px 12px', borderRadius: 7, cursor: 'pointer' }}>
-          Discard
-        </button>
-        <button onClick={() => void save()} disabled={saving || loading || !dirty}
-          style={{ border: 0, background: 'var(--accent)', color: '#fff', padding: '7px 16px', borderRadius: 7, fontWeight: 700, cursor: 'pointer', opacity: saving || !dirty ? 0.6 : 1 }}>
-          {saving ? 'Saving…' : 'Save sheet'}
-        </button>
+    <section className="view" id="view-entry">
+      <div className="section-head">
+        <div className="section-title">Data Entry</div>
+        <div className="section-sub" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          Add or update tubular records for a Rig/Hoist
+          <button className="btn alt sm" onClick={() => setGridMode((v) => !v)}>
+            {gridMode ? '✎ Form Mode' : '⊞ Batch Grid Mode'}
+          </button>
+        </div>
       </div>
 
-      {error && (
-        <div role="alert" style={{ border: '1px solid var(--red)', color: 'var(--red)', background: 'color-mix(in srgb, var(--red) 8%, var(--panel))', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 13 }}>
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="placeholder">Loading sheet…</div>
+      {gridMode ? (
+        <EntryGrid />
       ) : (
-        <table ref={tableRef} style={{ borderCollapse: 'collapse', width: '100%', background: 'var(--panel)', fontSize: 12.5 }}>
-          <thead>
-            <tr style={{ font: '10.5px var(--mono)', color: 'var(--dim)' }}>
-              {['TUBULAR DESCRIPTION', ...QTY_FIELDS.slice(0, 1).map((f) => QTY_LABEL[f]), 'ON BOARD', ...QTY_FIELDS.slice(1).map((f) => QTY_LABEL[f]), 'RENTAL DATE', 'CONTRACT-UALLY LESS', 'REMARKS', ''].map((h, i) => (
-                <th key={i} style={{ border: '1px solid var(--line2)', background: 'var(--sunk)', padding: '7px 6px', textAlign: i === 0 ? 'left' : 'center', whiteSpace: 'nowrap' }}>{h}</th>
+        <>
+          <div className="form-card">
+            <FormHead num="1">Select Unit &amp; Tubular</FormHead>
+            <div className="form-row three">
+              <div className="form-field">
+                <label>Rig / Hoist <span className="req">*</span></label>
+                <select id="e-unit" value={unitId} onChange={(e) => { setUnitId(e.target.value); setForm(emptyForm()); }}>
+                  {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div className="form-field">
+                <label>Date of Update <span className="req">*</span></label>
+                <input id="e-date" type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
+              </div>
+              <div className="form-field">
+                <label>Unit of Measure</label>
+                <select id="e-unitmeas" value={unitMeas} onChange={(e) => setUnitMeas(e.target.value)}>
+                  <option>Joints</option><option>Feet</option><option>Meters</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-field">
+                <label>Category <span className="req">*</span></label>
+                <select id="e-cat" value={form.category}
+                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as FormState['category'], catalogItemId: '' }))}>
+                  <option value="">— Choose category —</option>
+                  {CATEGORY_ORDER.map((c) => <option key={c} value={c}>{CAT_ENTRY_LABEL[c]}</option>)}
+                </select>
+              </div>
+              <div className="form-field">
+                <label>Tubular Description <span className="req">*</span></label>
+                <select id="e-desc" value={form.catalogItemId}
+                  onChange={(e) => setForm((f) => ({ ...f, catalogItemId: e.target.value }))}>
+                  <option value="">{form.category ? '— Choose description —' : '— Choose category first —'}</option>
+                  {descOptions.map((c) => <option key={c.id} value={c.id}>{c.description}</option>)}
+                </select>
+                <span className="help">Per API RP 7G classification</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="form-card">
+            <FormHead num="2">Quantities — API RP 7G Classification</FormHead>
+            <div className="form-row six">
+              {QTY_DEFS.map((q) => (
+                <div className="form-field" key={q.key}>
+                  <label>
+                    {q.band && <span className="band" style={{ background: q.band }} />}
+                    {q.label}
+                  </label>
+                  <input type="number" min={0} value={form.qty[q.key]}
+                    onChange={(e) => setQty(q.key, e.target.value)} />
+                  <span className="help">{q.help}</span>
+                </div>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {grouped.map(({ cat, items }) => {
-              const header = (
-                <tr key={`h-${cat}`}>
-                  <td colSpan={16} style={{ background: 'var(--panel2)', border: '1px solid var(--line2)', padding: '6px 10px', fontFamily: 'var(--disp)', fontWeight: 700, letterSpacing: 0.6 }}>
-                    ◆ {CATEGORY_LABEL[cat]}
-                    <button onClick={() => addRow(cat)}
-                      style={{ marginLeft: 12, border: '1px solid var(--line2)', background: 'var(--panel)', color: 'var(--accent)', borderRadius: 6, padding: '2px 10px', cursor: 'pointer', fontSize: 12 }}>
-                      + row
-                    </button>
-                  </td>
-                </tr>
-              );
-              const body = items.map((row) => {
-                rIdx += 1;
-                const r = rIdx;
-                const nums = qtyNum(row);
-                const hasDesc = !!row.catalogItemId;
-                const variance = overrideVariance(nums, row.onBoardOverride);
-                const errs = row.dirty ? rowErrors(row) : [];
-                return (
-                  <tr key={row.key} style={errs.length ? { outline: '1px solid var(--red)' } : undefined}>
-                    <td style={{ ...td, minWidth: 230 }}>
-                      <select value={row.catalogItemId} data-r={r} data-c={0}
-                        onKeyDown={(e) => onGridKey(e, r, 0)}
-                        onChange={(e) => patch(row.key, (x) => ({ ...x, catalogItemId: e.target.value }))}
-                        style={{ ...cellInput, textAlign: 'left', fontFamily: 'var(--body)' }}>
-                        <option value="">— select —</option>
-                        {catalog.filter((c) => c.category === cat && c.active).map((c) => (
-                          <option key={c.id} value={c.id}>{c.description}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td style={td}>
-                      <input value={row.qty.onContract} data-r={r} data-c={1} inputMode="numeric"
-                        onKeyDown={(e) => onGridKey(e, r, 1)}
-                        onPaste={(e) => onPaste(e, row.key, 'onContract')}
-                        onChange={(e) => patch(row.key, (x) => ({ ...x, qty: { ...x.qty, onContract: e.target.value } }))}
-                        style={cellInput} />
-                    </td>
-                    <td style={tdRo} title={variance != null ? `Reported total ${row.onBoardOverride} differs from class sum by ${variance > 0 ? '+' : ''}${variance} (legacy import)` : 'Computed: Premium + Class 2 + Class 3 + Scrap'}>
-                      {onBoardTotal(nums)}{variance != null && <span style={{ color: 'var(--amber)' }}> ⚑{row.onBoardOverride}</span>}
-                    </td>
-                    {QTY_FIELDS.slice(1).map((f, i) => (
-                      <td key={f} style={td}>
-                        <input value={row.qty[f]} data-r={r} data-c={i + 2} inputMode="numeric"
-                          onKeyDown={(e) => onGridKey(e, r, i + 2)}
-                          onPaste={(e) => onPaste(e, row.key, f)}
-                          onChange={(e) => patch(row.key, (x) => ({ ...x, qty: { ...x.qty, [f]: e.target.value } }))}
-                          style={cellInput} />
-                      </td>
-                    ))}
-                    <td style={td}>
-                      <input type="date" value={row.rentalDate} data-r={r} data-c={11}
-                        onKeyDown={(e) => onGridKey(e, r, 11)}
-                        onChange={(e) => patch(row.key, (x) => ({ ...x, rentalDate: e.target.value }))}
-                        style={{ ...cellInput, textAlign: 'left', width: 130 }} />
-                    </td>
-                    <td style={{ ...tdRo, color: contractuallyLess(nums, hasDesc) === 'OK' ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>
-                      {contractuallyLess(nums, hasDesc)}
-                    </td>
-                    <td style={{ ...td, minWidth: 120 }}>
-                      <input value={row.remarks} data-r={r} data-c={12}
-                        onKeyDown={(e) => onGridKey(e, r, 12)}
-                        onChange={(e) => patch(row.key, (x) => ({ ...x, remarks: e.target.value }))}
-                        style={{ ...cellInput, textAlign: 'left', fontFamily: 'var(--body)' }} />
-                    </td>
-                    <td style={{ ...td, textAlign: 'center' }}>
-                      <button title="Remove row (archived on save — never hard-deleted)" onClick={() => removeRow(row)}
-                        style={{ border: 0, background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>✕</button>
-                    </td>
+            </div>
+          </div>
+
+          <div className="form-card">
+            <FormHead num="3">Movement, Repair &amp; Rental (Optional)</FormHead>
+            <div className="form-row four">
+              {MOVE_DEFS.map((m) => (
+                <div className="form-field" key={m.key}>
+                  <label>{m.label}</label>
+                  <input type="number" min={0} value={form.qty[m.key]}
+                    onChange={(e) => setQty(m.key, e.target.value)} />
+                </div>
+              ))}
+            </div>
+            <div className="form-row three">
+              <div className="form-field">
+                <label>Rental Date</label>
+                <input id="e-rental" type="date" value={form.rentalDate}
+                  onChange={(e) => setForm((f) => ({ ...f, rentalDate: e.target.value }))} />
+              </div>
+              <div className="form-field">
+                <label>Contractually Less</label>
+                <input id="e-less" value={lessDisplay} readOnly
+                  style={{ color: lessDisplay === 'OK' ? 'var(--green)' : 'var(--red-2)' }} />
+                <span className="help">Computed: (Premium + Class 2) − Contract</span>
+              </div>
+              <div className="form-field">
+                <label>Remarks</label>
+                <input id="e-remarks" placeholder="Optional notes…" value={form.remarks}
+                  onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} />
+              </div>
+            </div>
+            <div className="form-actions">
+              <button className="btn" id="e-save" disabled={saving} onClick={() => void save()}>
+                ⬇ {form.editingId ? 'Update Record' : 'Save Record'}
+              </button>
+              <button className="btn alt" id="e-reset" onClick={() => setForm(emptyForm())}>Reset Form</button>
+              <button className="btn alt" id="e-export" onClick={exportJson}>⬆ Export All Data (JSON)</button>
+            </div>
+          </div>
+
+          <div className="form-card" id="sync-card">
+            <FormHead num="↻">Spreadsheet Sync</FormHead>
+            <div className="form-row three">
+              <div className="form-field">
+                <label>Workbook File</label>
+                {hasPerm('import') ? (
+                  <label className="amap-file-label">
+                    ⬆ Choose Spreadsheet File
+                    <input id="sync-fileInput" type="file" accept=".xlsx" style={{ display: 'none' }}
+                      onChange={(e) => void onSyncFile(e.target.files?.[0])} />
+                  </label>
+                ) : (
+                  <span className="help">Requires the import permission.</span>
+                )}
+                <span className="help">Reads every Rig/Hoist sheet of the monthly workbook.</span>
+              </div>
+              <div className="form-field">
+                <label>Status</label>
+                <span className="meta-chip" id="sync-status" style={{ alignSelf: 'flex-start' }}>{syncStatus}</span>
+              </div>
+              <div className="form-field">
+                <label>Commit</label>
+                <span className="help">
+                  Imports are staged, previewed and committed on the{' '}
+                  <Link to="/tubular/import" style={{ color: 'var(--copper-2)' }}>Import tab</Link> with a full reconciliation report.
+                </span>
+              </div>
+            </div>
+            <div className="amap-note">
+              Dashboard and Master sheets are derived data and are never imported. Typed On-Board totals that
+              disagree with the classification sum are kept as reported values and flagged for review.
+            </div>
+            {syncError && <div style={{ color: 'var(--red-2)', fontSize: 11.5, marginTop: 8 }} id="sync-error">{syncError}</div>}
+          </div>
+
+          <div className="panel">
+            <div className="panel-head">
+              <h3>Existing Records — <span id="entry-unit-label" style={{ color: 'var(--copper-2)' }}>{unitName || 'All Units'}</span></h3>
+              <span className="badge" id="entry-count">{records.length} records</span>
+            </div>
+            <div className="tbl-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tubular</th><th className="num">Contract</th><th className="num">Premium</th>
+                    <th className="num">C2</th><th className="num">C3</th><th className="num">Scrap</th>
+                    <th className="num">Needs</th><th className="num">Variance</th><th>Status</th><th style={{ width: 140 }}>Actions</th>
                   </tr>
-                );
-              });
-              return [header, ...body];
-            })}
-          </tbody>
-        </table>
+                </thead>
+                <tbody id="entry-body">
+                  {records.length === 0 && (
+                    <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-3)' }}>No records for this unit yet.</td></tr>
+                  )}
+                  {records.map((r) => {
+                    const st = fleetStatus({ onContract: r.onContract, premium: r.premium, class2: r.class2 });
+                    const variance = r.onBoard - r.onContract;
+                    return (
+                      <tr key={r.id}>
+                        <td>{catById.get(r.catalogItemId)?.description}{r.remarks ? <span style={{ color: 'var(--text-4)' }}> · {r.remarks}</span> : null}</td>
+                        <td className="num">{r.onContract.toLocaleString()}</td>
+                        <td className="num">{r.premium.toLocaleString()}</td>
+                        <td className="num" style={{ color: r.class2 > 0 ? 'var(--c-class2)' : 'var(--text-3)' }}>{r.class2.toLocaleString()}</td>
+                        <td className="num" style={{ color: r.class3 > 0 ? 'var(--c-class3)' : 'var(--text-3)' }}>{r.class3.toLocaleString()}</td>
+                        <td className="num" style={{ color: r.scrap > 0 ? 'var(--red-2)' : 'var(--text-3)' }}>{r.scrap.toLocaleString()}</td>
+                        <td className="num" style={{ color: r.needsInspection > 0 ? '#c084fc' : 'var(--text-3)' }}>{r.needsInspection.toLocaleString()}</td>
+                        <td className="num" style={{ color: variance < 0 ? 'var(--red-2)' : variance > 0 ? 'var(--green-2)' : 'var(--text-2)' }}>
+                          {variance >= 0 ? `+${variance.toLocaleString()}` : variance.toLocaleString()}
+                        </td>
+                        <td><span className={`st ${ST_CLASS[st]}`}>{ST_LABEL[st]}</span></td>
+                        <td>
+                          <button className="btn-tr" onClick={() => editRecord(r)}>Edit</button>{' '}
+                          <button className="btn-tr danger" onClick={() => void deleteRecord(r)}>Del</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
-      {archive.length > 0 && (
-        <div style={{ color: 'var(--amber)', fontSize: 12, marginTop: 8 }}>
-          {archive.length} row(s) will be archived on save.
-        </div>
-      )}
-    </div>
+    </section>
   );
 }

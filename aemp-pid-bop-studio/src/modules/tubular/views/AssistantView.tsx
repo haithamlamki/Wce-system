@@ -1,24 +1,64 @@
 // ============================================================================
-//  AI Assistant (deterministic v1 — approved decision). Answers are computed
-//  by assistant.ts over the caller's RLS-scoped records: no LLM, no external
-//  calls, no invented quantities. Each answer can show its backing records.
+//  AI Assistant — pixel-faithful port of the prototype's #view-chat: two-column
+//  chat-wrap (chat main with head/body/input + sidebar with Try Asking,
+//  capabilities and limitations). Answers remain deterministic (assistant.ts)
+//  over the caller's RLS-scoped records; limitations text updated to reflect
+//  the cloud backend (truth deviation, flagged in the plan).
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTubular } from '../state/TubularContext';
 import { fetchCatalog, fetchVisibleRecords, type CatalogItem, type TubularRecordRow } from '../lib/records';
 import { answer, type AssistantAnswer } from '../lib/assistant';
 
-interface ChatEntry { who: 'you' | 'assistant'; text: string; rows?: AssistantAnswer['rows'] }
+interface ChatEntry {
+  who: 'user' | 'ai';
+  text: string;
+  rows?: AssistantAnswer['rows'];
+  time: string;
+}
+
+const SUGGESTIONS = [
+  'Show me Rig 305 inventory',
+  'Total premium 5" DP NC50 across the fleet',
+  'Which rigs have scrap?',
+  'How many drill pipes does Rig 205 have?',
+  'Compare Rig 205 and Rig 305',
+  'Which rigs are short of stock?',
+  'What needs inspection?',
+  'Last update for each rig',
+  'Fleet summary',
+  'Show me drill collars',
+];
+
+const CAPABILITIES = [
+  'Counts & totals by rig, tubular or class',
+  'Surplus vs. shortfall analysis',
+  'Items needing inspection',
+  'Rig comparisons',
+  '"Where is X" — find locations',
+  'Last update dates per unit',
+  'API RP 7G classifications',
+];
+
+const LIMITATIONS = [
+  'Answers only from your authorized data',
+  'No external lookups',
+  'Read-only (use Data Entry to update)',
+];
+
+const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 export default function AssistantView() {
   const { units } = useTubular();
   const [records, setRecords] = useState<TubularRecordRow[]>([]);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [chat, setChat] = useState<ChatEntry[]>([{
-    who: 'assistant',
-    text: 'I answer from your live tubular data (your authorized units only). Try "fleet summary", "what is short of contract", "scrap", or "Rig 105".',
+    who: 'ai',
+    time: now(),
+    text: 'Hello — I\'m the Abraj Inventory Assistant. I can answer questions about your tubular fleet data: counts, classifications, surplus/shortfall, which rigs have what, and so on.\n\nEvery answer is computed from the live records your account is authorized to see. Try a question from the panel on the right, or just ask anything about the inventory.',
   }]);
   const [input, setInput] = useState('');
+  const [typing, setTyping] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,60 +67,111 @@ export default function AssistantView() {
       .catch(() => undefined);
   }, []);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chat]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chat, typing]);
 
   const ctx = useMemo(() => ({
     records, catalog,
     unitNames: new Map(units.map((u) => [u.id, u.name])),
   }), [records, catalog, units]);
 
-  const ask = () => {
-    const q = input.trim();
-    if (!q) return;
-    const a = answer(q, ctx);
-    setChat((c) => [...c, { who: 'you', text: q }, { who: 'assistant', text: a.text, rows: a.rows }]);
+  const ask = (q?: string) => {
+    const question = (q ?? input).trim();
+    if (!question || typing) return;
+    setChat((c) => [...c, { who: 'user', text: question, time: now() }]);
     setInput('');
+    setTyping(true);
+    const a = answer(question, ctx);
+    setTimeout(() => {
+      setTyping(false);
+      setChat((c) => [...c, { who: 'ai', text: a.text, rows: a.rows, time: now() }]);
+    }, 300);
+  };
+
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      ask();
+    }
   };
 
   return (
-    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', maxWidth: 860, margin: '0 auto', width: '100%' }}>
-      <div style={{ flex: 1, overflow: 'auto', padding: 16, display: 'grid', gap: 10, alignContent: 'start' }}>
-        {chat.map((e, i) => (
-          <div key={i} style={{
-            justifySelf: e.who === 'you' ? 'end' : 'start', maxWidth: '85%',
-            background: e.who === 'you' ? 'var(--accent)' : 'var(--panel)',
-            color: e.who === 'you' ? '#fff' : 'var(--ink)',
-            border: e.who === 'you' ? 0 : '1px solid var(--line2)',
-            borderRadius: 12, padding: '9px 13px', fontSize: 13.5, lineHeight: 1.55,
-          }}>
-            {e.text}
-            {e.rows && e.rows.length > 0 && (
-              <table style={{ borderCollapse: 'collapse', marginTop: 8, fontSize: 12 }}>
-                <tbody>
-                  {e.rows.map((r, j) => (
-                    <tr key={j}>
-                      <td style={{ border: '1px solid var(--line)', padding: '3px 8px', fontFamily: 'var(--mono)' }}>{r.unit}</td>
-                      <td style={{ border: '1px solid var(--line)', padding: '3px 8px' }}>{r.description}</td>
-                      <td style={{ border: '1px solid var(--line)', padding: '3px 8px', fontFamily: 'var(--mono)' }}>{r.detail}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+    <section className="view" id="view-chat">
+      <div className="section-head">
+        <div className="section-title">AI Assistant</div>
+        <div className="section-sub">Ask questions about your inventory · deterministic · data-bound</div>
+      </div>
+
+      <div className="chat-wrap">
+        <div className="chat-main">
+          <div className="chat-head">
+            <div className="title"><span className="ai-dot" />Abraj Inventory Assistant</div>
+            <div className="meta">Cloud · Read-only · v1.0</div>
           </div>
-        ))}
-        <div ref={endRef} />
+          <div className="chat-body" id="chat-body">
+            {chat.map((m, i) => (
+              <div key={i} className={`msg ${m.who}`}>
+                <div className="avatar">{m.who === 'ai' ? 'A' : 'U'}</div>
+                <div className="bubble">
+                  <span style={{ whiteSpace: 'pre-line' }}>{m.text}</span>
+                  {m.rows && m.rows.length > 0 && (
+                    <table>
+                      <thead><tr><th>Unit</th><th>Tubular</th><th>Detail</th></tr></thead>
+                      <tbody>
+                        {m.rows.map((r, j) => (
+                          <tr key={j}>
+                            <td className="mono">{r.unit}</td>
+                            <td>{r.description}</td>
+                            <td className="mono">{r.detail}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            ))}
+            {typing && (
+              <div className="msg ai">
+                <div className="avatar">A</div>
+                <div className="typing-indicator"><span /><span /><span /></div>
+              </div>
+            )}
+            <div ref={endRef} />
+          </div>
+          <div className="chat-input-wrap">
+            <div className="chat-input-row">
+              <textarea id="chat-input" rows={1} value={input}
+                placeholder="Ask about tubulars, rigs, classifications…  (Enter to send · Shift+Enter for newline)"
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKey} />
+              <button id="chat-send" disabled={typing || !input.trim()} onClick={() => ask()}>Send</button>
+            </div>
+          </div>
+        </div>
+
+        <aside className="chat-side">
+          <div>
+            <h4>Try Asking</h4>
+            <div className="suggest-list" id="suggest-list">
+              {SUGGESTIONS.map((s) => (
+                <button key={s} className="suggest" onClick={() => ask(s)}>{s}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h4>What I Can Help With</h4>
+            <ul className="ai-cap-list">
+              {CAPABILITIES.map((c) => <li key={c}>{c}</li>)}
+            </ul>
+          </div>
+          <div>
+            <h4>Limitations</h4>
+            <ul className="ai-cap-list">
+              {LIMITATIONS.map((l) => <li key={l}>{l}</li>)}
+            </ul>
+          </div>
+        </aside>
       </div>
-      <div style={{ display: 'flex', gap: 8, padding: '10px 16px 16px' }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') ask(); }}
-          placeholder="Ask about your tubular fleet…"
-          style={{ flex: 1, background: 'var(--panel)', color: 'var(--ink)', border: '1px solid var(--line2)', borderRadius: 9, padding: '10px 13px', fontSize: 13.5 }} />
-        <button onClick={ask}
-          style={{ border: 0, background: 'var(--accent)', color: '#fff', padding: '0 20px', borderRadius: 9, fontWeight: 700, cursor: 'pointer' }}>
-          Ask
-        </button>
-      </div>
-    </div>
+    </section>
   );
 }

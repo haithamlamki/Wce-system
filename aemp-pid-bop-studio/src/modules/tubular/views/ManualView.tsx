@@ -1,90 +1,131 @@
 // ============================================================================
-//  User Manual — maintainable module documentation. Rewritten from the
-//  prototype's manual: all references to browser local storage are gone —
-//  data lives in the cloud database with per-unit authorization and a full
-//  audit trail.
+//  User Manual — pixel-faithful port of the prototype's #view-manual: a
+//  jump-to select and per-page ref-card sections plus the FAQ table. Content
+//  describes the production behavior (cloud database, audited saves, real
+//  order workflow) — the prototype's localStorage/demo answers were corrected
+//  (flagged deviation in the plan).
 // ============================================================================
+import { useState } from 'react';
 
-const h3: React.CSSProperties = { fontFamily: 'var(--disp)', margin: '20px 0 6px' };
-const p: React.CSSProperties = { color: 'var(--dim)', fontSize: 13.5, lineHeight: 1.65, margin: '0 0 8px' };
+interface ManualSection { id: string; ico: string; title: string; body: string[] }
+
+const SECTIONS: ManualSection[] = [
+  {
+    id: 'man-dashboard', ico: '▦', title: 'Dashboard',
+    body: [
+      'The Dashboard is the live fleet position. Six KPI cards summarise units reporting, contracted quantity and the API RP 7G class mix; three live cards track pipe orders, contracts needing attention and fleet utilization (serviceable ÷ contracted).',
+      'Charts break the fleet down by tubular type, class mix, unit and contract variance. The Items Requiring Attention table lists every line that is short of contract, holds scrap, or has joints flagged for inspection.',
+      'Use the Filter select to scope everything to a single Rig/Hoist. Figures are computed from the database on every refresh — nothing is hardcoded.',
+    ],
+  },
+  {
+    id: 'man-fleet', ico: '⊟', title: 'Fleet Inventory',
+    body: [
+      'Fleet-Wide view shows a card per unit (click a card to drill into that unit) above the full classification table. Single Unit view scopes the table to one Rig/Hoist.',
+      'Each row shows the contract quantity, the four API RP 7G classes, needs-inspection count, computed on-board total, variance and a status badge. The Tubular Filter narrows by category.',
+    ],
+  },
+  {
+    id: 'man-entry', ico: '✎', title: 'Data Entry',
+    body: [
+      'Work top to bottom: ① choose your Rig/Hoist, date and tubular; ② enter the classification quantities; ③ record movements, rental date and remarks; then Save Record. Each save is a full audited submission.',
+      'On Board Total is always computed (Premium + Class 2 + Class 3 + Scrap) and cannot be typed; Contractually Less shows OK or the shortfall of Premium + Class 2 against contract.',
+      'The Existing Records table lists your unit\'s current rows — Edit loads a row back into the form, Delete archives it (history is never destroyed). The Batch Grid Mode toggle opens the Excel-style sheet for whole-month entry.',
+      'Spreadsheet Sync parses the monthly workbook; staged imports are previewed and committed on the Import tab with a reconciliation report.',
+    ],
+  },
+  {
+    id: 'man-chat', ico: '◈', title: 'AI Assistant',
+    body: [
+      'Ask about totals, shortfalls, scrap, inspections, rig comparisons or a specific unit. Every number in an answer is computed from the records your account is authorized to see — the assistant never estimates.',
+      'Use the suggested questions in the sidebar as starting points. The assistant is read-only; make changes through Data Entry.',
+    ],
+  },
+  {
+    id: 'man-contracts', ico: '▤', title: 'Contracts',
+    body: [
+      'Each card shows a rig\'s client contract with its committed tubular lines. On Hand counts serviceable stock (Premium + Class 2) only; per-line status shows OK, SHORT or MISSING, and the card badge rolls up compliance including expiry (≤30 days shows EXPIRING).',
+      'Administrators create and edit contracts through the modal. Draft contracts can be deleted; anything that has been active is archived instead so the history is preserved.',
+      'The certificate utility renders a printable classification statement for any unit + tubular from the live records.',
+    ],
+  },
+  {
+    id: 'man-reference', ico: '◐', title: 'Reference',
+    body: [
+      'Quick-reference tables for API RP 7G classification limits, band markings, inspection zones and related standards. This page is guidance only — the controlled master data is the tubular catalog, and the current edition of API RP 7G is always authoritative.',
+    ],
+  },
+  {
+    id: 'man-map', ico: '◎', title: 'Asset Map',
+    body: [
+      'Shows Abraj sites, logistics points, rigs and hoists across Oman. Locations are shared database records; administrators can add, edit or remove them (Admin Mode toggle, then click the map or use a marker popup).',
+      'The distance calculator, trip cost planner and distance matrix use straight-line (haversine) distances — operational coordinates are never sent to external routing services.',
+    ],
+  },
+  {
+    id: 'man-orders', ico: '⛟', title: 'Order Pipe & Tracking',
+    body: [
+      'The fleet pool lists serviceable stock (Premium + Class 2, minus existing holds) available outside your rig. Submit a request with quantity and priority; an authorized approver reserves stock, and the yard/logistics team advances the order through Picked at Yard and In Transit.',
+      'Every stage change is a real, timestamped action by a responsible person — orders never advance automatically. Confirm delivery when the pipe arrives; that is what moves stock onto your rig\'s records. Cancelling releases any reserved stock.',
+    ],
+  },
+  {
+    id: 'man-theme', ico: '☀/☾', title: 'Theme',
+    body: [
+      'Use the topbar toggle to pick Light, Dark or Auto. Auto follows your device\'s light/dark preference. The choice is remembered on this device and also applies to the P&ID / BOP Studio module.',
+    ],
+  },
+];
+
+const FAQ: Array<[string, string]> = [
+  ['Where is my data stored?', 'In the shared cloud database (Supabase) with per-unit authorization and a full audit trail — not in your browser. Every device sees the same data.'],
+  ['Why can\'t I see a unit or page?', 'Visibility follows your account\'s permissions and unit assignments. Ask an administrator to grant access or assign your Rig/Hoist.'],
+  ['Can I undo an edit?', 'Every save is kept as an immutable submission, and deleted rows are archived rather than destroyed. An administrator can restore prior values from the audit history.'],
+  ['Do orders advance automatically?', 'No. Every stage — approval, picking, transit, delivery — is an explicit action by an authorized person, with a real timestamp.'],
+  ['Do map distances need internet routing services?', 'No. Distances are straight-line (haversine) computed locally; only standard map tiles are fetched. Coordinates never leave the system.'],
+];
 
 export default function ManualView() {
+  const [jump, setJump] = useState('');
+
+  const jumpTo = (id: string) => {
+    setJump(id);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
-    <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: '16px 24px', maxWidth: 820 }}>
-      <h2 style={{ fontFamily: 'var(--disp)', margin: 0 }}>Tubular Fleet Management — User Manual</h2>
-      <p style={p}>
-        This module tracks the tubular fleet (drill pipe, HWDP, drill collars, pup joints) across all
-        Rigs and Hoists. All data is stored centrally in the company database — nothing lives in your
-        browser. What you can see and change is controlled by your account's permissions and unit
-        assignments; every save is recorded with who/when and can be audited.
-      </p>
+    <section className="view" id="view-manual">
+      <div className="section-head">
+        <div className="section-title">User Manual</div>
+        <div className="section-sub">A complete guide to every page in the Abraj Tubular Inventory system</div>
+      </div>
 
-      <h3 style={h3}>Dashboard</h3>
-      <p style={p}>
-        Live fleet KPIs computed from the current records: contract position per tubular type, class
-        mix, utilization (serviceable ÷ contract), items requiring attention, and a reconciliation
-        panel for legacy on-board totals that don't match their classification sum.
-      </p>
+      <div className="unit-bar">
+        <span className="lbl">Jump to</span>
+        <select id="manual-jump" value={jump || 'man-dashboard'} onChange={(e) => jumpTo(e.target.value)}>
+          {SECTIONS.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+          <option value="man-faq">FAQ &amp; Troubleshooting</option>
+        </select>
+      </div>
 
-      <h3 style={h3}>Data Entry (Rig/Hoist sheet)</h3>
-      <p style={p}>
-        The grid mirrors the monthly Excel sheet: rows grouped by category, the same 16 columns, and
-        the same rules. <strong>On Board Total is computed</strong> (Premium + Class 2 + Class 3 + Scrap) and
-        cannot be typed; <strong>Contractually Less</strong> shows OK or the negative shortfall of Premium +
-        Class 2 against On Contract. Navigate with arrow keys / Tab / Enter, paste blocks straight
-        from Excel, and press <em>Save sheet</em> to submit the whole batch at once. Removing a row archives
-        it — history is never destroyed. Invalid numbers block the save; nothing is silently zeroed.
-      </p>
+      {SECTIONS.map((s) => (
+        <div className="ref-card" id={s.id} key={s.id} style={{ marginBottom: 14 }}>
+          <h4>{s.ico} {s.title}</h4>
+          {s.body.map((p, i) => <p key={i} style={{ marginBottom: 8 }}>{p}</p>)}
+        </div>
+      ))}
 
-      <h3 style={h3}>Fleet Inventory &amp; Master Register</h3>
-      <p style={p}>
-        Fleet Inventory aggregates by tubular type (duplicates roll up only in the view); the Master
-        Register lists every record row across your visible units with filters, search, sorting and a
-        hardened CSV export.
-      </p>
-
-      <h3 style={h3}>Transfers</h3>
-      <p style={p}>
-        A transfer first commits stock under "To Other Rig". Quantities move only when the receiving
-        unit confirms receipt — then, in one transaction, premium stock leaves the source and arrives
-        at the destination, and both units get an audit entry. Cancelling releases the commitment.
-      </p>
-
-      <h3 style={h3}>Pipe Orders</h3>
-      <p style={p}>
-        Orders progress Requested → Approved → Picked at Yard → In Transit → Delivered, each step an
-        explicit action by an authorized person (no automatic progression). Approval reserves stock
-        from a named source; only Premium + Class 2 is orderable. Delivery is what updates the
-        receiving unit. Cancellation releases all reservations.
-      </p>
-
-      <h3 style={h3}>Contracts</h3>
-      <p style={p}>
-        Contracts carry required tubular lines; compliance compares serviceable stock (Premium +
-        Class 2) with each line. Contracts that have been active can be archived but never deleted.
-      </p>
-
-      <h3 style={h3}>Asset Map</h3>
-      <p style={p}>
-        Unit locations and in-transit shipments. Distances are straight-line; operational coordinates
-        are never sent to external routing services.
-      </p>
-
-      <h3 style={h3}>Workbook Import (administrators)</h3>
-      <p style={p}>
-        The importer reads every Rig/Hoist sheet of the monthly workbook, previews issues (unknown
-        descriptions, typed on-board totals that disagree with classifications, duplicates), and
-        commits in a single transaction with a per-sheet reconciliation report. A committed import can
-        be rolled back until a unit receives newer field entries.
-      </p>
-
-      <h3 style={h3}>Access</h3>
-      <p style={p}>
-        Rig users see and enter data for their assigned unit(s) only. Fleet-wide visibility, approvals,
-        order management, contracts, catalog and imports are separate permissions granted by an
-        administrator. Hiding a button is not the security boundary — the database enforces every rule
-        again on the server.
-      </p>
-    </div>
+      <div className="ref-card" id="man-faq">
+        <h4>FAQ &amp; Troubleshooting</h4>
+        <table>
+          <thead><tr><th>Question</th><th>Answer</th></tr></thead>
+          <tbody>
+            {FAQ.map(([q, a]) => (
+              <tr key={q}><td style={{ whiteSpace: 'normal' }}>{q}</td><td style={{ whiteSpace: 'normal' }}>{a}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
