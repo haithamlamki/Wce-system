@@ -8,6 +8,8 @@ import { NavLink, Route, Routes } from 'react-router-dom';
 import { useAuth } from '../../state/AuthContext';
 import { TubularProvider, useTubular } from './state/TubularContext';
 import { visibleTabs } from './lib/permissions';
+import DataEntryView from './views/DataEntryView';
+import FleetInventoryView from './views/FleetInventoryView';
 
 function Placeholder({ title, note }: { title: string; note: string }) {
   return (
@@ -69,8 +71,8 @@ function AccessGate() {
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <Routes>
           <Route index element={<DashboardStub />} />
-          <Route path="inventory" element={<Placeholder title="Fleet Inventory" note="Arrives with the Data Entry release." />} />
-          <Route path="entry" element={<Placeholder title="Data Entry" note="The Excel-style Rig/Hoist grid arrives in the next release." />} />
+          <Route path="inventory" element={<FleetInventoryView />} />
+          <Route path="entry" element={<DataEntryView />} />
           <Route path="master" element={<Placeholder title="Master Register" note="Arrives with the reporting release." />} />
           <Route path="contracts" element={<Placeholder title="Contracts" note="Arrives with the contracts release." />} />
           <Route path="orders" element={<Placeholder title="Order Pipe & Delivery" note="Arrives with the orders release." />} />
