@@ -15,6 +15,7 @@ import MasterRegisterView from './views/MasterRegisterView';
 import MovementsView from './views/MovementsView';
 import ContractsView from './views/ContractsView';
 import OrdersView from './views/OrdersView';
+import NotificationsBell from './components/NotificationsBell';
 import TubularDashboardView from './views/TubularDashboardView';
 
 function Placeholder({ title, note }: { title: string; note: string }) {
@@ -51,18 +52,18 @@ function AccessGate() {
   const tabs = visibleTabs(role, granted);
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <nav
-        className="tabs"
-        aria-label="Tubular module"
-        style={{ margin: '10px 16px 0', alignSelf: 'flex-start', flexWrap: 'wrap' }}
-      >
-        {tabs.map((t) => (
-          <NavLink key={t.to} to={t.to} end={t.to === '/tubular'}
-            className={({ isActive }) => (isActive ? 'active' : '')}>
-            {t.label}
-          </NavLink>
-        ))}
-      </nav>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '10px 16px 0' }}>
+        <nav className="tabs" aria-label="Tubular module" style={{ flexWrap: 'wrap' }}>
+          {tabs.map((t) => (
+            <NavLink key={t.to} to={t.to} end={t.to === '/tubular'}
+              className={({ isActive }) => (isActive ? 'active' : '')}>
+              {t.label}
+            </NavLink>
+          ))}
+        </nav>
+        <div style={{ flex: 1 }} />
+        <NotificationsBell />
+      </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <Routes>
           <Route index element={<TubularDashboardView />} />
