@@ -1,8 +1,9 @@
 // ============================================================================
 //  Workbook Import wizard — parse (client, strict) → preview per sheet →
-//  stage (server) → commit (transactional) → reconciliation summary.
-//  Dashboard/Master are never imported (derived). Rollback is available on
-//  committed batches until a unit receives newer field entries (server rule).
+//  stage (server) → commit (transactional) → reconciliation summary, wrapped
+//  in the prototype design language (section-head, panel, tbl-scroll, btn,
+//  st badges). Dashboard/Master are never imported (derived). Rollback is
+//  available on committed batches until a unit receives newer field entries.
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
@@ -14,9 +15,9 @@ interface BatchRow {
   stats: Record<string, number> | null;
 }
 
-const btn: React.CSSProperties = { border: '1px solid var(--line2)', background: 'var(--panel)', color: 'var(--ink)', padding: '7px 14px', borderRadius: 7, fontWeight: 600, cursor: 'pointer' };
-const primary: React.CSSProperties = { ...btn, border: 0, background: 'var(--accent)', color: '#fff' };
-const tdS: React.CSSProperties = { border: '1px solid var(--line)', padding: '5px 8px', font: '12px var(--mono)', textAlign: 'right' };
+const BATCH_ST: Record<string, string> = {
+  committed: 'surplus', staged: 'balanced', rolled_back: 'nodata', failed: 'short',
+};
 
 async function sha256Hex(data: ArrayBuffer): Promise<string> {
   const h = await crypto.subtle.digest('SHA-256', data);
@@ -89,107 +90,146 @@ export default function ImportView() {
   };
 
   if (!hasPerm('import')) {
-    return <div className="placeholder"><strong>Workbook Import</strong>You do not have the import permission.</div>;
+    return (
+      <section className="view">
+        <div className="empty-cert"><div className="ico">⬆</div><div className="title">Workbook Import</div><div className="desc">You do not have the import permission.</div></div>
+      </section>
+    );
   }
 
   return (
-    <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: 16, maxWidth: 1100 }}>
-      <h2 style={{ fontFamily: 'var(--disp)', margin: '0 0 4px' }}>Workbook Import</h2>
-      <p style={{ color: 'var(--dim)', marginTop: 0, fontSize: 13 }}>
-        Imports every Rig/Hoist sheet of the Tubular Monitoring workbook. Dashboard and Master are derived and are not import sources.
-        Nothing is written until you confirm the preview; a committed import can be rolled back until a unit receives newer field entries.
-      </p>
+    <section className="view" id="view-import">
+      <div className="section-head">
+        <div className="section-title">Workbook Import</div>
+        <div className="section-sub">Monthly Tubular Monitoring workbook · staged, previewed, committed transactionally</div>
+      </div>
 
-      {error && <div role="alert" style={{ border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 13 }}>{error}</div>}
+      <div className="amap-note" style={{ marginBottom: 14 }}>
+        Imports every Rig/Hoist sheet. Dashboard and Master are derived and are not import sources.
+        Nothing is written until you confirm the preview; a committed import can be rolled back until
+        a unit receives newer field entries.
+      </div>
+
+      {error && (
+        <div role="alert" className="panel" style={{ borderColor: 'var(--red)', color: 'var(--red-2)', marginBottom: 14, fontSize: 12.5 }}>
+          {error}
+        </div>
+      )}
 
       {phase === 'pick' && (
-        <label style={{ ...primary, display: 'inline-block' }}>
-          Choose workbook (.xlsx)…
+        <label className="btn" style={{ display: 'inline-flex' }}>
+          ⬆ Choose workbook (.xlsx)…
           <input type="file" accept=".xlsx" style={{ display: 'none' }}
             onChange={(e) => void onFile(e.target.files?.[0])} />
         </label>
       )}
 
       {parsed && phase !== 'pick' && (
-        <>
-          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', margin: '10px 0', fontFamily: 'var(--mono)', fontSize: 12 }}>
-            <span>{filename}</span>
-            <span>{parsed.stats.unitSheets} unit sheets</span>
-            <span>{parsed.stats.dataRows} rows</span>
-            <span style={{ color: parsed.stats.errorRows ? 'var(--red)' : 'var(--green)' }}>{parsed.stats.errorRows} error rows</span>
-            <span style={{ color: 'var(--amber)' }}>{parsed.stats.overrideRows} reported-total overrides</span>
+        <div className="panel" style={{ marginBottom: 14 }}>
+          <div className="panel-head">
+            <h3>Preview — {filename}</h3>
+            <span className="badge">{parsed.stats.unitSheets} unit sheets · {parsed.stats.dataRows} rows</span>
           </div>
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 12, marginBottom: 10 }}>
-            Totals — contract {parsed.stats.totals.onContract} · premium {parsed.stats.totals.premium} · class2 {parsed.stats.totals.class2} · class3 {parsed.stats.totals.class3} · scrap {parsed.stats.totals.scrap} · needs-insp {parsed.stats.totals.needsInspection}
+
+          <div className="unit-bar" style={{ marginBottom: 12 }}>
+            <span className="meta-chip">Errors: <span className="v" style={{ color: parsed.stats.errorRows ? 'var(--red-2)' : 'var(--green)' }}>{parsed.stats.errorRows}</span></span>
+            <span className="meta-chip">Reported-total overrides: <span className="v" style={{ color: 'var(--c-class3)' }}>{parsed.stats.overrideRows}</span></span>
+            <span className="meta-chip">Contract: <span className="v">{parsed.stats.totals.onContract}</span></span>
+            <span className="meta-chip">Premium: <span className="v">{parsed.stats.totals.premium}</span></span>
+            <span className="meta-chip">C2: <span className="v">{parsed.stats.totals.class2}</span></span>
+            <span className="meta-chip">C3: <span className="v">{parsed.stats.totals.class3}</span></span>
+            <span className="meta-chip">Scrap: <span className="v">{parsed.stats.totals.scrap}</span></span>
+            <span className="meta-chip">Needs Insp: <span className="v">{parsed.stats.totals.needsInspection}</span></span>
           </div>
+
           {parsed.globalIssues.length > 0 && (
-            <ul style={{ color: 'var(--dim)', fontSize: 12.5 }}>
+            <ul style={{ color: 'var(--text-3)', fontSize: 12, margin: '0 0 12px 18px' }}>
               {parsed.globalIssues.map((i, k) => <li key={k}>[{i.level}] {i.message}</li>)}
             </ul>
           )}
-          <table style={{ borderCollapse: 'collapse', marginBottom: 14 }}>
-            <thead>
-              <tr>{['SHEET', 'DATE', 'ROWS', 'ERRORS', 'WARNINGS', 'OVERRIDES', 'CONTRACT REF'].map((h) => (
-                <th key={h} style={{ ...tdS, background: 'var(--sunk)', color: 'var(--dim)' }}>{h}</th>))}
-              </tr>
-            </thead>
-            <tbody>
-              {parsed.units.map((u) => {
-                const errs = u.rows.reduce((n, r) => n + (r.issues.some((i) => i.level === 'error') ? 1 : 0), 0);
-                const warns = u.rows.reduce((n, r) => n + r.issues.filter((i) => i.level === 'warning').length, 0) + u.issues.filter((i) => i.level === 'warning').length;
-                return (
-                  <tr key={u.sheetName}>
-                    <td style={{ ...tdS, textAlign: 'left' }}>{u.sheetName}</td>
-                    <td style={tdS}>{u.dateOfUpdate ?? '—'}</td>
-                    <td style={tdS}>{u.rows.length}</td>
-                    <td style={{ ...tdS, color: errs ? 'var(--red)' : undefined }}>{errs}</td>
-                    <td style={{ ...tdS, color: warns ? 'var(--amber)' : undefined }}>{warns}</td>
-                    <td style={tdS}>{u.rows.filter((r) => r.onBoardReported != null).length}</td>
-                    <td style={{ ...tdS, textAlign: 'left', color: 'var(--dim)' }}>{u.contractRef ?? ''}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
 
-          {phase === 'preview' && (
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button style={primary} onClick={() => void stageAndCommit()}>
-                Stage &amp; commit {parsed.stats.dataRows - parsed.stats.errorRows} rows
-              </button>
-              <button style={btn} onClick={() => { setParsed(null); setPhase('pick'); }}>Cancel</button>
-            </div>
-          )}
-          {phase === 'committing' && <div style={{ color: 'var(--dim)' }}>Committing…</div>}
+          <div className="tbl-scroll">
+            <table>
+              <thead>
+                <tr><th>Sheet</th><th className="mono">Date</th><th className="mono">Rows</th><th className="mono">Errors</th><th className="mono">Warnings</th><th className="mono">Overrides</th><th>Contract Ref</th></tr>
+              </thead>
+              <tbody>
+                {parsed.units.map((u) => {
+                  const errs = u.rows.reduce((n, r) => n + (r.issues.some((i) => i.level === 'error') ? 1 : 0), 0);
+                  const warns = u.rows.reduce((n, r) => n + r.issues.filter((i) => i.level === 'warning').length, 0) + u.issues.filter((i) => i.level === 'warning').length;
+                  return (
+                    <tr key={u.sheetName}>
+                      <td className="mono">{u.sheetName}</td>
+                      <td className="num">{u.dateOfUpdate ?? '—'}</td>
+                      <td className="num">{u.rows.length}</td>
+                      <td className="num" style={{ color: errs ? 'var(--red-2)' : undefined }}>{errs}</td>
+                      <td className="num" style={{ color: warns ? 'var(--c-class3)' : undefined }}>{warns}</td>
+                      <td className="num">{u.rows.filter((r) => r.onBoardReported != null).length}</td>
+                      <td style={{ color: 'var(--text-3)' }}>{u.contractRef ?? ''}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
+            {phase === 'preview' && (
+              <>
+                <button className="btn" onClick={() => void stageAndCommit()}>
+                  Stage &amp; commit {parsed.stats.dataRows - parsed.stats.errorRows} rows
+                </button>
+                <button className="btn alt" onClick={() => { setParsed(null); setPhase('pick'); }}>Cancel</button>
+              </>
+            )}
+            {phase === 'committing' && <span style={{ color: 'var(--text-3)', fontSize: 12.5 }}>Committing…</span>}
+            {phase === 'done' && result && (
+              <span className="st surplus">
+                ✔ Committed — inserted {result.inserted} · updated {result.updated} · skipped {result.skipped}
+              </span>
+            )}
+          </div>
           {phase === 'done' && result && (
-            <div style={{ border: '1px solid var(--green)', borderRadius: 8, padding: '10px 14px', color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 13 }}>
-              ✔ Committed — inserted {result.inserted} · updated {result.updated} · skipped {result.skipped}. Verify the Dashboard/Master totals against the workbook before approving the migration.
+            <div className="amap-note" style={{ marginTop: 10 }}>
+              Verify the Dashboard/Master totals against the workbook. Roll back below if anything is off.
             </div>
           )}
-        </>
+        </div>
       )}
 
-      <h3 style={{ fontFamily: 'var(--disp)', marginTop: 26 }}>Recent imports</h3>
-      <table style={{ borderCollapse: 'collapse' }}>
-        <tbody>
-          {batches.map((b) => (
-            <tr key={b.id}>
-              <td style={{ ...tdS, textAlign: 'left' }}>{new Date(b.uploaded_at).toLocaleString()}</td>
-              <td style={{ ...tdS, textAlign: 'left' }}>{b.filename}</td>
-              <td style={tdS}>{b.status}</td>
-              <td style={{ ...tdS, textAlign: 'left', color: 'var(--dim)' }}>
-                {b.stats ? `staged ${b.stats.staged ?? '—'} · inserted ${b.stats.inserted ?? '—'} · updated ${b.stats.updated ?? '—'} · skipped ${b.stats.skipped ?? '—'}` : ''}
-              </td>
-              <td style={tdS}>
-                {b.status === 'committed' && (
-                  <button style={{ ...btn, padding: '3px 10px', color: 'var(--red)' }} onClick={() => void rollback(b.id)}>Roll back</button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {batches.length === 0 && <tr><td style={{ ...tdS, textAlign: 'left', color: 'var(--faint)' }}>No imports yet.</td></tr>}
-        </tbody>
-      </table>
-    </div>
+      <div className="panel">
+        <div className="panel-head">
+          <h3>Recent Imports</h3>
+          <span className="badge">{batches.length} batches</span>
+        </div>
+        <div className="tbl-scroll">
+          <table>
+            <thead>
+              <tr><th>When</th><th>File</th><th>Status</th><th>Result</th><th /></tr>
+            </thead>
+            <tbody>
+              {batches.length === 0 && (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-3)' }}>No imports yet.</td></tr>
+              )}
+              {batches.map((b) => (
+                <tr key={b.id}>
+                  <td className="mono">{new Date(b.uploaded_at).toLocaleString()}</td>
+                  <td>{b.filename}</td>
+                  <td><span className={`st ${BATCH_ST[b.status] ?? 'nodata'}`}>{b.status.replace('_', ' ').toUpperCase()}</span></td>
+                  <td style={{ color: 'var(--text-3)' }}>
+                    {b.stats ? `staged ${b.stats.staged ?? '—'} · inserted ${b.stats.inserted ?? '—'} · updated ${b.stats.updated ?? '—'} · skipped ${b.stats.skipped ?? '—'}` : ''}
+                  </td>
+                  <td>
+                    {b.status === 'committed' && (
+                      <button className="btn-tr danger" onClick={() => void rollback(b.id)}>Roll back</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   );
 }

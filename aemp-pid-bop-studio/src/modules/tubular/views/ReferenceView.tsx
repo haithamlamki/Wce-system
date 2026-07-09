@@ -1,88 +1,120 @@
 // ============================================================================
-//  API RP 7G Reference — content carried over from the workbook's Reference
-//  sheet. NON-AUTHORITATIVE GUIDANCE: always defer to the current edition of
-//  API RP 7G. Values here are operational reference, not controlled master
-//  data (the controlled data is the Tubular Catalog).
+//  API RP 7G Reference — pixel-faithful port of the prototype's #view-ref:
+//  ref-grid with the four reference tables (classification, band marking,
+//  inspection zones, related standards) plus "How To Use This System".
+//  Non-authoritative guidance; the controlled master data is the catalog.
 // ============================================================================
 
-const tdS: React.CSSProperties = { border: '1px solid var(--line)', padding: '6px 10px', fontSize: 12.5, verticalAlign: 'top' };
-const thS: React.CSSProperties = { ...tdS, background: 'var(--sunk)', color: 'var(--dim)', font: '10.5px var(--mono)', whiteSpace: 'nowrap' };
-const h3: React.CSSProperties = { fontFamily: 'var(--disp)', margin: '20px 0 8px' };
-
-const CLASSES = [
-  ['PREMIUM', 'Remaining wall ≥ 80% of nominal', 'OD wear ≤ 3% of nominal OD', 'Two White Bands + one centre punch mark'],
-  ['CLASS 2', 'Remaining wall ≥ 70% of nominal', 'OD wear ≤ 4% of nominal OD', 'One Yellow Band + two centre punch marks'],
-  ['CLASS 3', 'Any imperfection exceeding Class 2 limits', 'N/A', 'One Orange Band + three centre punch marks'],
-  ['SCRAP', 'No longer fit for service', 'N/A', 'One Red Band'],
+const CLASSES: Array<[string, string, string]> = [
+  ['Premium', '≥ 80% of nominal wall', '≤ 3% of nominal OD'],
+  ['Class 2', '≥ 70% of nominal wall', '≤ 4% of nominal OD'],
+  ['Class 3', 'Exceeds Class 2 limits', 'N/A'],
+  ['Scrap', 'Not fit for service', 'N/A'],
 ];
 
-const ZONES = [
-  ['Zone A', 'Pipe body covered under drill pipe classification', 'Primary zone for wall thickness and OD wear measurements'],
-  ['Zone B', 'Tool joint — box and pin area', 'Condition rated separately (Red = scrap/shop repair, Green = field repairable)'],
-  ['Zone C', 'Transition / upset area between body and tool joint', 'May not be fully covered by standard measurements; inspect carefully'],
+const BANDS: Array<[string, string, string, string]> = [
+  ['Premium', 'Two White Bands', 'One centre punch mark', '#ffffff'],
+  ['Class 2', 'One Yellow Band', 'Two centre punch marks', 'var(--c-class2)'],
+  ['Class 3', 'One Orange Band', 'Three centre punch marks', 'var(--c-class3)'],
+  ['Scrap', 'One Red Band', '—', 'var(--c-scrap)'],
 ];
 
-const STANDARDS = [
+const ZONES: Array<[string, string, string]> = [
+  ['Zone A', 'Pipe body', 'Wall thickness & OD wear measurements'],
+  ['Zone B', 'Tool joint — box & pin', 'Condition rated separately (Red / Green)'],
+  ['Zone C', 'Transition / upset area', 'May not be fully covered by standard measurements — inspect carefully'],
+];
+
+const STANDARDS: Array<[string, string]> = [
   ['API RP 7G', 'Used drill pipe inspection, classification and reconditioning'],
   ['API Spec 5D', 'New drill pipe properties and specifications'],
   ['API Spec 7', 'Drill collar and rotary drill stem element dimensions and threads'],
-  ['API Standard 5CT', 'Casing and tubing classification and drift diameter requirements'],
+  ['API Std 5CT', 'Casing and tubing classification and drift diameter requirements'],
 ];
 
-const WEIGHTS = [
-  ['9-1/2" DC, 7-5/8" REG', '217.2 lb/ft', '323.2 kg/m'],
-  ['8-1/2" DC, 6-5/8" REG', '~175 lb/ft', '~260 kg/m'],
-  ['8-1/4" DC, 6-5/8" REG', '150.3 lb/ft', '223.7 kg/m'],
-  ['6-3/4" DC, NC50', '101.4 lb/ft', '150.9 kg/m'],
-  ['6-1/2" DC, 4" IF', '~85 lb/ft', '~126 kg/m'],
-  ['6-1/4" DC, 4" IF (NC46)', '~78 lb/ft', '~116 kg/m'],
-  ['6-1/2" DC, 4-1/2" IF NC50', '~90 lb/ft', '~134 kg/m'],
-  ['4-3/4" DC, NC38', '47.3 lb/ft', '70.4 kg/m'],
-  ['5-1/2" HWDP DELTA544', '56.5 lb/ft', '84.1 kg/m'],
-  ['5" HWDP NC50', '49.3 lb/ft', '73.4 kg/m'],
-  ['4" HWDP XT39', '30.5 lb/ft', '45.4 kg/m'],
-  ['3-1/2" HWDP NC38', '25.3 lb/ft', '37.7 kg/m'],
+const HOW_TO = [
+  'Open the Dashboard for the live fleet position — every figure is computed from the database.',
+  'Use Fleet Inventory to browse units and drill into per-tubular classification detail.',
+  'Enter monthly counts on the Data Entry page (form or batch grid) — saves are audited.',
+  'Ask the AI Assistant for totals, shortfalls, comparisons and inspection lists.',
+  'Manage client commitments and compliance on the Contracts page.',
+  'Track locations and plan trips on the Asset Map (straight-line distances).',
+  'Request pipe and follow every delivery stage on Order Pipe.',
+  'Work through the Training modules, then check your knowledge with the quiz.',
 ];
 
 export default function ReferenceView() {
   return (
-    <div style={{ flex: 1, minWidth: 0, overflow: 'auto', padding: '16px 24px', maxWidth: 900 }}>
-      <h2 style={{ fontFamily: 'var(--disp)', margin: 0 }}>Tubular Inspection &amp; Classification — Reference</h2>
-      <p style={{ color: 'var(--amber)', fontSize: 12.5, border: '1px solid var(--amber)', borderRadius: 8, padding: '8px 12px' }}>
-        ⚠ Non-authoritative guidance for internal reference only. Always refer to the current edition of API RP 7G
-        for official requirements. Controlled master data (the tubular catalog) is managed separately by administrators.
-      </p>
+    <section className="view" id="view-ref">
+      <div className="section-head">
+        <div className="section-title">API RP 7G Reference</div>
+        <div className="section-sub">Drill pipe classification &amp; inspection standards · non-authoritative guidance</div>
+      </div>
 
-      <h3 style={h3}>1 · Drill pipe classification (API RP 7G)</h3>
-      <table style={{ borderCollapse: 'collapse', width: '100%', background: 'var(--panel)' }}>
-        <thead><tr>{['CLASS', 'WALL THICKNESS', 'MAX OD WEAR', 'BAND MARKING'].map((h) => <th key={h} style={thS}>{h}</th>)}</tr></thead>
-        <tbody>{CLASSES.map((r) => (
-          <tr key={r[0]}>{r.map((c, i) => <td key={i} style={{ ...tdS, fontWeight: i === 0 ? 700 : 400 }}>{c}</td>)}</tr>
-        ))}</tbody>
-      </table>
+      <div className="ref-grid">
+        <div className="ref-card">
+          <h4>Drill Pipe Classification (API RP 7G)</h4>
+          <table className="ref-class-tbl">
+            <thead><tr><th>Class</th><th>Wall Thickness</th><th>Max OD Wear</th></tr></thead>
+            <tbody>
+              {CLASSES.map(([cls, wall, od]) => (
+                <tr key={cls}><td>{cls}</td><td>{wall}</td><td>{od}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-      <h3 style={h3}>2 · Inspection zones</h3>
-      <table style={{ borderCollapse: 'collapse', width: '100%', background: 'var(--panel)' }}>
-        <thead><tr>{['ZONE', 'AREA COVERED', 'NOTES'].map((h) => <th key={h} style={thS}>{h}</th>)}</tr></thead>
-        <tbody>{ZONES.map((r) => (
-          <tr key={r[0]}>{r.map((c, i) => <td key={i} style={{ ...tdS, fontWeight: i === 0 ? 700 : 400 }}>{c}</td>)}</tr>
-        ))}</tbody>
-      </table>
+        <div className="ref-card">
+          <h4>Band Marking Convention</h4>
+          <table className="ref-class-tbl">
+            <thead><tr><th>Class</th><th>Band Marking</th><th>Punch Marks</th></tr></thead>
+            <tbody>
+              {BANDS.map(([cls, band, punch, color]) => (
+                <tr key={cls}>
+                  <td>{cls}</td>
+                  <td><span className="color-band" style={{ background: color }} />{band}</td>
+                  <td>{punch}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-      <h3 style={h3}>3 · Related standards</h3>
-      <table style={{ borderCollapse: 'collapse', width: '100%', background: 'var(--panel)' }}>
-        <tbody>{STANDARDS.map((r) => (
-          <tr key={r[0]}><td style={{ ...tdS, fontWeight: 700, whiteSpace: 'nowrap' }}>{r[0]}</td><td style={tdS}>{r[1]}</td></tr>
-        ))}</tbody>
-      </table>
+        <div className="ref-card">
+          <h4>Inspection Zones</h4>
+          <table>
+            <thead><tr><th>Zone</th><th>Area Covered</th><th>Notes</th></tr></thead>
+            <tbody>
+              {ZONES.map(([zone, area, notes]) => (
+                <tr key={zone}><td className="mono">{zone}</td><td>{area}</td><td>{notes}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-      <h3 style={h3}>4 · Tubular nominal weights (reference)</h3>
-      <table style={{ borderCollapse: 'collapse', width: '100%', background: 'var(--panel)' }}>
-        <thead><tr>{['DESCRIPTION', 'NOMINAL WEIGHT', 'METRIC'].map((h) => <th key={h} style={thS}>{h}</th>)}</tr></thead>
-        <tbody>{WEIGHTS.map((r) => (
-          <tr key={r[0]}>{r.map((c, i) => <td key={i} style={tdS}>{c}</td>)}</tr>
-        ))}</tbody>
-      </table>
-    </div>
+        <div className="ref-card">
+          <h4>Related Standards</h4>
+          <table>
+            <thead><tr><th>Standard</th><th>Scope</th></tr></thead>
+            <tbody>
+              {STANDARDS.map(([std, scope]) => (
+                <tr key={std}><td className="mono">{std}</td><td>{scope}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="ref-card" style={{ marginTop: 14 }}>
+        <h4>How To Use This System</h4>
+        <ol>
+          {HOW_TO.map((h) => <li key={h}>{h}</li>)}
+        </ol>
+        <p style={{ marginTop: 10, color: 'var(--text-3)' }}>
+          Reference values on this page are operational guidance only — always refer to the current
+          edition of API RP 7G for official requirements.
+        </p>
+      </div>
+    </section>
   );
 }
