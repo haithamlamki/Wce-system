@@ -61,6 +61,7 @@ export const TUBULAR_TABS: TubularTab[] = [
   { to: '/tubular/reference', label: 'Reference', requires: null },
   { to: '/tubular/training', label: 'Training', requires: null },
   { to: '/tubular/manual', label: 'Manual', requires: null },
+  { to: '/tubular/assistant', label: 'Assistant', requires: null },
   { to: '/tubular/import', label: 'Import', requires: 'import' },
 ];
 

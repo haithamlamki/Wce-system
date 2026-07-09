@@ -16,6 +16,10 @@ import MovementsView from './views/MovementsView';
 import ContractsView from './views/ContractsView';
 import OrdersView from './views/OrdersView';
 import NotificationsBell from './components/NotificationsBell';
+import ReferenceView from './views/ReferenceView';
+import ManualView from './views/ManualView';
+import TrainingView from './views/TrainingView';
+import AssistantView from './views/AssistantView';
 import { lazy, Suspense } from 'react';
 
 // Leaflet is heavy and map-only — keep it out of the main tubular chunk.
@@ -82,9 +86,10 @@ function AccessGate() {
               <MapView />
             </Suspense>
           } />
-          <Route path="reference" element={<Placeholder title="API RP 7G Reference" note="Arrives with the reference release." />} />
-          <Route path="training" element={<Placeholder title="Training" note="Arrives with the training release." />} />
-          <Route path="manual" element={<Placeholder title="User Manual" note="Arrives with the documentation release." />} />
+          <Route path="reference" element={<ReferenceView />} />
+          <Route path="training" element={<TrainingView />} />
+          <Route path="manual" element={<ManualView />} />
+          <Route path="assistant" element={<AssistantView />} />
           <Route path="import" element={<ImportView />} />
           <Route path="*" element={<Placeholder title="Not found" note="This Tubular page does not exist." />} />
         </Routes>
