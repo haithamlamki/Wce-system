@@ -161,8 +161,12 @@ function Gate({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void 
   if (enabled && !session && !skipped) {
     return <LoginScreen onSkip={() => setSkipped(true)} />;
   }
+  // Keying the provider on the user id force-remounts ALL project state when the
+  // effective user changes (e.g. a different admin signs in on a shared browser),
+  // so one admin's in-memory project/cloudId/version can never linger into
+  // another admin's session and get saved to the wrong record.
   return (
-    <ProjectProvider>
+    <ProjectProvider key={session?.user?.id ?? 'anon'}>
       <Shell theme={theme} cycleTheme={cycleTheme} />
     </ProjectProvider>
   );

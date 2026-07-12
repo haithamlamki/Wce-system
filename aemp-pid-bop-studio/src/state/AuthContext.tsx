@@ -7,6 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import type { Session, User } from '@supabase/supabase-js';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { AuthRaceGuard } from '../lib/authRace';
+import { clearAutosave } from '../lib/persistence';
 
 export type Role = 'admin' | 'field' | 'manager';
 
@@ -81,7 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { needsConfirmation: !data.session };
   }, []);
 
-  const signOut = useCallback(async () => { await supabase?.auth.signOut(); }, []);
+  const signOut = useCallback(async () => {
+    // Drop the leaving user's local draft so it can't be restored into the next
+    // person who signs in on this browser.
+    clearAutosave(session?.user?.id);
+    await supabase?.auth.signOut();
+  }, [session]);
 
   const updateRig = useCallback(async (newRig: string) => {
     if (!supabase || !session) return;

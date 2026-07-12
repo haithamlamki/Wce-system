@@ -220,13 +220,18 @@ interface ProjectCtx {
 const Ctx = createContext<ProjectCtx | null>(null);
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  const { role, rig, enabled: authEnabled } = useAuth();
+  const { user, role, rig, enabled: authEnabled } = useAuth();
+  // Autosave is scoped to the signed-in user so one admin's local draft can
+  // never be restored into another admin's editor on a shared browser. The
+  // provider is remounted (keyed on user.id in App.tsx) when the user changes,
+  // so this scope is stable for the lifetime of a session.
+  const autosaveScope = user?.id ?? 'local';
   // Allow-list (F9): only admin/manager can edit. A role that hasn't loaded
   // yet, or failed to load, is `null` and must stay read-only — it must never
   // be treated as an editor just because it isn't 'field'.
   const canEdit = canEditForRole(role);
   const [restored] = useState(() => {
-    const r = restore();
+    const r = restore(autosaveScope);
     mergeCustomSymbols(r?.customSymbols);
     seedSeqFromProject(r); // F8: don't restart the id counter below ids already in the restored project
     return r;
@@ -236,6 +241,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // first open (nothing autosaved) → show the date-first onboarding modal (FR-1)
   const [showOnboard, setShowOnboard] = useState(() => restored === null);
   const [cloudId, setCloudId] = useState<string | null>(null);
+  // The lock version of the currently-open cloud row (0026). Sent on Save for an
+  // optimistic compare-and-swap; null for a brand-new/unsaved draft (→ INSERT).
+  const [cloudVersion, setCloudVersion] = useState<number | null>(null);
   // register → diagram focus request (FR-27): bump seq to re-center on focusId
   const [focusId, setFocusId] = useState<string | null>(null);
   const [focusSeq, setFocusSeq] = useState(0);
@@ -252,9 +260,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => autosave(project), 400);
+    saveTimer.current = setTimeout(() => autosave(project, autosaveScope), 400);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [project]);
+  }, [project, autosaveScope]);
 
   // ---- undo / redo history (F19: useHistory) --------------------------------
   // a jump in time shouldn't leave a stale selection pointing at nodes from
@@ -512,14 +520,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const saveCloud = useCallback(async (note?: string) => {
-    const id = await saveProjectCloud(project, cloudId ?? undefined, note);
-    if (id) setCloudId(id);
-    return id;
-  }, [project, cloudId]);
+    const res = await saveProjectCloud(project, cloudId ?? undefined, cloudVersion ?? undefined, note);
+    if (res) { setCloudId(res.id); setCloudVersion(res.version); }
+    return res?.id ?? null;
+  }, [project, cloudId, cloudVersion]);
   const listCloud = useCallback(() => listProjectsCloud(), []);
   const loadCloud = useCallback(async (id: string) => {
-    const loaded = await loadProjectCloud(id);
-    if (loaded) { seedSeqFromProject(loaded); setSelectedId(null); setCloudId(id); setProject(loaded); } // F8
+    const res = await loadProjectCloud(id);
+    if (res) { seedSeqFromProject(res.project); setSelectedId(null); setCloudId(id); setCloudVersion(res.version); setProject(res.project); } // F8
   }, [setSelectedId]);
   const listVersions = useCallback((projectId: string) => listProjectVersions(projectId), []);
   const restoreVersion = useCallback(async (versionId: string) => {
@@ -535,10 +543,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       publishedAt: status === 'published' ? new Date().toISOString() : project.publishedAt,
     };
     setProject(stamped);
-    const id = await saveProjectCloud(stamped, cloudId ?? undefined, note);
-    if (id) setCloudId(id);
-    return id;
-  }, [project, cloudId]);
+    const res = await saveProjectCloud(stamped, cloudId ?? undefined, cloudVersion ?? undefined, note);
+    if (res) { setCloudId(res.id); setCloudVersion(res.version); }
+    return res?.id ?? null;
+  }, [project, cloudId, cloudVersion]);
   const saveAsDraft = useCallback((note?: string) => saveWithStatus('draft', note), [saveWithStatus]);
   const publishFinal = useCallback((note?: string) => saveWithStatus('published', note), [saveWithStatus]);
 
@@ -552,7 +560,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const {
     units, refreshUnits, switchUnit, addUnit, renameUnit, removeUnit, showUnits, setShowUnits,
     unitTemplates, refreshUnitTemplates, startFromTemplate, saveUnitTemplate, listUnitDiagrams,
-  } = useUnits(role, rig, authEnabled, project, setProject, setCloudId, setSelectedId);
+  } = useUnits(role, rig, authEnabled, project, setProject, setCloudId, setCloudVersion, setSelectedId);
 
   // FR-27: select a node + signal the canvas to re-center on it
   const requestFocus = useCallback((id: string) => {

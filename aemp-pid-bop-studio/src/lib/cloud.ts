@@ -16,18 +16,61 @@ export interface ProjectSummary {
 
 const d = (v: string | null) => v ?? '';
 
+/** Thrown when a guarded save is rejected because the row changed since it was
+ *  loaded — i.e. another admin saved first. The caller must NOT retry blindly;
+ *  it should prompt the user to reload the latest or save as a copy. */
+export class SaveConflictError extends Error {
+  constructor() {
+    super('This diagram was changed by someone else since you opened it. Reopen the latest version, then re-apply your changes — or save as a new copy.');
+    this.name = 'SaveConflictError';
+  }
+}
+
+export interface SaveResult { id: string; version: number }
+
 /**
- * Upsert the current project AND append an immutable version snapshot to
- * project_versions for revision history (FR-59). Returns the project row id.
- * The version insert is best-effort so saving still works on databases that
- * predate migration 0005.
+ * Save the current project through the transactional `save_project_guarded` RPC
+ * (migration 0026): it does an optimistic version compare-and-swap so a STALE
+ * write is rejected with SaveConflictError instead of silently clobbering
+ * another admin's work, stamps created_by/updated_by server-side, and appends
+ * the immutable project_versions snapshot — all in one Postgres transaction.
+ *
+ * `expectedVersion` is the version the caller loaded (undefined ⇒ brand-new
+ * project → INSERT). Returns the row id and its new version.
+ *
+ * If the guard RPC isn't deployed yet (a DB predating 0026), it degrades to the
+ * legacy last-write-wins upsert so the app keeps working during rollout.
  */
-export async function saveProjectCloud(project: Project, id?: string, note?: string): Promise<string | null> {
+export async function saveProjectCloud(
+  project: Project, id?: string, expectedVersion?: number, note?: string,
+): Promise<SaveResult | null> {
   if (!supabase) return null;
-  // Stamp ownership (F4): the caller's uid on brand-new rows. On an UPDATE
-  // (id provided) we deliberately omit created_by so an existing owner is
-  // never overwritten — RLS (0003/0011) already scopes writes by rig, and
-  // insert policies require created_by = auth.uid() (or null) on new rows.
+  const { data, error } = await supabase.rpc('save_project_guarded', {
+    p_id: id ?? null,
+    p_expected_version: expectedVersion ?? null,
+    p_rig: project.meta.rig,
+    p_reference_date: project.meta.date || null,
+    p_inspector: project.meta.who || null,
+    p_revision: project.revision ?? 0,
+    p_data: project, // full doc incl. status/publishedAt (queried via data->>status)
+    p_note: note || null,
+  });
+  if (error) {
+    if (error.code === '40001' || /save_conflict/i.test(error.message)) throw new SaveConflictError();
+    // Guard RPC not deployed (pre-0026) → fall back to the legacy upsert.
+    if (error.code === 'PGRST202' || /save_project_guarded|could not find the function|does not exist/i.test(error.message)) {
+      return legacyUpsertProject(project, id, note);
+    }
+    throw new Error(error.message);
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as SaveResult | undefined;
+  return row ? { id: row.id, version: row.version } : null;
+}
+
+/** Legacy last-write-wins upsert — ONLY used as a pre-0026 fallback. Mirrors the
+ *  old ownership-stamping behaviour (created_by on new rows only). */
+async function legacyUpsertProject(project: Project, id?: string, note?: string): Promise<SaveResult | null> {
+  if (!supabase) return null;
   const { data: u } = await supabase.auth.getUser();
   const uid = u.user?.id ?? null;
   const row: {
@@ -38,7 +81,7 @@ export async function saveProjectCloud(project: Project, id?: string, note?: str
     reference_date: project.meta.date || null,
     inspector: project.meta.who || null,
     revision: project.revision ?? 0,
-    data: project, // full doc incl. status/publishedAt (queried via data->>status)
+    data: project,
   };
   if (id) row.id = id; else row.created_by = uid;
   const { data, error } = await supabase.from('projects').upsert(row).select('id').single();
@@ -47,18 +90,13 @@ export async function saveProjectCloud(project: Project, id?: string, note?: str
   if (newId) {
     try {
       await supabase.from('project_versions').insert({
-        project_id: newId,
-        revision: project.revision ?? 0,
-        rig_name: project.meta.rig,
-        reference_date: project.meta.date || null,
-        inspector: project.meta.who || null,
-        note: note || null,
-        data: project,
-        created_by: uid, // explicit so the 0011 INSERT policy is satisfied
+        project_id: newId, revision: project.revision ?? 0, rig_name: project.meta.rig,
+        reference_date: project.meta.date || null, inspector: project.meta.who || null,
+        note: note || null, data: project, created_by: uid,
       });
     } catch { /* project_versions is optional (pre-0005) */ }
   }
-  return newId;
+  return newId ? { id: newId, version: 0 } : null;
 }
 
 export interface ProjectVersionSummary {
@@ -102,12 +140,13 @@ export async function listProjectsCloud(rig?: string): Promise<ProjectSummary[]>
   return (data as ProjectSummary[]) ?? [];
 }
 
-/** Load a saved project document by id. */
-export async function loadProjectCloud(id: string): Promise<Project | null> {
+/** Load a saved project document by id, with its current lock `version` so a
+ *  later Save can compare-and-swap against it (0026). */
+export async function loadProjectCloud(id: string): Promise<{ project: Project; version: number } | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.from('projects').select('data').eq('id', id).single();
+  const { data, error } = await supabase.from('projects').select('data, version').eq('id', id).single();
   if (error) throw new Error(error.message);
-  return (data?.data as Project) ?? null;
+  return data?.data ? { project: data.data as Project, version: (data.version as number) ?? 1 } : null;
 }
 
 // ---- units (user-manageable rigs, migration 0008) --------------------------
@@ -178,14 +217,14 @@ export async function fetchUnitTemplate(rig: string): Promise<Project | null> {
 
 /** Latest saved project for a unit (any status), with its row id so Save upserts
  *  the same row. Used by the unit switcher for privileged users. */
-export async function fetchLatestProject(rig: string): Promise<{ id: string; data: Project } | null> {
+export async function fetchLatestProject(rig: string): Promise<{ id: string; data: Project; version: number } | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
-    .from('projects').select('id, data, updated_at')
+    .from('projects').select('id, data, version, updated_at')
     .eq('rig_name', rig).order('updated_at', { ascending: false }).limit(1);
   if (error) throw new Error(error.message);
-  const row = (data ?? [])[0] as { id: string; data: Project } | undefined;
-  return row ? { id: row.id, data: row.data } : null;
+  const row = (data ?? [])[0] as { id: string; data: Project; version: number } | undefined;
+  return row ? { id: row.id, data: row.data, version: row.version ?? 1 } : null;
 }
 
 /** Load the latest PUBLISHED final sheet for a rig (end-user view, FR §7).
