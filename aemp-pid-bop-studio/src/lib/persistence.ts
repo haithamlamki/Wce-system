@@ -5,8 +5,16 @@
 // ============================================================================
 import type { Project } from '../types';
 
-const KEY = 'aemp_pid_studio';
+const BASE_KEY = 'aemp_pid_studio';
 const FORMAT = 1;
+
+// Autosave is scoped per signed-in user so one admin's local draft can never be
+// restored into another admin's editor on a shared browser. `scope` is the user
+// id (or 'local' when offline / signed out). Legacy un-namespaced drafts (from
+// before this change) are migrated on first read.
+function keyFor(scope?: string): string {
+  return scope ? `${BASE_KEY}:${scope}` : BASE_KEY;
+}
 
 interface Envelope {
   format: number;
@@ -42,25 +50,33 @@ export function openFromFile(file: File): Promise<Project> {
   return file.text().then(parse);
 }
 
-/** Persist the working project to localStorage (autosave). */
-export function autosave(project: Project): void {
+/** Persist the working project to localStorage (autosave), scoped to `scope`
+ *  (the signed-in user id) so drafts never bleed across users. */
+export function autosave(project: Project, scope?: string): void {
   try {
-    localStorage.setItem(KEY, serialize(project));
+    localStorage.setItem(keyFor(scope), serialize(project));
   } catch {
     /* storage full / unavailable — ignore */
   }
 }
 
-/** Restore the last autosaved project, or null. */
-export function restore(): Project | null {
+/** Restore this scope's last autosaved project, or null. Falls back to (and
+ *  migrates) a legacy un-namespaced draft the first time a user loads. */
+export function restore(scope?: string): Project | null {
   try {
-    const text = localStorage.getItem(KEY);
+    let text = localStorage.getItem(keyFor(scope));
+    if (!text && scope) {
+      // one-time migration of a pre-namespacing draft into this user's scope
+      const legacy = localStorage.getItem(BASE_KEY);
+      if (legacy) { localStorage.setItem(keyFor(scope), legacy); localStorage.removeItem(BASE_KEY); text = legacy; }
+    }
     return text ? parse(text) : null;
   } catch {
     return null;
   }
 }
 
-export function clearAutosave(): void {
-  try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+/** Clear a scope's autosaved draft (called on sign-out for the leaving user). */
+export function clearAutosave(scope?: string): void {
+  try { localStorage.removeItem(keyFor(scope)); } catch { /* ignore */ }
 }

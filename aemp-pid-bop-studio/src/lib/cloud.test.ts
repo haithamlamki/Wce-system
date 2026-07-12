@@ -30,7 +30,10 @@ vi.mock('./supabase', () => ({
 }));
 
 // Imported after the mock so `saveProjectCloud` sees the mocked `supabase`.
-const { saveProjectCloud, replaceRigEquipment, renameUnit } = await import('./cloud');
+const {
+  saveProjectCloud, SaveConflictError, replaceRigEquipment, renameUnit,
+  listUnitTree, saveTemplateGuarded,
+} = await import('./cloud');
 
 const baseProject = {
   meta: { rig: 'Rig A', date: '2026-01-01', who: 'Alice' },
@@ -52,30 +55,51 @@ beforeEach(() => {
   });
 });
 
-describe('saveProjectCloud ownership stamping', () => {
-  it('stamps created_by on the projects upsert for a NEW project (no id)', async () => {
-    await saveProjectCloud(baseProject);
-    expect(upsertMock).toHaveBeenCalledTimes(1);
-    const row = upsertMock.mock.calls[0][0];
-    expect(row.created_by).toBe('user-123');
-    expect(row.id).toBeUndefined();
+describe('saveProjectCloud (guarded RPC — optimistic lock, 0026)', () => {
+  it('routes an UPDATE through save_project_guarded with the expected version + note, returning id+version', async () => {
+    rpcMock.mockResolvedValue({ data: [{ id: 'row-1', version: 4 }], error: null });
+    const res = await saveProjectCloud(baseProject, 'row-1', 3, 'a note');
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    const [fn, args] = rpcMock.mock.calls[0];
+    expect(fn).toBe('save_project_guarded');
+    expect(args.p_id).toBe('row-1');
+    expect(args.p_expected_version).toBe(3);
+    expect(args.p_rig).toBe('Rig A');
+    expect(args.p_note).toBe('a note');
+    expect(args.p_data).toBe(baseProject);
+    expect(res).toEqual({ id: 'row-1', version: 4 });
+    // no direct table writes — the whole save is one server-side transaction
+    expect(fromMock).not.toHaveBeenCalled();
   });
 
-  it('does NOT set created_by on the projects upsert when updating (id provided)', async () => {
-    await saveProjectCloud(baseProject, 'existing-id');
-    expect(upsertMock).toHaveBeenCalledTimes(1);
-    const row = upsertMock.mock.calls[0][0];
-    expect(row.id).toBe('existing-id');
-    expect('created_by' in row).toBe(false);
+  it('passes null id/version for a brand-new project (INSERT path)', async () => {
+    rpcMock.mockResolvedValue({ data: [{ id: 'new-id', version: 1 }], error: null });
+    const res = await saveProjectCloud(baseProject);
+    const args = rpcMock.mock.calls[0][1];
+    expect(args.p_id).toBeNull();
+    expect(args.p_expected_version).toBeNull();
+    expect(res).toEqual({ id: 'new-id', version: 1 });
   });
 
-  it('stamps created_by on the project_versions insert', async () => {
-    await saveProjectCloud(baseProject, undefined, 'a note');
+  it('throws SaveConflictError when the row changed since load (SQLSTATE 40001)', async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { code: '40001', message: 'save_conflict' } });
+    await expect(saveProjectCloud(baseProject, 'row-1', 2)).rejects.toBeInstanceOf(SaveConflictError);
+    expect(fromMock).not.toHaveBeenCalled(); // never overwrites
+  });
+
+  it('falls back to the legacy upsert when the guard RPC is not deployed (pre-0026)', async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.save_project_guarded' } });
+    const res = await saveProjectCloud(baseProject, undefined, undefined, 'a note');
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock.mock.calls[0][0].created_by).toBe('user-123'); // new row still stamped
     expect(insertMock).toHaveBeenCalledTimes(1);
-    const versionRow = insertMock.mock.calls[0][0];
-    expect(versionRow.created_by).toBe('user-123');
-    expect(versionRow.project_id).toBe('new-id');
-    expect(versionRow.note).toBe('a note');
+    expect(insertMock.mock.calls[0][0].note).toBe('a note');
+    expect(res).toEqual({ id: 'new-id', version: 0 });
+  });
+
+  it('propagates a non-conflict RPC error', async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { code: '42501', message: 'not_authorized' } });
+    await expect(saveProjectCloud(baseProject, 'row-1', 2)).rejects.toThrow('not_authorized');
   });
 
   it('returns null and never calls supabase when offline (no client configured)', async () => {
@@ -84,7 +108,31 @@ describe('saveProjectCloud ownership stamping', () => {
     const { saveProjectCloud: saveOffline } = await import('./cloud');
     const result = await saveOffline(baseProject);
     expect(result).toBeNull();
-    expect(fromMock).not.toHaveBeenCalled();
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Project Manager tree + template save (Phase 2)', () => {
+  it('listUnitTree calls the list_unit_tree RPC and returns the tree', async () => {
+    const tree = [{ id: 'u1', name: 'Rig 103', diagrams: [], templates: [] }];
+    rpcMock.mockResolvedValue({ data: tree, error: null });
+    const res = await listUnitTree();
+    expect(rpcMock).toHaveBeenCalledWith('list_unit_tree');
+    expect(res).toEqual(tree);
+  });
+
+  it('saveTemplateGuarded passes unit/name/version and returns id+version', async () => {
+    rpcMock.mockResolvedValue({ data: [{ id: 'tpl-1', version: 3 }], error: null });
+    const res = await saveTemplateGuarded('tpl-1', 2, 'u1', 'Startup', baseProject);
+    const [fn, args] = rpcMock.mock.calls[0];
+    expect(fn).toBe('save_template_guarded');
+    expect(args).toMatchObject({ p_id: 'tpl-1', p_expected_version: 2, p_unit_id: 'u1', p_name: 'Startup' });
+    expect(res).toEqual({ id: 'tpl-1', version: 3 });
+  });
+
+  it('saveTemplateGuarded throws SaveConflictError on a stale template save', async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { code: '40001', message: 'save_conflict' } });
+    await expect(saveTemplateGuarded('tpl-1', 1, 'u1', 'Startup', baseProject)).rejects.toBeInstanceOf(SaveConflictError);
   });
 });
 

@@ -44,6 +44,7 @@ export function useUnits(
   project: Project,
   setProject: React.Dispatch<React.SetStateAction<Project>>,
   setCloudId: (id: string | null) => void,
+  setCloudVersion: (v: number | null) => void,
   setSelectedId: (id: string | null) => void,
 ): UnitsApi {
   // Each unit owns a page/drawing (a `projects` row keyed by rig_name). The list
@@ -77,19 +78,19 @@ export function useUnits(
       let pub: Project | null = null;
       try { pub = await fetchLatestPublished(name); } catch { /* none yet */ }
       if (pub) seedSeqFromProject(pub); // F8
-      setCloudId(null);
+      setCloudId(null); setCloudVersion(null);
       setProject((p) => pub ?? { ...p, meta: { ...p.meta, rig: name }, nodes: [], pipes: [], edges: [], annotations: [] });
       return;
     }
-    let row: { id: string; data: Project } | null = null;
+    let row: { id: string; data: Project; version: number } | null = null;
     try { row = await fetchLatestProject(name); } catch { /* none yet */ }
-    if (row) { seedSeqFromProject(row.data); setCloudId(row.id); setProject(row.data); return; } // F8
+    if (row) { seedSeqFromProject(row.data); setCloudId(row.id); setCloudVersion(row.version); setProject(row.data); return; } // F8
     // no saved drawing — seed from the unit's saved template, else its built-in
     // master (known rig), else an empty page.
     let tpl: Project | null = null;
     try { tpl = await fetchUnitTemplate(name); } catch { /* none */ }
     if (tpl) seedSeqFromProject(tpl); // F8 — template carries over its own existing ids
-    setCloudId(null);
+    setCloudId(null); setCloudVersion(null);
     setProject((p) => {
       if (tpl) return seedProjectFromTemplate(tpl, name, p);
       const meta = { ...p.meta, rig: name };
@@ -100,7 +101,7 @@ export function useUnits(
       }
       return { ...p, meta, nodes: [], pipes: [], edges: [], annotations: [], status: 'draft', publishedAt: undefined };
     });
-  }, [role, setSelectedId, setCloudId, setProject]);
+  }, [role, setSelectedId, setCloudId, setCloudVersion, setProject]);
 
   const addUnit = useCallback(async (name: string) => {
     const n = name.trim(); if (!n) return;
@@ -122,7 +123,7 @@ export function useUnits(
     try { tpl = await fetchUnitTemplate(rig); } catch { /* none */ }
     if (tpl) seedSeqFromProject(tpl); // F8 — template carries over its own existing ids
     setSelectedId(null);
-    setCloudId(null);
+    setCloudId(null); setCloudVersion(null);
     setProject((p) => {
       if (tpl) return seedProjectFromTemplate(tpl, rig, p);
       const meta = { ...p.meta, rig };
@@ -133,7 +134,7 @@ export function useUnits(
       }
       return { ...p, meta, nodes: [], pipes: [], edges: [], annotations: [], status: 'draft', publishedAt: undefined };
     });
-  }, [setSelectedId, setCloudId, setProject]);
+  }, [setSelectedId, setCloudId, setCloudVersion, setProject]);
 
   // Admin: save the current diagram as `rig`'s reusable template (RLS-guarded).
   const saveUnitTemplate = useCallback(async (rig?: string) => {

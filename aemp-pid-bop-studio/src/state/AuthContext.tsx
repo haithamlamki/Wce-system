@@ -7,6 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import type { Session, User } from '@supabase/supabase-js';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { AuthRaceGuard } from '../lib/authRace';
+import { clearAutosave } from '../lib/persistence';
 
 export type Role = 'admin' | 'field' | 'manager';
 
@@ -22,6 +23,12 @@ interface AuthCtx {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ needsConfirmation: boolean }>;
   signOut: () => Promise<void>;
+  /** Send a password-reset email with a link back to the app. */
+  resetPassword: (email: string) => Promise<void>;
+  /** Set a new password (used after returning via the reset link). */
+  updatePassword: (password: string) => Promise<void>;
+  /** True while the user is in the password-recovery flow (clicked reset link). */
+  recovery: boolean;
   /** Update the caller's assigned rig (writes profiles.rig). */
   updateRig: (rig: string) => Promise<void>;
 }
@@ -34,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [fullName, setFullName] = useState('');
   const [rig, setRig] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState(false);
 
   // F13: onAuthStateChange/getSession can fire overlapping, un-awaited
   // loadProfile calls (e.g. a sign-out racing an in-flight fetch, or two
@@ -60,7 +68,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.session) loadProfile(data.session.user.id, data.session.user.email ?? '');
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      // Returning via a reset link creates a recovery session and fires this
+      // event — flag it so the app shows the "set new password" screen.
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       setSession(s);
       if (s) loadProfile(s.user.id, s.user.email ?? '');
       else { raceGuard.invalidate(); setRole(null); setFullName(''); setRig(null); }
@@ -81,7 +92,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { needsConfirmation: !data.session };
   }, []);
 
-  const signOut = useCallback(async () => { await supabase?.auth.signOut(); }, []);
+  const signOut = useCallback(async () => {
+    // Drop the leaving user's local draft so it can't be restored into the next
+    // person who signs in on this browser.
+    clearAutosave(session?.user?.id);
+    await supabase?.auth.signOut();
+  }, [session]);
+
+  const resetPassword = useCallback(async (email: string) => {
+    if (!supabase) throw new Error('Cloud not configured');
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    if (error) throw new Error(error.message);
+  }, []);
+
+  const updatePassword = useCallback(async (password: string) => {
+    if (!supabase) throw new Error('Cloud not configured');
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw new Error(error.message);
+    setRecovery(false);
+  }, []);
 
   const updateRig = useCallback(async (newRig: string) => {
     if (!supabase || !session) return;
@@ -92,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value: AuthCtx = {
     enabled: isSupabaseConfigured, loading, session, user: session?.user ?? null,
-    role, fullName, rig, signIn, signUp, signOut, updateRig,
+    role, fullName, rig, signIn, signUp, signOut, resetPassword, updatePassword, recovery, updateRig,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
