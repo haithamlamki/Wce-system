@@ -20,7 +20,11 @@ import { canEditForRole } from '../lib/roles';
 import { SYM, type SymbolKey } from '../lib/symbols';
 import { mergeCustomSymbols } from '../lib/customSymbols';
 import { REWARDS, rewardStats } from '../lib/rewards';
-import { validate, type Issue } from '../lib/validation';
+import { type Issue } from '../lib/validation';
+
+// Validation warnings were removed by request; a shared empty list keeps the
+// `issues` context field stable for any consumer.
+const NO_ISSUES: Issue[] = [];
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
 import { autosave, openFromFile, restore, saveToFile } from '../lib/persistence';
 import {
@@ -284,15 +288,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return isNaN(d.getTime()) ? new Date() : d;
   }, [project.meta.date]);
 
-  // F17: validate() walks the whole project graph, so don't re-run it on every
-  // tick of a drag/edit burst — debounce ~250ms after the project settles.
-  // The previous result stays visible during the burst; it always converges
-  // to the correct set once edits stop (validate() itself is unchanged).
-  const [issues, setIssues] = useState<Issue[]>(() => validate(project));
-  useEffect(() => {
-    const t = setTimeout(() => setIssues(validate(project)), 250);
-    return () => clearTimeout(t);
-  }, [project]);
+  // Layout validation warnings were removed by request — no issues are computed
+  // or surfaced. (Also removes a crash where validate()→box() threw on a node
+  // with an unknown type.) `issues` stays as a stable empty list for consumers.
+  const issues = NO_ISSUES;
 
   // ---- shared + custom symbol library (F19: useSymbolLibrary) ---------------
   const {

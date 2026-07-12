@@ -52,9 +52,13 @@ export function normRot(rot = 0): number {
   return ((rot % 360) + 360) % 360;
 }
 
+/** Neutral fallback size for a node whose symbol type isn't in the registry, so
+ *  a stray/legacy node can never crash layout (box() is called everywhere). */
+const FALLBACK_DIM = { w: 48, h: 48 };
+
 /** Scaled, rotation-aware bounding box (w/h swap at 90°/270°). */
 export function box(n: Pick<Component, 'type' | 'scale' | 'rot'>): Box {
-  const s = SYM[n.type as SymbolKey];
+  const s = SYM[n.type as SymbolKey] ?? FALLBACK_DIM;
   const sc = n.scale || 1;
   const rot = normRot(n.rot);
   const bw = s.w * sc;
@@ -84,7 +88,7 @@ export function center(n: Component): { x: number; y: number } {
 
 /** Inner SVG transform that rotates/scales/flips the artwork inside its box. */
 export function innerTransform(n: Component): string {
-  const s = SYM[n.type as SymbolKey];
+  const s = SYM[n.type as SymbolKey] ?? FALLBACK_DIM;
   const sc = n.scale || 1;
   const rot = normRot(n.rot);
   const fx = n.flip ? -1 : 1;
@@ -350,7 +354,7 @@ export function proj(x: number, y: number): { x: number; y: number } {
 
 /** Per-node iso placement: where its (billboarded) artwork sits + shadow geom. */
 export function isoPlacement(n: Component) {
-  const s = SYM[n.type as SymbolKey];
+  const s = SYM[n.type as SymbolKey] ?? FALLBACK_DIM;
   const sc = n.scale || 1;
   const bw = s.w * sc;
   const bh = s.h * sc;

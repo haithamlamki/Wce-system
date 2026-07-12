@@ -4,7 +4,7 @@ import { applyTheme, getThemeMode, setThemeMode, subscribeTheme } from './lib/th
 import { ProjectProvider, useProject } from './state/ProjectContext';
 import { AuthProvider, useAuth } from './state/AuthContext';
 import { AccountChip, LoginScreen, ResetPasswordScreen } from './components/Auth';
-import { OnboardModal, ProjectChip } from './components/Onboarding';
+import { OnboardModal } from './components/Onboarding';
 import AssistantPanel from './components/AssistantPanel';
 import ProjectManager from './components/ProjectManager';
 import FileMenu from './components/FileMenu';
@@ -13,7 +13,6 @@ import BopSchemeView from './views/BopSchemeView';
 import RegisterView from './views/RegisterView';
 import AccountView from './views/AccountView';
 import DashboardView from './views/DashboardView';
-import HelpView from './views/HelpView';
 import HomeView from './views/HomeView';
 
 // Tubular Fleet Management is code-split so the WCE bundle is unaffected.
@@ -28,7 +27,6 @@ const TABS = [
   { to: '/register', label: 'Equipment Sheet' },
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/account', label: 'Account' },
-  { to: '/help', label: 'Help' },
 ];
 
 function ModeToggle() {
@@ -75,6 +73,28 @@ function ProjectsButton({ onOpen }: { onOpen: () => void }) {
   return <button style={hdrBtn} onClick={onOpen} title="Project Manager — units, diagrams & templates in one place">▤ Projects</button>;
 }
 
+/** One-click Save: persists the current work to its cloud diagram (guarded), or
+ *  creates a new one under the current unit if nothing is open yet. */
+function SaveButton() {
+  const { cloudEnabled, canEdit, saveCloud } = useProject();
+  const [busy, setBusy] = useState(false);
+  if (!cloudEnabled || !canEdit) return null;
+  const save = async () => {
+    setBusy(true);
+    try {
+      const id = await saveCloud();
+      alert(id ? 'Saved ✓ — you can now select a rig in ▤ Projects.' : 'Cloud not configured.');
+    } catch (e) { alert((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <button style={{ ...hdrBtn, background: 'var(--green)', color: '#fff', borderColor: 'var(--green)' }}
+      disabled={busy} onClick={save} title="Save your work to the cloud">
+      {busy ? 'Saving…' : '💾 Save'}
+    </button>
+  );
+}
+
 function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void }) {
   const [aiOpen, setAiOpen] = useState(false);
   const [pmOpen, setPmOpen] = useState(false);
@@ -95,7 +115,6 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
             <div className="sub">Abraj Energy Services</div>
           </div>
         </div>
-        {inWce && <ProjectChip />}
         {inWce && <StatusChip />}
         <nav className="tabs">
           {(inWce ? TABS : TABS.slice(0, 1)).map((t) => (
@@ -106,6 +125,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
         </nav>
         <div className="spacer" />
         {inWce && <button style={{ ...hdrBtn, borderColor: aiOpen ? 'var(--accent)' : 'var(--line2)', color: aiOpen ? 'var(--accent)' : 'var(--ink)' }} onClick={() => setAiOpen((v) => !v)} title="AI assistant (preview)">✦ AI</button>}
+        {inWce && <SaveButton />}
         {inWce && <ProjectsButton onOpen={() => setPmOpen(true)} />}
         {inWce && <FileMenu />}
         {inWce && <ModeToggle />}
@@ -133,7 +153,6 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
           <Route path="/register" element={<RegisterView />} />
           <Route path="/dashboard" element={<DashboardView />} />
           <Route path="/account" element={<AccountView />} />
-          <Route path="/help" element={<HelpView />} />
         </Routes>
       </main>
       <AssistantPanel open={aiOpen} onClose={() => setAiOpen(false)} />

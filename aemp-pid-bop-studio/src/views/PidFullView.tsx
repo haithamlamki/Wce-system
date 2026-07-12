@@ -27,8 +27,6 @@ import type { Component, Edge, PortName } from '../types';
 
 interface PortRef { id: string; port?: PortName }
 interface ConnectState { from: PortRef; to: { x: number; y: number }; target?: PortRef }
-/** Screen-px grab radius for a node's connection handles. */
-const PORT_TOL = 11;
 
 /** Nearest N/E/S/W port to a world point, within tolerance (else undefined). */
 function portAt(n: Component, w: { x: number; y: number }, tol: number): PortName | undefined {
@@ -42,7 +40,7 @@ function portAt(n: Component, w: { x: number; y: number }, tol: number): PortNam
   return best;
 }
 interface Drag {
-  kind: 'pan' | 'node' | 'marquee' | 'connect';
+  kind: 'pan' | 'node' | 'marquee' | 'connect' | 'resize';
   sx: number; sy: number;
   moved?: boolean;
   view0?: View;
@@ -50,6 +48,10 @@ interface Drag {
   base?: string[]; // selection to union with (shift-marquee)
   from?: PortRef;   // connect: source port
   target?: PortRef; // connect: current target port (resolved during the drag)
+  resizeId?: string;                 // resize: node being scaled
+  scale0?: number;                   // resize: node's scale at drag start
+  d0?: number;                       // resize: start anchor→pointer distance (world)
+  anchor?: { x: number; y: number }; // resize: fixed corner (node top-left, world)
 }
 interface Marquee { x0: number; y0: number; x1: number; y1: number }
 interface Hover { n: Component; x: number; y: number }
@@ -97,7 +99,6 @@ export default function PidFullView() {
   const [showTitle, setShowTitle] = useState(true);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
-  const [showWarnings, setShowWarnings] = useState(false);
   const [showExport, setShowExport] = useState(false);
 
   const editable = mode === 'admin' && !iso;
@@ -106,7 +107,6 @@ export default function PidFullView() {
   const shadow = !iso && project.nodes.length <= 80;
   const selSet = useMemo(() => new Set(p.selectedIds), [p.selectedIds]);
   // nodes implicated in any validation issue → red ring (report §2.4)
-  const flagged = useMemo(() => new Set(p.issues.flatMap((i) => i.nodeIds)), [p.issues]);
   // F16: id → node lookup so hot paths (edge endpoint resolution, connect/
   // focus handling) don't re-scan the whole node array with `.find`.
   const nodeMap = useMemo(() => buildNodeMap(project.nodes), [project.nodes]);
@@ -237,17 +237,8 @@ export default function PidFullView() {
     if (e.button !== 0) return; // admin 2D edits are left-button only
 
     const hit = pickNode(project.nodes, w.x, w.y);
-    // Press on (or right next to) a connection handle → start a connection
-    const cand = hit ?? hover?.n ?? null;
-    const fromPort = cand ? portAt(cand, w, PORT_TOL / view.k) : undefined;
-    if (cand && fromPort) {
-      const from: PortRef = { id: cand.id, port: fromPort };
-      dragRef.current = { kind: 'connect', sx: px, sy: py, from };
-      setConnect({ from, to: w });
-      setPortHover(from);
-      return;
-    }
-
+    // Connect-by-dragging-a-handle was removed by request — pressing on/near a
+    // node always moves it (or marquee-selects on empty space) instead.
     if (hit) {
       // Shift / Ctrl / ⌘ click toggles membership without starting a drag
       if (e.shiftKey || e.ctrlKey || e.metaKey) { p.toggleSelect(hit.id); return; }
@@ -280,8 +271,8 @@ export default function PidFullView() {
       const w = screenToWorld(px, py, view);
       const hit = pickNode(project.nodes, w.x, w.y);
       setHover(hit ? { n: hit, x: e.clientX, y: e.clientY } : null);
-      // admin: light up the handle nearest the cursor on the hovered item
-      if (mode === 'admin') setPortHover(hit ? { id: hit.id, port: portAt(hit, w, PORT_TOL / view.k) } : null);
+      // Connect-by-handle was removed, so no port handles light up on hover.
+      setPortHover(null);
       return;
     }
     d.moved = true;
@@ -294,6 +285,12 @@ export default function PidFullView() {
       const q = (e.ctrlKey || e.metaKey) ? snap : (v: number) => v;
       pendingMoveRef.current = d.starts.map((s) => ({ id: s.id, x: q(s.x + dx), y: q(s.y + dy) }));
       if (dragRafRef.current == null) dragRafRef.current = requestAnimationFrame(flushPendingMove);
+    } else if (d.kind === 'resize' && d.resizeId && d.anchor) {
+      // Scale the node by the drag distance from its fixed top-left corner.
+      const w = screenToWorld(px, py, view);
+      const dist = Math.hypot(w.x - d.anchor.x, w.y - d.anchor.y);
+      const factor = d.d0 && d.d0 > 0 ? dist / d.d0 : 1;
+      p.scaleNode(d.resizeId, (d.scale0 ?? 1) * factor);
     } else if (d.kind === 'marquee') {
       const w = screenToWorld(px, py, view);
       setMarquee((m) => (m ? { ...m, x1: w.x, y1: w.y } : m));
@@ -431,6 +428,17 @@ export default function PidFullView() {
   const approve = () => setPendingId(null);
   const cancelPending = () => { if (pendingId) p.deleteNode(pendingId); setPendingId(null); };
 
+  // Corner-handle drag → scale a single selected node (anchored at its top-left).
+  function startResize(e: React.PointerEvent, n: Component) {
+    if (!editable) return;
+    e.stopPropagation();
+    const { px, py } = local(e);
+    const w = screenToWorld(px, py, view);
+    const anchor = { x: n.x, y: n.y };
+    const d0 = Math.hypot(w.x - anchor.x, w.y - anchor.y);
+    dragRef.current = { kind: 'resize', sx: px, sy: py, resizeId: n.id, scale0: n.scale ?? 1, d0, anchor };
+  }
+
   function addNote() {
     const r = svgRef.current!.getBoundingClientRect();
     const w = screenToWorld(r.width / 2, r.height / 2, view);
@@ -458,42 +466,13 @@ export default function PidFullView() {
 
         {/* top-right view controls (both modes) */}
         <div style={viewControls}>
-          {p.issues.length > 0 && (
-            <button style={{ ...pill, ...(showWarnings ? pillActive : {}), borderColor: showWarnings ? 'var(--accent)' : 'var(--amber)', color: showWarnings ? '#fff' : 'var(--amber)' }}
-              title="Layout validation warnings" onClick={() => setShowWarnings((v) => !v)}>
-              ⚠ {p.issues.length}
-            </button>
-          )}
           <button style={{ ...pill, ...(iso ? pillActive : {}) }} onClick={() => { setIso((v) => !v); setConnect(null); setPortHover(null); }}>3D</button>
           <button style={{ ...pill, ...(showTitle ? pillActive : {}) }} onClick={() => setShowTitle((v) => !v)}>Title</button>
           <button style={pill} title="Export / Print (PDF, PNG, SVG)" onClick={() => setShowExport(true)}>⎙ Export</button>
         </div>
 
-        {/* validation warnings panel (report §2.4) — click an issue to zoom to it */}
-        {showWarnings && p.issues.length > 0 && (
-          <div style={warnPanel}>
-            <div style={warnHead}>
-              <span>Validation · {p.issues.length} issue{p.issues.length === 1 ? '' : 's'}</span>
-              <button style={{ ...miniBtn, width: 22, height: 22 }} onClick={() => setShowWarnings(false)}>✕</button>
-            </div>
-            <div style={{ overflowY: 'auto', maxHeight: 280 }}>
-              {p.issues.map((i) => (
-                <button key={i.id} style={warnRow}
-                  title="Show on diagram"
-                  onClick={() => { if (i.nodeIds[0]) p.requestFocus(i.nodeIds[0]); }}>
-                  <span style={{ color: i.severity === 'error' ? 'var(--red)' : 'var(--amber)', fontWeight: 700 }}>
-                    {i.severity === 'error' ? '⛔' : '⚠'}
-                  </span>
-                  <span style={{ flex: 1 }}>{i.message}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {mode === 'field' && !iso && <div style={modebar}>Field mode · read-only (pan &amp; hover)</div>}
         {iso && <div style={{ ...modebar, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>3D presentation · pan &amp; hover (editing disabled)</div>}
-        {connect && <div style={{ ...modebar, top: 56, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>Drag to a handle on another item — release to connect</div>}
 
         {/* approve bar (click-to-place) */}
         {pendingNode && (
@@ -563,31 +542,25 @@ export default function PidFullView() {
                   mode={mode} onSelect={selectEdge} onEdit={openPipeEdit} />
               );
             })}
-            {/* connection handles — auto-shown on the hovered item, the connection
-                source, and the current target (no mode switch needed) */}
-            {!iso && mode === 'admin' && (() => {
-              const ids = new Set<string>();
-              if (hover) ids.add(hover.n.id);
-              if (connect) { ids.add(connect.from.id); if (connect.target) ids.add(connect.target.id); }
-              return [...ids].map((id) => {
-                const n = nodeMap.get(id);
-                if (!n) return null;
-                const ps = ports(n);
-                return (['N', 'E', 'S', 'W'] as PortName[]).map((k) => {
-                  const lit = (portHover?.id === id && portHover.port === k)
-                    || (connect?.from.id === id && connect.from.port === k)
-                    || (connect?.target?.id === id && connect.target.port === k);
-                  return <circle key={`${id}${k}`} cx={ps[k].x} cy={ps[k].y} r={(lit ? 6 : 4.5) / view.k}
-                    fill={lit ? 'var(--accent2)' : 'var(--panel)'} stroke="var(--accent2)" strokeWidth={1.6 / view.k}
-                    style={{ cursor: 'crosshair' }} />;
-                });
-              });
-            })()}
+            {/* connection handles removed (connect-by-drag feature was removed) */}
             {/* nodes */}
             {(iso ? [...project.nodes].sort((x, y) => isoDepth(x) - isoDepth(y)) : project.nodes).map((n) => (
               <NodeG key={n.id} n={n} selected={selSet.has(n.id)} connecting={connect?.from.id === n.id}
-                pending={pendingId === n.id} flagged={flagged.has(n.id)} shadow={shadow} refDate={refDate} iso={iso} />
+                pending={pendingId === n.id} flagged={false} shadow={shadow} refDate={refDate} iso={iso} />
             ))}
+            {/* corner resize handle — drag to scale the single selected node */}
+            {!iso && editable && p.selectedIds.length === 1 && (() => {
+              const n = nodeMap.get(p.selectedIds[0]);
+              if (!n) return null;
+              const b = box(n);
+              const s = 10 / view.k;
+              const hx = n.x + b.w, hy = n.y + b.h;
+              return (
+                <rect x={hx - s / 2} y={hy - s / 2} width={s} height={s} rx={2 / view.k}
+                  fill="var(--accent)" stroke="#fff" strokeWidth={1.5 / view.k}
+                  style={{ cursor: 'nwse-resize' }} onPointerDown={(e) => startResize(e, n)} />
+              );
+            })()}
             {/* live connection rubber-band (from the source port to the cursor / snapped target port) */}
             {connect && !iso && (() => {
               const fromN = nodeMap.get(connect.from.id);
@@ -817,7 +790,6 @@ const TBRow = ({ k, v }: { k: string; v: string }) => (
 // ---- styles ----------------------------------------------------------------
 const toolbar: React.CSSProperties = { position: 'absolute', left: 16, top: 16, display: 'flex', gap: 5, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: 5, zIndex: 10, boxShadow: 'var(--shadow)' };
 const tbtn: React.CSSProperties = { width: 36, height: 36, border: 0, background: 'transparent', borderRadius: 7, color: 'var(--dim)', fontSize: 16, cursor: 'pointer' };
-const miniBtn: React.CSSProperties = { width: 28, height: 28, border: 0, background: 'transparent', borderRadius: 6, color: 'var(--ink)', fontSize: 14, cursor: 'pointer', display: 'grid', placeItems: 'center' };
 const viewControls: React.CSSProperties = { position: 'absolute', right: 16, top: 16, display: 'flex', gap: 6, zIndex: 12 };
 const pill: React.CSSProperties = { padding: '7px 12px', borderRadius: 8, border: '1px solid var(--line2)', background: 'var(--panel)', color: 'var(--dim)', fontWeight: 600, fontSize: 12, cursor: 'pointer', boxShadow: 'var(--shadow)' };
 const pillActive: React.CSSProperties = { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' };
@@ -831,6 +803,3 @@ const legend: React.CSSProperties = { position: 'absolute', left: 16, bottom: 16
 const legendHead: React.CSSProperties = { color: 'var(--ink)', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1, display: 'block', marginBottom: 6 };
 const titleBlock: React.CSSProperties = { position: 'absolute', right: 16, bottom: 64, zIndex: 11, background: 'var(--panel)', border: '1.5px solid var(--ink)', borderRadius: 4, boxShadow: 'var(--shadow)', fontFamily: 'var(--mono)', minWidth: 260, overflow: 'hidden' };
 const tbHead: React.CSSProperties = { background: 'var(--ink)', color: 'var(--panel)', padding: '6px 9px', fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 12, letterSpacing: 0.5 };
-const warnPanel: React.CSSProperties = { position: 'absolute', right: 16, top: 58, zIndex: 16, width: 300, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 11, boxShadow: 'var(--shadow)', overflow: 'hidden' };
-const warnHead: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderBottom: '1px solid var(--line2)', fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 12.5 };
-const warnRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 12px', background: 'transparent', border: 0, borderBottom: '1px solid var(--line)', cursor: 'pointer', fontSize: 12, color: 'var(--ink)' };
