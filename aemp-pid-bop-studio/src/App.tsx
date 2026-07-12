@@ -3,7 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { applyTheme, getThemeMode, setThemeMode, subscribeTheme } from './lib/theme';
 import { ProjectProvider, useProject } from './state/ProjectContext';
 import { AuthProvider, useAuth } from './state/AuthContext';
-import { AccountChip, LoginScreen } from './components/Auth';
+import { AccountChip, LoginScreen, ResetPasswordScreen } from './components/Auth';
 import { OnboardModal, ProjectChip } from './components/Onboarding';
 import AssistantPanel from './components/AssistantPanel';
 import CloudPanel from './components/CloudPanel';
@@ -152,11 +152,16 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
 }
 
 function Gate({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void }) {
-  const { enabled, loading, session } = useAuth();
+  const { enabled, loading, session, recovery } = useAuth();
   const [skipped, setSkipped] = useState(false);
 
   if (enabled && loading) {
     return <div style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', color: 'var(--faint)' }}>Loading…</div>;
+  }
+  // A reset link creates a recovery session; force the set-new-password screen
+  // instead of dropping the user straight into the app.
+  if (enabled && recovery) {
+    return <ResetPasswordScreen />;
   }
   if (enabled && !session && !skipped) {
     return <LoginScreen onSkip={() => setSkipped(true)} />;
