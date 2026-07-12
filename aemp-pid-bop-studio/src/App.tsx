@@ -6,8 +6,7 @@ import { AuthProvider, useAuth } from './state/AuthContext';
 import { AccountChip, LoginScreen } from './components/Auth';
 import { OnboardModal, ProjectChip } from './components/Onboarding';
 import AssistantPanel from './components/AssistantPanel';
-import CloudPanel from './components/CloudPanel';
-import UnitsPanel from './components/UnitsPanel';
+import ProjectManager from './components/ProjectManager';
 import FileMenu from './components/FileMenu';
 import PidFullView from './views/PidFullView';
 import BopSchemeView from './views/BopSchemeView';
@@ -70,20 +69,15 @@ function StatusChip() {
   );
 }
 
-function CloudButton({ onOpen }: { onOpen: () => void }) {
+function ProjectsButton({ onOpen }: { onOpen: () => void }) {
   const { cloudEnabled } = useProject();
   if (!cloudEnabled) return null;
-  return <button style={hdrBtn} onClick={onOpen} title="Cloud projects (Supabase)">☁ Cloud</button>;
-}
-
-function UnitsButton() {
-  const { setShowUnits } = useProject();
-  return <button style={hdrBtn} onClick={() => setShowUnits(true)} title="Units — open a unit, its saved diagrams & templates">▤ Units</button>;
+  return <button style={hdrBtn} onClick={onOpen} title="Project Manager — units, diagrams & templates in one place">▤ Projects</button>;
 }
 
 function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void }) {
   const [aiOpen, setAiOpen] = useState(false);
-  const [cloudOpen, setCloudOpen] = useState(false);
+  const [pmOpen, setPmOpen] = useState(false);
   const { pathname } = useLocation();
   // The Tubular module renders its own full prototype shell (topbar + tabnav),
   // so the WCE appbar is hidden entirely there. On /home a minimal header
@@ -112,8 +106,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
         </nav>
         <div className="spacer" />
         {inWce && <button style={{ ...hdrBtn, borderColor: aiOpen ? 'var(--accent)' : 'var(--line2)', color: aiOpen ? 'var(--accent)' : 'var(--ink)' }} onClick={() => setAiOpen((v) => !v)} title="AI assistant (preview)">✦ AI</button>}
-        {inWce && <UnitsButton />}
-        {inWce && <CloudButton onOpen={() => setCloudOpen(true)} />}
+        {inWce && <ProjectsButton onOpen={() => setPmOpen(true)} />}
         {inWce && <FileMenu />}
         {inWce && <ModeToggle />}
         <button className="tabs" onClick={cycleTheme} title={`Theme: ${theme}`} style={{ cursor: 'pointer' }}>
@@ -144,8 +137,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
         </Routes>
       </main>
       <AssistantPanel open={aiOpen} onClose={() => setAiOpen(false)} />
-      <CloudPanel open={cloudOpen} onClose={() => setCloudOpen(false)} />
-      <UnitsPanel />
+      <ProjectManager open={pmOpen} onClose={() => setPmOpen(false)} />
       <OnboardModal />
     </>
   );

@@ -30,7 +30,10 @@ vi.mock('./supabase', () => ({
 }));
 
 // Imported after the mock so `saveProjectCloud` sees the mocked `supabase`.
-const { saveProjectCloud, SaveConflictError, replaceRigEquipment, renameUnit } = await import('./cloud');
+const {
+  saveProjectCloud, SaveConflictError, replaceRigEquipment, renameUnit,
+  listUnitTree, saveTemplateGuarded,
+} = await import('./cloud');
 
 const baseProject = {
   meta: { rig: 'Rig A', date: '2026-01-01', who: 'Alice' },
@@ -106,6 +109,30 @@ describe('saveProjectCloud (guarded RPC — optimistic lock, 0026)', () => {
     const result = await saveOffline(baseProject);
     expect(result).toBeNull();
     expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Project Manager tree + template save (Phase 2)', () => {
+  it('listUnitTree calls the list_unit_tree RPC and returns the tree', async () => {
+    const tree = [{ id: 'u1', name: 'Rig 103', diagrams: [], templates: [] }];
+    rpcMock.mockResolvedValue({ data: tree, error: null });
+    const res = await listUnitTree();
+    expect(rpcMock).toHaveBeenCalledWith('list_unit_tree');
+    expect(res).toEqual(tree);
+  });
+
+  it('saveTemplateGuarded passes unit/name/version and returns id+version', async () => {
+    rpcMock.mockResolvedValue({ data: [{ id: 'tpl-1', version: 3 }], error: null });
+    const res = await saveTemplateGuarded('tpl-1', 2, 'u1', 'Startup', baseProject);
+    const [fn, args] = rpcMock.mock.calls[0];
+    expect(fn).toBe('save_template_guarded');
+    expect(args).toMatchObject({ p_id: 'tpl-1', p_expected_version: 2, p_unit_id: 'u1', p_name: 'Startup' });
+    expect(res).toEqual({ id: 'tpl-1', version: 3 });
+  });
+
+  it('saveTemplateGuarded throws SaveConflictError on a stale template save', async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { code: '40001', message: 'save_conflict' } });
+    await expect(saveTemplateGuarded('tpl-1', 1, 'u1', 'Startup', baseProject)).rejects.toBeInstanceOf(SaveConflictError);
   });
 });
 

@@ -25,7 +25,7 @@ import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
 import { autosave, openFromFile, restore, saveToFile } from '../lib/persistence';
 import {
   isSupabaseConfigured, listProjectsCloud, listProjectVersions, loadProjectCloud, loadProjectVersion,
-  saveProjectCloud, type ProjectSummary, type ProjectVersionSummary,
+  renameDiagram, saveProjectCloud, type ProjectSummary, type ProjectVersionSummary,
 } from '../lib/cloud';
 import { useAuth } from './AuthContext';
 import { nextId, seedSeqFromProject } from './idSequence';
@@ -135,6 +135,15 @@ interface ProjectCtx {
   // revision history (FR-59)
   listVersions: (projectId: string) => Promise<ProjectVersionSummary[]>;
   restoreVersion: (versionId: string) => Promise<void>;
+  // Project Manager (unit-centric): per-item save/open/create against the tree
+  /** Save the current canvas INTO a specific diagram row (guarded by its version). */
+  saveActiveToDiagram: (id: string, expectedVersion: number) => Promise<string | null>;
+  /** Create a new diagram from the current canvas under a unit; returns its id. */
+  createDiagramUnder: (unitName: string, name?: string) => Promise<string | null>;
+  /** Load a template's Project doc onto the canvas as a fresh (unbound) draft. */
+  openTemplateOnCanvas: (project: Project) => void;
+  /** If diagram `id` is the one currently open, drop the binding (after delete). */
+  deactivateDiagram: (id: string) => void;
 
   // role + draft/publish workflow
   canEdit: boolean;
@@ -550,6 +559,37 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const saveAsDraft = useCallback((note?: string) => saveWithStatus('draft', note), [saveWithStatus]);
   const publishFinal = useCallback((note?: string) => saveWithStatus('published', note), [saveWithStatus]);
 
+  // ---- Project Manager per-item operations -----------------------------------
+  // Save the current canvas INTO a specific diagram row, guarded by the version
+  // the tree showed — a stale save is rejected (SaveConflictError) not clobbered.
+  const saveActiveToDiagram = useCallback(async (id: string, expectedVersion: number) => {
+    const res = await saveProjectCloud(project, id, expectedVersion);
+    if (res) { setCloudId(res.id); setCloudVersion(res.version); }
+    return res?.id ?? null;
+  }, [project]);
+
+  // Create a new diagram from the current canvas under `unitName`. The DB trigger
+  // links it to the unit; we then bind the editor to the new row and (optionally)
+  // name it.
+  const createDiagramUnder = useCallback(async (unitName: string, name?: string) => {
+    const proj: Project = { ...project, meta: { ...project.meta, rig: unitName } };
+    const res = await saveProjectCloud(proj, undefined, undefined);
+    if (res) {
+      if (name && name.trim()) await renameDiagram(res.id, name.trim());
+      setProject(proj); setCloudId(res.id); setCloudVersion(res.version);
+    }
+    return res?.id ?? null;
+  }, [project]);
+
+  const openTemplateOnCanvas = useCallback((tpl: Project) => {
+    seedSeqFromProject(tpl); // F8
+    setSelectedId(null); setCloudId(null); setCloudVersion(null); setProject(tpl);
+  }, [setSelectedId]);
+
+  const deactivateDiagram = useCallback((id: string) => {
+    if (cloudId === id) { setCloudId(null); setCloudVersion(null); }
+  }, [cloudId]);
+
   // ---- clear canvas (removes nodes AND piping/edges/annotations) -------------
   const clearCanvas = useCallback(() => {
     setSelectedIds([]);
@@ -610,6 +650,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     saveProject, openProject, updateMeta,
     showOnboard, setShowOnboard, completeOnboarding,
     cloudEnabled: isSupabaseConfigured, cloudId, saveCloud, listCloud, loadCloud, listVersions, restoreVersion,
+    saveActiveToDiagram, createDiagramUnder, openTemplateOnCanvas, deactivateDiagram,
     canEdit, saveAsDraft, publishFinal, clearCanvas,
     units, refreshUnits, switchUnit, addUnit, renameUnit, removeUnit, showUnits, setShowUnits,
     unitTemplates, refreshUnitTemplates, startFromTemplate, saveUnitTemplate, listUnitDiagrams,
@@ -631,6 +672,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     saveProject, openProject, updateMeta,
     showOnboard, setShowOnboard, completeOnboarding,
     cloudId, saveCloud, listCloud, loadCloud, listVersions, restoreVersion,
+    saveActiveToDiagram, createDiagramUnder, openTemplateOnCanvas, deactivateDiagram,
     canEdit, saveAsDraft, publishFinal, clearCanvas,
     units, refreshUnits, switchUnit, addUnit, renameUnit, removeUnit, showUnits, setShowUnits,
     unitTemplates, refreshUnitTemplates, startFromTemplate, saveUnitTemplate, listUnitDiagrams,

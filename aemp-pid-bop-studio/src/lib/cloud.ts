@@ -380,4 +380,80 @@ export async function getManualUrl(path: string): Promise<string | null> {
   return data?.signedUrl ?? null;
 }
 
+// ---- Project Manager: unit-centric tree + diagram/template ops (0027/0028) --
+
+export interface DiagramMeta {
+  id: string; name: string; version: number;
+  updated_at: string; updated_by: string; status: string | null;
+}
+export interface TemplateMeta {
+  id: string; name: string; version: number; updated_at: string; updated_by: string;
+}
+export interface UnitNode {
+  id: string; name: string; diagrams: DiagramMeta[]; templates: TemplateMeta[];
+}
+
+/** The whole Project Manager tree in one call: every unit with its diagrams and
+ *  templates (version, last-modified, editor name). Privileged callers only —
+ *  returns [] otherwise (enforced server-side). */
+export async function listUnitTree(): Promise<UnitNode[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('list_unit_tree');
+  if (error) throw new Error(error.message);
+  return (data as UnitNode[]) ?? [];
+}
+
+export async function renameDiagram(id: string, name: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.rpc('rename_diagram', { p_id: id, p_name: name });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteDiagram(id: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.rpc('delete_diagram', { p_id: id });
+  if (error) throw new Error(error.message);
+}
+
+/** Load a template's Project doc + its lock version (for a guarded overwrite). */
+export async function loadTemplate(id: string): Promise<{ project: Project; version: number } | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('templates').select('data, version').eq('id', id).single();
+  if (error) throw new Error(error.message);
+  return data?.data ? { project: data.data as Project, version: (data.version as number) ?? 1 } : null;
+}
+
+/** Save a template through the guarded RPC (optimistic lock, same as diagrams).
+ *  `id` null → create a new template under `unitId`. */
+export async function saveTemplateGuarded(
+  id: string | null, expectedVersion: number | undefined, unitId: string, name: string, project: Project,
+): Promise<SaveResult | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc('save_template_guarded', {
+    p_id: id,
+    p_expected_version: expectedVersion ?? null,
+    p_unit_id: unitId,
+    p_name: name || 'Template',
+    p_data: project,
+  });
+  if (error) {
+    if (error.code === '40001' || /save_conflict/i.test(error.message)) throw new SaveConflictError();
+    throw new Error(error.message);
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as SaveResult | undefined;
+  return row ? { id: row.id, version: row.version } : null;
+}
+
+export async function renameTemplate(id: string, name: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.rpc('rename_template', { p_id: id, p_name: name });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.rpc('delete_template', { p_id: id });
+  if (error) throw new Error(error.message);
+}
+
 export { isSupabaseConfigured };
