@@ -27,8 +27,6 @@ import type { Component, Edge, PortName } from '../types';
 
 interface PortRef { id: string; port?: PortName }
 interface ConnectState { from: PortRef; to: { x: number; y: number }; target?: PortRef }
-/** Screen-px grab radius for a node's connection handles. */
-const PORT_TOL = 11;
 
 /** Nearest N/E/S/W port to a world point, within tolerance (else undefined). */
 function portAt(n: Component, w: { x: number; y: number }, tol: number): PortName | undefined {
@@ -42,7 +40,7 @@ function portAt(n: Component, w: { x: number; y: number }, tol: number): PortNam
   return best;
 }
 interface Drag {
-  kind: 'pan' | 'node' | 'marquee' | 'connect';
+  kind: 'pan' | 'node' | 'marquee' | 'connect' | 'resize';
   sx: number; sy: number;
   moved?: boolean;
   view0?: View;
@@ -50,6 +48,10 @@ interface Drag {
   base?: string[]; // selection to union with (shift-marquee)
   from?: PortRef;   // connect: source port
   target?: PortRef; // connect: current target port (resolved during the drag)
+  resizeId?: string;                 // resize: node being scaled
+  scale0?: number;                   // resize: node's scale at drag start
+  d0?: number;                       // resize: start anchor→pointer distance (world)
+  anchor?: { x: number; y: number }; // resize: fixed corner (node top-left, world)
 }
 interface Marquee { x0: number; y0: number; x1: number; y1: number }
 interface Hover { n: Component; x: number; y: number }
@@ -237,17 +239,8 @@ export default function PidFullView() {
     if (e.button !== 0) return; // admin 2D edits are left-button only
 
     const hit = pickNode(project.nodes, w.x, w.y);
-    // Press on (or right next to) a connection handle → start a connection
-    const cand = hit ?? hover?.n ?? null;
-    const fromPort = cand ? portAt(cand, w, PORT_TOL / view.k) : undefined;
-    if (cand && fromPort) {
-      const from: PortRef = { id: cand.id, port: fromPort };
-      dragRef.current = { kind: 'connect', sx: px, sy: py, from };
-      setConnect({ from, to: w });
-      setPortHover(from);
-      return;
-    }
-
+    // Connect-by-dragging-a-handle was removed by request — pressing on/near a
+    // node always moves it (or marquee-selects on empty space) instead.
     if (hit) {
       // Shift / Ctrl / ⌘ click toggles membership without starting a drag
       if (e.shiftKey || e.ctrlKey || e.metaKey) { p.toggleSelect(hit.id); return; }
@@ -280,8 +273,8 @@ export default function PidFullView() {
       const w = screenToWorld(px, py, view);
       const hit = pickNode(project.nodes, w.x, w.y);
       setHover(hit ? { n: hit, x: e.clientX, y: e.clientY } : null);
-      // admin: light up the handle nearest the cursor on the hovered item
-      if (mode === 'admin') setPortHover(hit ? { id: hit.id, port: portAt(hit, w, PORT_TOL / view.k) } : null);
+      // Connect-by-handle was removed, so no port handles light up on hover.
+      setPortHover(null);
       return;
     }
     d.moved = true;
@@ -294,6 +287,12 @@ export default function PidFullView() {
       const q = (e.ctrlKey || e.metaKey) ? snap : (v: number) => v;
       pendingMoveRef.current = d.starts.map((s) => ({ id: s.id, x: q(s.x + dx), y: q(s.y + dy) }));
       if (dragRafRef.current == null) dragRafRef.current = requestAnimationFrame(flushPendingMove);
+    } else if (d.kind === 'resize' && d.resizeId && d.anchor) {
+      // Scale the node by the drag distance from its fixed top-left corner.
+      const w = screenToWorld(px, py, view);
+      const dist = Math.hypot(w.x - d.anchor.x, w.y - d.anchor.y);
+      const factor = d.d0 && d.d0 > 0 ? dist / d.d0 : 1;
+      p.scaleNode(d.resizeId, (d.scale0 ?? 1) * factor);
     } else if (d.kind === 'marquee') {
       const w = screenToWorld(px, py, view);
       setMarquee((m) => (m ? { ...m, x1: w.x, y1: w.y } : m));
@@ -431,6 +430,17 @@ export default function PidFullView() {
   const approve = () => setPendingId(null);
   const cancelPending = () => { if (pendingId) p.deleteNode(pendingId); setPendingId(null); };
 
+  // Corner-handle drag → scale a single selected node (anchored at its top-left).
+  function startResize(e: React.PointerEvent, n: Component) {
+    if (!editable) return;
+    e.stopPropagation();
+    const { px, py } = local(e);
+    const w = screenToWorld(px, py, view);
+    const anchor = { x: n.x, y: n.y };
+    const d0 = Math.hypot(w.x - anchor.x, w.y - anchor.y);
+    dragRef.current = { kind: 'resize', sx: px, sy: py, resizeId: n.id, scale0: n.scale ?? 1, d0, anchor };
+  }
+
   function addNote() {
     const r = svgRef.current!.getBoundingClientRect();
     const w = screenToWorld(r.width / 2, r.height / 2, view);
@@ -563,31 +573,25 @@ export default function PidFullView() {
                   mode={mode} onSelect={selectEdge} onEdit={openPipeEdit} />
               );
             })}
-            {/* connection handles — auto-shown on the hovered item, the connection
-                source, and the current target (no mode switch needed) */}
-            {!iso && mode === 'admin' && (() => {
-              const ids = new Set<string>();
-              if (hover) ids.add(hover.n.id);
-              if (connect) { ids.add(connect.from.id); if (connect.target) ids.add(connect.target.id); }
-              return [...ids].map((id) => {
-                const n = nodeMap.get(id);
-                if (!n) return null;
-                const ps = ports(n);
-                return (['N', 'E', 'S', 'W'] as PortName[]).map((k) => {
-                  const lit = (portHover?.id === id && portHover.port === k)
-                    || (connect?.from.id === id && connect.from.port === k)
-                    || (connect?.target?.id === id && connect.target.port === k);
-                  return <circle key={`${id}${k}`} cx={ps[k].x} cy={ps[k].y} r={(lit ? 6 : 4.5) / view.k}
-                    fill={lit ? 'var(--accent2)' : 'var(--panel)'} stroke="var(--accent2)" strokeWidth={1.6 / view.k}
-                    style={{ cursor: 'crosshair' }} />;
-                });
-              });
-            })()}
+            {/* connection handles removed (connect-by-drag feature was removed) */}
             {/* nodes */}
             {(iso ? [...project.nodes].sort((x, y) => isoDepth(x) - isoDepth(y)) : project.nodes).map((n) => (
               <NodeG key={n.id} n={n} selected={selSet.has(n.id)} connecting={connect?.from.id === n.id}
                 pending={pendingId === n.id} flagged={flagged.has(n.id)} shadow={shadow} refDate={refDate} iso={iso} />
             ))}
+            {/* corner resize handle — drag to scale the single selected node */}
+            {!iso && editable && p.selectedIds.length === 1 && (() => {
+              const n = nodeMap.get(p.selectedIds[0]);
+              if (!n) return null;
+              const b = box(n);
+              const s = 10 / view.k;
+              const hx = n.x + b.w, hy = n.y + b.h;
+              return (
+                <rect x={hx - s / 2} y={hy - s / 2} width={s} height={s} rx={2 / view.k}
+                  fill="var(--accent)" stroke="#fff" strokeWidth={1.5 / view.k}
+                  style={{ cursor: 'nwse-resize' }} onPointerDown={(e) => startResize(e, n)} />
+              );
+            })()}
             {/* live connection rubber-band (from the source port to the cursor / snapped target port) */}
             {connect && !iso && (() => {
               const fromN = nodeMap.get(connect.from.id);
