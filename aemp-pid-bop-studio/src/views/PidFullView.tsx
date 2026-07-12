@@ -99,7 +99,6 @@ export default function PidFullView() {
   const [showTitle, setShowTitle] = useState(true);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
-  const [showWarnings, setShowWarnings] = useState(false);
   const [showExport, setShowExport] = useState(false);
 
   const editable = mode === 'admin' && !iso;
@@ -108,7 +107,6 @@ export default function PidFullView() {
   const shadow = !iso && project.nodes.length <= 80;
   const selSet = useMemo(() => new Set(p.selectedIds), [p.selectedIds]);
   // nodes implicated in any validation issue → red ring (report §2.4)
-  const flagged = useMemo(() => new Set(p.issues.flatMap((i) => i.nodeIds)), [p.issues]);
   // F16: id → node lookup so hot paths (edge endpoint resolution, connect/
   // focus handling) don't re-scan the whole node array with `.find`.
   const nodeMap = useMemo(() => buildNodeMap(project.nodes), [project.nodes]);
@@ -468,42 +466,13 @@ export default function PidFullView() {
 
         {/* top-right view controls (both modes) */}
         <div style={viewControls}>
-          {p.issues.length > 0 && (
-            <button style={{ ...pill, ...(showWarnings ? pillActive : {}), borderColor: showWarnings ? 'var(--accent)' : 'var(--amber)', color: showWarnings ? '#fff' : 'var(--amber)' }}
-              title="Layout validation warnings" onClick={() => setShowWarnings((v) => !v)}>
-              ⚠ {p.issues.length}
-            </button>
-          )}
           <button style={{ ...pill, ...(iso ? pillActive : {}) }} onClick={() => { setIso((v) => !v); setConnect(null); setPortHover(null); }}>3D</button>
           <button style={{ ...pill, ...(showTitle ? pillActive : {}) }} onClick={() => setShowTitle((v) => !v)}>Title</button>
           <button style={pill} title="Export / Print (PDF, PNG, SVG)" onClick={() => setShowExport(true)}>⎙ Export</button>
         </div>
 
-        {/* validation warnings panel (report §2.4) — click an issue to zoom to it */}
-        {showWarnings && p.issues.length > 0 && (
-          <div style={warnPanel}>
-            <div style={warnHead}>
-              <span>Validation · {p.issues.length} issue{p.issues.length === 1 ? '' : 's'}</span>
-              <button style={{ ...miniBtn, width: 22, height: 22 }} onClick={() => setShowWarnings(false)}>✕</button>
-            </div>
-            <div style={{ overflowY: 'auto', maxHeight: 280 }}>
-              {p.issues.map((i) => (
-                <button key={i.id} style={warnRow}
-                  title="Show on diagram"
-                  onClick={() => { if (i.nodeIds[0]) p.requestFocus(i.nodeIds[0]); }}>
-                  <span style={{ color: i.severity === 'error' ? 'var(--red)' : 'var(--amber)', fontWeight: 700 }}>
-                    {i.severity === 'error' ? '⛔' : '⚠'}
-                  </span>
-                  <span style={{ flex: 1 }}>{i.message}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {mode === 'field' && !iso && <div style={modebar}>Field mode · read-only (pan &amp; hover)</div>}
         {iso && <div style={{ ...modebar, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>3D presentation · pan &amp; hover (editing disabled)</div>}
-        {connect && <div style={{ ...modebar, top: 56, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>Drag to a handle on another item — release to connect</div>}
 
         {/* approve bar (click-to-place) */}
         {pendingNode && (
@@ -577,7 +546,7 @@ export default function PidFullView() {
             {/* nodes */}
             {(iso ? [...project.nodes].sort((x, y) => isoDepth(x) - isoDepth(y)) : project.nodes).map((n) => (
               <NodeG key={n.id} n={n} selected={selSet.has(n.id)} connecting={connect?.from.id === n.id}
-                pending={pendingId === n.id} flagged={flagged.has(n.id)} shadow={shadow} refDate={refDate} iso={iso} />
+                pending={pendingId === n.id} flagged={false} shadow={shadow} refDate={refDate} iso={iso} />
             ))}
             {/* corner resize handle — drag to scale the single selected node */}
             {!iso && editable && p.selectedIds.length === 1 && (() => {
@@ -821,7 +790,6 @@ const TBRow = ({ k, v }: { k: string; v: string }) => (
 // ---- styles ----------------------------------------------------------------
 const toolbar: React.CSSProperties = { position: 'absolute', left: 16, top: 16, display: 'flex', gap: 5, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 10, padding: 5, zIndex: 10, boxShadow: 'var(--shadow)' };
 const tbtn: React.CSSProperties = { width: 36, height: 36, border: 0, background: 'transparent', borderRadius: 7, color: 'var(--dim)', fontSize: 16, cursor: 'pointer' };
-const miniBtn: React.CSSProperties = { width: 28, height: 28, border: 0, background: 'transparent', borderRadius: 6, color: 'var(--ink)', fontSize: 14, cursor: 'pointer', display: 'grid', placeItems: 'center' };
 const viewControls: React.CSSProperties = { position: 'absolute', right: 16, top: 16, display: 'flex', gap: 6, zIndex: 12 };
 const pill: React.CSSProperties = { padding: '7px 12px', borderRadius: 8, border: '1px solid var(--line2)', background: 'var(--panel)', color: 'var(--dim)', fontWeight: 600, fontSize: 12, cursor: 'pointer', boxShadow: 'var(--shadow)' };
 const pillActive: React.CSSProperties = { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' };
@@ -835,6 +803,3 @@ const legend: React.CSSProperties = { position: 'absolute', left: 16, bottom: 16
 const legendHead: React.CSSProperties = { color: 'var(--ink)', fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: 1, display: 'block', marginBottom: 6 };
 const titleBlock: React.CSSProperties = { position: 'absolute', right: 16, bottom: 64, zIndex: 11, background: 'var(--panel)', border: '1.5px solid var(--ink)', borderRadius: 4, boxShadow: 'var(--shadow)', fontFamily: 'var(--mono)', minWidth: 260, overflow: 'hidden' };
 const tbHead: React.CSSProperties = { background: 'var(--ink)', color: 'var(--panel)', padding: '6px 9px', fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 12, letterSpacing: 0.5 };
-const warnPanel: React.CSSProperties = { position: 'absolute', right: 16, top: 58, zIndex: 16, width: 300, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 11, boxShadow: 'var(--shadow)', overflow: 'hidden' };
-const warnHead: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderBottom: '1px solid var(--line2)', fontFamily: 'var(--disp)', fontWeight: 700, fontSize: 12.5 };
-const warnRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 12px', background: 'transparent', border: 0, borderBottom: '1px solid var(--line)', cursor: 'pointer', fontSize: 12, color: 'var(--ink)' };
