@@ -289,7 +289,10 @@ export default function PidFullView() {
     else if (d.kind === 'node' && d.starts) {
       const dx = (px - d.sx) / view.k;
       const dy = (py - d.sy) / view.k;
-      pendingMoveRef.current = d.starts.map((s) => ({ id: s.id, x: snap(s.x + dx), y: snap(s.y + dy) }));
+      // Free placement by default — drag a symbol anywhere. Hold Ctrl/Cmd to
+      // snap to the grid for alignment.
+      const q = (e.ctrlKey || e.metaKey) ? snap : (v: number) => v;
+      pendingMoveRef.current = d.starts.map((s) => ({ id: s.id, x: q(s.x + dx), y: q(s.y + dy) }));
       if (dragRafRef.current == null) dragRafRef.current = requestAnimationFrame(flushPendingMove);
     } else if (d.kind === 'marquee') {
       const w = screenToWorld(px, py, view);
@@ -414,13 +417,15 @@ export default function PidFullView() {
     const { px, py } = local(e);
     const w = screenToWorld(px, py, view);
     const s = SYM[type];
-    p.addNode(type, snap(w.x - s.w / 2), snap(w.y - s.h / 2)); // drag = direct place
+    // Free drop by default; hold Ctrl/Cmd while dropping to snap to the grid.
+    const q = (e.ctrlKey || e.metaKey) ? snap : (v: number) => v;
+    p.addNode(type, q(w.x - s.w / 2), q(w.y - s.h / 2));
   }
   function placeCentre(type: SymbolKey) {
     const r = svgRef.current!.getBoundingClientRect();
     const w = screenToWorld(r.width / 2, r.height / 2, view);
     const s = SYM[type];
-    const id = p.addNode(type, snap(w.x - s.w / 2), snap(w.y - s.h / 2));
+    const id = p.addNode(type, w.x - s.w / 2, w.y - s.h / 2);
     setPendingId(id); // click = pending → approve
   }
   const approve = () => setPendingId(null);
@@ -429,7 +434,7 @@ export default function PidFullView() {
   function addNote() {
     const r = svgRef.current!.getBoundingClientRect();
     const w = screenToWorld(r.width / 2, r.height / 2, view);
-    p.addAnnotation({ kind: 'text', x: snap(w.x), y: snap(w.y), w: 140, h: 24, text: 'Note' });
+    p.addAnnotation({ kind: 'text', x: w.x, y: w.y, w: 140, h: 24, text: 'Note' });
   }
 
   const showPalette = mode === 'admin' && !iso;
