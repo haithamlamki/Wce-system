@@ -18,7 +18,6 @@ import { buildBopStack, seedBopSeq, type HoleSection } from '../lib/bop';
 import { snap } from '../lib/geometry';
 import { canEditForRole } from '../lib/roles';
 import { SYM, type SymbolKey } from '../lib/symbols';
-import { mergeCustomSymbols } from '../lib/customSymbols';
 import { REWARDS, rewardStats } from '../lib/rewards';
 import { type Issue } from '../lib/validation';
 
@@ -26,7 +25,7 @@ import { type Issue } from '../lib/validation';
 // `issues` context field stable for any consumer.
 const NO_ISSUES: Issue[] = [];
 import { RIG303_EQUIPMENT } from '../lib/data/rig303-equipment';
-import { autosave, openFromFile, restore, saveToFile } from '../lib/persistence';
+import { autosave, openFromFile, saveToFile } from '../lib/persistence';
 import {
   isSupabaseConfigured, listProjectsCloud, listProjectVersions, loadProjectCloud, loadProjectVersion,
   renameDiagram, saveProjectCloud, type ProjectSummary, type ProjectVersionSummary,
@@ -212,6 +211,11 @@ interface ProjectCtx {
   groupSelection: () => void;
   ungroupSelection: () => void;
   toggleLockSelection: () => void;
+  toggleSizeLockSelection: () => void;
+
+  // z-order + type-based selection (context menu)
+  reorderSelection: (op: import('./hooks/useSelection').ZOrderOp) => void;
+  selectSimilar: () => void;
 
   // custom symbols (Symbol Library / Drawer)
   addCustomSymbol: (def: import('../lib/symbols').SymbolDef) => string;
@@ -243,16 +247,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // yet, or failed to load, is `null` and must stay read-only — it must never
   // be treated as an editor just because it isn't 'field'.
   const canEdit = canEditForRole(role);
-  const [restored] = useState(() => {
-    const r = restore(autosaveScope);
-    mergeCustomSymbols(r?.customSymbols);
-    seedSeqFromProject(r); // F8: don't restart the id counter below ids already in the restored project
-    return r;
-  });
-  const [project, setProject] = useState<Project>(() => restored ?? emptyProject());
+  // Every session starts on a clean canvas — the previous working diagram is
+  // never auto-restored on login; open one explicitly from Projects instead.
+  // (Autosave below still writes a per-user draft so nothing is lost while
+  // editing, but it is no longer read back on startup.)
+  const [project, setProject] = useState<Project>(() => emptyProject());
   const [mode, setMode] = useState<Mode>('admin');
-  // first open (nothing autosaved) → show the date-first onboarding modal (FR-1)
-  const [showOnboard, setShowOnboard] = useState(() => restored === null);
+  // No auto-opened onboarding modal either: completing it auto-loads the rig
+  // master P&ID (FR-4), which would defeat the clean-canvas start. It stays
+  // reachable via the project chip in the header.
+  const [showOnboard, setShowOnboard] = useState(false);
   const [cloudId, setCloudId] = useState<string | null>(null);
   // The lock version of the currently-open cloud row (0026). Sent on Save for an
   // optimistic compare-and-swap; null for a brand-new/unsaved draft (→ INSERT).
@@ -267,6 +271,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     clipboardCount, copySelection, cutSelection, pasteClipboard, deleteSelection, duplicateSelection,
     rotateSelection, flipSelection, scaleSelection, moveMany, alignSelection, distributeSelection,
     groupSelection, ungroupSelection, toggleLockSelection,
+    toggleSizeLockSelection, reorderSelection, selectSimilar,
   } = useSelection(project, setProject);
 
   // debounced autosave on every project change (FR-58)
@@ -658,6 +663,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     focusId, focusSeq, requestFocus, issues,
     addAnnotation, updateAnnotation, deleteAnnotation,
     groupSelection, ungroupSelection, toggleLockSelection,
+    toggleSizeLockSelection, reorderSelection, selectSimilar,
     addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol, hiddenSymbols, canEditLibrary,
     redeemReward,
   }), [
@@ -680,6 +686,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     focusId, focusSeq, requestFocus, issues,
     addAnnotation, updateAnnotation, deleteAnnotation,
     groupSelection, ungroupSelection, toggleLockSelection,
+    toggleSizeLockSelection, reorderSelection, selectSimilar,
     addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol, hiddenSymbols, canEditLibrary,
     redeemReward,
   ]);
