@@ -12,7 +12,7 @@ import { SYM, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import { safeColor } from '../lib/sanitizeSvg';
 import {
-  box, buildNodeMap, fitView, GRID, innerTransform, isoDepth, isoPlacement, pickNode,
+  box, buildNodeMap, fitView, GRID, innerTransform, isoDepth, isoPlacement, normRot, pickNode,
   PIPE_KINDS, pipeColor, pipeParts, pipeSwatch, ports, proj, routeEdgePoints,
   screenToWorld, snap, type PipeKindDef, type View,
 } from '../lib/geometry';
@@ -23,6 +23,9 @@ import SymbolPalette from '../components/pid/SymbolPalette';
 import PipeTypeMenu from '../components/pid/PipeTypeMenu';
 import PipeEditMenu from '../components/pid/PipeEditMenu';
 import SelectionToolbar from '../components/pid/SelectionToolbar';
+import ContextMenu, { type CtxMenuState } from '../components/pid/ContextMenu';
+import { resizeAnchor, resizePatch, type HandleName, type ResizeStart } from '../lib/resize';
+import { applySmartSnap, buildSnapSets, type Guide, type SnapSets } from '../lib/snapGuides';
 import type { Component, Edge, PortName } from '../types';
 
 interface PortRef { id: string; port?: PortName }
@@ -48,10 +51,15 @@ interface Drag {
   base?: string[]; // selection to union with (shift-marquee)
   from?: PortRef;   // connect: source port
   target?: PortRef; // connect: current target port (resolved during the drag)
-  resizeId?: string;                 // resize: node being scaled
-  scale0?: number;                   // resize: node's scale at drag start
-  d0?: number;                       // resize: start anchor→pointer distance (world)
-  anchor?: { x: number; y: number }; // resize: fixed corner (node top-left, world)
+  // node drag: smart-snap data captured once at drag start
+  dims?: Map<string, { w: number; h: number }>; // dragged nodes' boxes
+  snapSets?: SnapSets;                          // static nodes' edge/centre candidates
+  // resize: everything resizePatch() needs, captured at drag start
+  handle?: HandleName;
+  node0?: ResizeStart & { id: string };
+  box0?: { w: number; h: number };
+  d0?: number;                       // start anchor→pointer distance (proportional corners)
+  anchor?: { x: number; y: number }; // fixed opposite corner/edge (world)
 }
 interface Marquee { x0: number; y0: number; x1: number; y1: number }
 interface Hover { n: Component; x: number; y: number }
@@ -83,9 +91,13 @@ export default function PidFullView() {
   // into exactly one undo step, just without redundant intra-frame renders.
   const dragRafRef = useRef<number | null>(null);
   const pendingMoveRef = useRef<Array<{ id: string; x: number; y: number }> | null>(null);
+  // resize commits are rAF-batched exactly like moves, so live-stretching a
+  // symbol re-renders at most once per frame (smooth, no intra-frame churn)
+  const pendingResizeRef = useRef<{ id: string; patch: Partial<Component> } | null>(null);
   const flushPendingMove = useCallback(() => {
     dragRafRef.current = null;
     if (pendingMoveRef.current) { p.moveMany(pendingMoveRef.current); pendingMoveRef.current = null; }
+    if (pendingResizeRef.current) { const { id, patch } = pendingResizeRef.current; p.updateNode(id, patch); pendingResizeRef.current = null; }
   }, [p]);
   useEffect(() => () => { if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current); }, []);
   const [view, setView] = useState<View>({ x: 60, y: 60, k: 1 });
@@ -100,6 +112,10 @@ export default function PidFullView() {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [showExport, setShowExport] = useState(false);
+  // smart alignment guides currently shown during a node drag
+  const [guides, setGuides] = useState<Guide[] | null>(null);
+  // right-click context menu (node / empty-canvas variant)
+  const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
 
   const editable = mode === 'admin' && !iso;
   // drop-shadow depth is per-node SVG filter work — only worth it on smaller
@@ -191,7 +207,7 @@ export default function PidFullView() {
       if (mod && (e.key === 'x' || e.key === 'X')) { e.preventDefault(); proj.cutSelection(); return; }
       if (mod && (e.key === 'v' || e.key === 'V')) { e.preventDefault(); proj.pasteClipboard(); return; }
       if (mod && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); proj.selectAll(); return; }
-      if (e.key === 'Escape') { proj.clearSelection(); setConnect(null); setPortHover(null); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(null); return; }
+      if (e.key === 'Escape') { proj.clearSelection(); setConnect(null); setPortHover(null); setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(null); setCtxMenu(null); return; }
       // a selected pipe (no node selection) can be deleted with Del/Backspace
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdgeIdRef.current && !proj.selectedIds.length) {
         e.preventDefault(); proj.deleteEdge(selectedEdgeIdRef.current); setSelectedEdgeId(null); return;
@@ -225,7 +241,7 @@ export default function PidFullView() {
     (e.target as Element).setPointerCapture?.(e.pointerId);
     // any new canvas action dismisses pipe pickers / deselects a pipe (pipe
     // clicks stopPropagation before here, so this only fires on node/empty clicks)
-    setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(null);
+    setPipeMenu(null); setPipeEdit(null); setSelectedEdgeId(null); setCtxMenu(null);
     const w = screenToWorld(px, py, view);
 
     // Middle mouse always pans (so left-drag stays free for connect/move/marquee)
@@ -251,7 +267,11 @@ export default function PidFullView() {
       }
       const starts = project.nodes.filter((n) => groupIds.includes(n.id)).map((n) => ({ id: n.id, x: n.x, y: n.y }));
       setHover(null); setPortHover(null); // hide handles while moving the body
-      dragRef.current = { kind: 'node', sx: px, sy: py, starts };
+      // smart-guide data, captured once: the dragged nodes' box sizes + every
+      // static node's snappable edges/centres (boxes don't change mid-drag)
+      const dragSet = new Set(groupIds);
+      const dims = new Map(starts.map((s) => { const nn = nodeMap.get(s.id)!; return [s.id, box(nn)] as const; }));
+      dragRef.current = { kind: 'node', sx: px, sy: py, starts, dims, snapSets: buildSnapSets(project.nodes, dragSet) };
       return;
     }
 
@@ -278,19 +298,43 @@ export default function PidFullView() {
     d.moved = true;
     if (d.kind === 'pan') setView((v) => ({ ...v, x: d.view0!.x + (px - d.sx), y: d.view0!.y + (py - d.sy) }));
     else if (d.kind === 'node' && d.starts) {
-      const dx = (px - d.sx) / view.k;
-      const dy = (py - d.sy) / view.k;
-      // Free placement by default — drag a symbol anywhere. Hold Ctrl/Cmd to
-      // snap to the grid for alignment.
-      const q = (e.ctrlKey || e.metaKey) ? snap : (v: number) => v;
-      pendingMoveRef.current = d.starts.map((s) => ({ id: s.id, x: q(s.x + dx), y: q(s.y + dy) }));
+      let dx = (px - d.sx) / view.k;
+      let dy = (py - d.sy) / view.k;
+      // Free placement by default. Ctrl/Cmd = grid snap; otherwise smart
+      // object-snapping against other nodes' edges/centres (Alt disables all).
+      if (e.ctrlKey || e.metaKey) {
+        pendingMoveRef.current = d.starts.map((s) => ({ id: s.id, x: snap(s.x + dx), y: snap(s.y + dy) }));
+        setGuides(null);
+      } else {
+        let activeGuides: Guide[] | null = null;
+        if (!e.altKey && d.snapSets && d.dims) {
+          // moving selection's bounds at the raw (unsnapped) position
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const s of d.starts) {
+            const dim = d.dims.get(s.id);
+            if (!dim) continue;
+            minX = Math.min(minX, s.x + dx); minY = Math.min(minY, s.y + dy);
+            maxX = Math.max(maxX, s.x + dx + dim.w); maxY = Math.max(maxY, s.y + dy + dim.h);
+          }
+          if (minX < maxX) {
+            const res = applySmartSnap({ minX, minY, maxX, maxY }, d.snapSets, 8 / view.k);
+            dx += res.dx; dy += res.dy;
+            activeGuides = res.guides.length ? res.guides : null;
+          }
+        }
+        pendingMoveRef.current = d.starts.map((s) => ({ id: s.id, x: s.x + dx, y: s.y + dy }));
+        setGuides(activeGuides);
+      }
       if (dragRafRef.current == null) dragRafRef.current = requestAnimationFrame(flushPendingMove);
-    } else if (d.kind === 'resize' && d.resizeId && d.anchor) {
-      // Scale the node by the drag distance from its fixed top-left corner.
+    } else if (d.kind === 'resize' && d.handle && d.node0 && d.box0 && d.anchor) {
+      // 8-direction resize: corners scale proportionally (Shift = free
+      // stretch), side handles stretch one dimension — all anchored on the
+      // opposite corner/edge. Live preview commits once per frame via rAF.
       const w = screenToWorld(px, py, view);
-      const dist = Math.hypot(w.x - d.anchor.x, w.y - d.anchor.y);
-      const factor = d.d0 && d.d0 > 0 ? dist / d.d0 : 1;
-      p.scaleNode(d.resizeId, (d.scale0 ?? 1) * factor);
+      const proportional = d.handle.length === 2 && !e.shiftKey;
+      const patch = resizePatch(d.handle, d.node0, d.box0, d.anchor, d.d0 ?? 1, w, proportional);
+      pendingResizeRef.current = { id: d.node0.id, patch };
+      if (dragRafRef.current == null) dragRafRef.current = requestAnimationFrame(flushPendingMove);
     } else if (d.kind === 'marquee') {
       const w = screenToWorld(px, py, view);
       setMarquee((m) => (m ? { ...m, x1: w.x, y1: w.y } : m));
@@ -314,6 +358,8 @@ export default function PidFullView() {
     // rAF), and this frame's drag ends in exactly one settled position.
     if (dragRafRef.current != null) { cancelAnimationFrame(dragRafRef.current); dragRafRef.current = null; }
     if (pendingMoveRef.current) { p.moveMany(pendingMoveRef.current); pendingMoveRef.current = null; }
+    if (pendingResizeRef.current) { const { id, patch } = pendingResizeRef.current; p.updateNode(id, patch); pendingResizeRef.current = null; }
+    setGuides(null);
     if (d?.kind === 'marquee' && marquee) {
       const xMin = Math.min(marquee.x0, marquee.x1), xMax = Math.max(marquee.x0, marquee.x1);
       const yMin = Math.min(marquee.y0, marquee.y1), yMax = Math.max(marquee.y0, marquee.y1);
@@ -428,15 +474,43 @@ export default function PidFullView() {
   const approve = () => setPendingId(null);
   const cancelPending = () => { if (pendingId) p.deleteNode(pendingId); setPendingId(null); };
 
-  // Corner-handle drag → scale a single selected node (anchored at its top-left).
-  function startResize(e: React.PointerEvent, n: Component) {
-    if (!editable) return;
+  // Handle drag → resize the single selected node. Corners scale
+  // proportionally (Shift = free), sides stretch one dimension; the opposite
+  // corner/edge stays anchored so connected pipes follow the moving ports.
+  function startResize(e: React.PointerEvent, n: Component, handle: HandleName) {
+    if (!editable || n.locked || n.sizeLocked) return;
     e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
     const { px, py } = local(e);
     const w = screenToWorld(px, py, view);
-    const anchor = { x: n.x, y: n.y };
-    const d0 = Math.hypot(w.x - anchor.x, w.y - anchor.y);
-    dragRef.current = { kind: 'resize', sx: px, sy: py, resizeId: n.id, scale0: n.scale ?? 1, d0, anchor };
+    const b = box(n);
+    const anchor = resizeAnchor(handle, n.x, n.y, b);
+    dragRef.current = {
+      kind: 'resize', sx: px, sy: py, handle, box0: b, anchor,
+      d0: Math.hypot(w.x - anchor.x, w.y - anchor.y) || 1,
+      node0: { id: n.id, x: n.x, y: n.y, scale: n.scale || 1, sx: n.sx || 1, sy: n.sy || 1, rot: normRot(n.rot) },
+    };
+  }
+
+  // Right-click → PowerPoint-style context menu (admin 2D only). On a node it
+  // targets the node (selecting it / its group first); on empty space it
+  // offers paste / select-all.
+  function onContextMenu(e: React.MouseEvent) {
+    e.preventDefault(); // never show the browser menu over the canvas
+    if (!editable) return;
+    const { px, py } = local(e);
+    const w = screenToWorld(px, py, view);
+    const hit = pickNode(project.nodes, w.x, w.y);
+    setHover(null); setPipeMenu(null); setPipeEdit(null);
+    if (hit) {
+      if (!selSet.has(hit.id)) {
+        const mates = hit.groupId ? project.nodes.filter((n) => n.groupId === hit.groupId).map((n) => n.id) : [hit.id];
+        if (mates.length > 1) p.setSelectedIds(mates); else p.setSelectedId(hit.id);
+      }
+      setCtxMenu({ x: e.clientX, y: e.clientY, kind: 'node' });
+    } else {
+      setCtxMenu({ x: e.clientX, y: e.clientY, kind: 'canvas' });
+    }
   }
 
   function addNote() {
@@ -502,7 +576,7 @@ export default function PidFullView() {
           role="application" tabIndex={0} aria-label="P&ID editor canvas"
           style={{ position: 'absolute', inset: 0, cursor: iso || mode === 'field' ? 'grab' : connect || portHover?.port ? 'crosshair' : 'default', touchAction: 'none' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
-          onPointerLeave={() => { onPointerUp(); setHover(null); }}
+          onPointerLeave={() => { onPointerUp(); setHover(null); }} onContextMenu={onContextMenu}
           onWheel={onWheel} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
           <defs>
             <pattern id="grid" width={20} height={20} patternUnits="userSpaceOnUse">
@@ -548,19 +622,37 @@ export default function PidFullView() {
               <NodeG key={n.id} n={n} selected={selSet.has(n.id)} connecting={connect?.from.id === n.id}
                 pending={pendingId === n.id} flagged={false} shadow={shadow} refDate={refDate} iso={iso} />
             ))}
-            {/* corner resize handle — drag to scale the single selected node */}
+            {/* 8-direction resize handles on the single selected node —
+                corners scale proportionally (Shift = free stretch), side
+                handles stretch one dimension only */}
             {!iso && editable && p.selectedIds.length === 1 && (() => {
               const n = nodeMap.get(p.selectedIds[0]);
-              if (!n) return null;
+              if (!n || n.locked || n.sizeLocked) return null;
               const b = box(n);
-              const s = 10 / view.k;
-              const hx = n.x + b.w, hy = n.y + b.h;
+              const s = 9 / view.k;
+              const HANDLES: Array<[HandleName, number, number, string]> = [
+                ['nw', 0, 0, 'nwse-resize'], ['n', b.w / 2, 0, 'ns-resize'], ['ne', b.w, 0, 'nesw-resize'],
+                ['w', 0, b.h / 2, 'ew-resize'], ['e', b.w, b.h / 2, 'ew-resize'],
+                ['sw', 0, b.h, 'nesw-resize'], ['s', b.w / 2, b.h, 'ns-resize'], ['se', b.w, b.h, 'nwse-resize'],
+              ];
               return (
-                <rect x={hx - s / 2} y={hy - s / 2} width={s} height={s} rx={2 / view.k}
-                  fill="var(--accent)" stroke="#fff" strokeWidth={1.5 / view.k}
-                  style={{ cursor: 'nwse-resize' }} onPointerDown={(e) => startResize(e, n)} />
+                <g>
+                  {HANDLES.map(([h, ox, oy, cursor]) => (
+                    <rect key={h} x={n.x + ox - s / 2} y={n.y + oy - s / 2} width={s} height={s} rx={2 / view.k}
+                      fill="#fff" stroke="var(--accent)" strokeWidth={1.5 / view.k}
+                      style={{ cursor }} onPointerDown={(e) => startResize(e, n, h)} />
+                  ))}
+                </g>
               );
             })()}
+            {/* smart alignment guides (object snapping) while dragging */}
+            {guides && !iso && guides.map((g, i) => (
+              g.axis === 'v'
+                ? <line key={i} x1={g.pos} y1={g.lo - 14} x2={g.pos} y2={g.hi + 14} stroke="#ff4fa3"
+                    strokeWidth={1.2 / view.k} strokeDasharray={`${5 / view.k} ${3 / view.k}`} pointerEvents="none" />
+                : <line key={i} x1={g.lo - 14} y1={g.pos} x2={g.hi + 14} y2={g.pos} stroke="#ff4fa3"
+                    strokeWidth={1.2 / view.k} strokeDasharray={`${5 / view.k} ${3 / view.k}`} pointerEvents="none" />
+            ))}
             {/* live connection rubber-band (from the source port to the cursor / snapped target port) */}
             {connect && !iso && (() => {
               const fromN = nodeMap.get(connect.from.id);
@@ -624,7 +716,8 @@ export default function PidFullView() {
       </div>
 
       {mode === 'admin' && !iso && <PropertiesPanel />}
-      {hover && !iso && !connect && <Tooltip h={hover} refDate={refDate} />}
+      {ctxMenu && <ContextMenu menu={ctxMenu} onClose={() => setCtxMenu(null)} />}
+      {hover && !iso && !connect && !ctxMenu && <Tooltip h={hover} refDate={refDate} />}
       {showExport && <ExportDialog project={project} refDate={refDate} onClose={() => setShowExport(false)} />}
     </>
   );

@@ -14,6 +14,7 @@ import { withFreshIds } from '../../lib/idSeq';
 import { nextId } from '../idSequence';
 
 export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vmiddle' | 'bottom';
+export type ZOrderOp = 'front' | 'forward' | 'backward' | 'back';
 
 export interface SelectionApi {
   selectedId: string | null;
@@ -41,6 +42,12 @@ export interface SelectionApi {
   groupSelection: () => void;
   ungroupSelection: () => void;
   toggleLockSelection: () => void;
+  toggleSizeLockSelection: () => void;
+  /** Z-order: nodes render in array order, so reordering the array is the
+   *  bring-to-front / send-to-back operation. */
+  reorderSelection: (op: ZOrderOp) => void;
+  /** Extend the selection to every node sharing a type with it. */
+  selectSimilar: () => void;
 }
 
 export function useSelection(
@@ -199,10 +206,52 @@ export function useSelection(
     });
   }, [selectedIds, setProject]);
 
+  const toggleSizeLockSelection = useCallback(() => {
+    const set = new Set(selectedIds);
+    setProject((p) => {
+      const sel = p.nodes.filter((n) => set.has(n.id));
+      const allLocked = sel.length > 0 && sel.every((n) => n.sizeLocked);
+      return { ...p, nodes: p.nodes.map((n) => (set.has(n.id) ? { ...n, sizeLocked: !allLocked } : n)) };
+    });
+  }, [selectedIds, setProject]);
+
+  // ---- z-order (context menu "Arrange") --------------------------------------
+  const reorderSelection = useCallback((op: ZOrderOp) => {
+    const set = new Set(selectedIds);
+    if (!set.size) return;
+    setProject((p) => {
+      if (op === 'front' || op === 'back') {
+        const sel = p.nodes.filter((n) => set.has(n.id));
+        const rest = p.nodes.filter((n) => !set.has(n.id));
+        if (!sel.length) return p;
+        return { ...p, nodes: op === 'front' ? [...rest, ...sel] : [...sel, ...rest] };
+      }
+      // forward/backward: bubble each selected node one step past its
+      // unselected neighbour (selected runs move as a block, like PowerPoint)
+      const nodes = [...p.nodes];
+      if (op === 'forward') {
+        for (let i = nodes.length - 2; i >= 0; i--)
+          if (set.has(nodes[i].id) && !set.has(nodes[i + 1].id)) [nodes[i], nodes[i + 1]] = [nodes[i + 1], nodes[i]];
+      } else {
+        for (let i = 1; i < nodes.length; i++)
+          if (set.has(nodes[i].id) && !set.has(nodes[i - 1].id)) [nodes[i], nodes[i - 1]] = [nodes[i - 1], nodes[i]];
+      }
+      return { ...p, nodes };
+    });
+  }, [selectedIds, setProject]);
+
+  const selectSimilar = useCallback(() => {
+    const set = new Set(selectedIds);
+    const types = new Set(project.nodes.filter((n) => set.has(n.id)).map((n) => n.type));
+    if (!types.size) return;
+    setSelectedIds(project.nodes.filter((n) => types.has(n.type)).map((n) => n.id));
+  }, [project.nodes, selectedIds]);
+
   return {
     selectedId, setSelectedId, selected, selectedIds, setSelectedIds, toggleSelect, clearSelection, selectAll,
     clipboardCount: clipboard.length, copySelection, cutSelection, pasteClipboard,
     deleteSelection, duplicateSelection, rotateSelection, flipSelection, scaleSelection, moveMany,
     alignSelection, distributeSelection, groupSelection, ungroupSelection, toggleLockSelection,
+    toggleSizeLockSelection, reorderSelection, selectSimilar,
   };
 }

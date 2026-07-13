@@ -16,6 +16,10 @@ export interface Component {
   rot: number;
   scale: number;
   flip: boolean;
+  /** Non-uniform stretch factors on top of `scale` (side-handle resize).
+   *  Applied along the symbol's LOCAL axes (pre-rotation); default 1. */
+  sx?: number;
+  sy?: number;
   // identity / classification
   tag: string;
   description: string;
@@ -36,6 +40,8 @@ export interface Component {
   // editor grouping / locking (report §3 grouping/locking)
   groupId?: string;
   locked?: boolean;
+  /** Size is locked (resize handles hidden) while position stays draggable. */
+  sizeLocked?: boolean;
   // link to the AEMP system-of-record asset
   aempAssetId?: string;
 }

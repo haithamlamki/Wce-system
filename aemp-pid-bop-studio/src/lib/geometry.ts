@@ -56,13 +56,15 @@ export function normRot(rot = 0): number {
  *  a stray/legacy node can never crash layout (box() is called everywhere). */
 const FALLBACK_DIM = { w: 48, h: 48 };
 
-/** Scaled, rotation-aware bounding box (w/h swap at 90°/270°). */
-export function box(n: Pick<Component, 'type' | 'scale' | 'rot'>): Box {
+/** Scaled, stretched, rotation-aware bounding box (w/h swap at 90°/270°).
+ *  `sx`/`sy` stretch along the symbol's LOCAL axes, so at 90°/270° a local
+ *  width stretch shows up as screen height — exactly like the artwork. */
+export function box(n: Pick<Component, 'type' | 'scale' | 'rot' | 'sx' | 'sy'>): Box {
   const s = SYM[n.type as SymbolKey] ?? FALLBACK_DIM;
   const sc = n.scale || 1;
   const rot = normRot(n.rot);
-  const bw = s.w * sc;
-  const bh = s.h * sc;
+  const bw = s.w * sc * (n.sx || 1);
+  const bh = s.h * sc * (n.sy || 1);
   return rot === 90 || rot === 270 ? { w: bh, h: bw } : { w: bw, h: bh };
 }
 
@@ -86,14 +88,16 @@ export function center(n: Component): { x: number; y: number } {
   return { x: n.x + w / 2, y: n.y + h / 2 };
 }
 
-/** Inner SVG transform that rotates/scales/flips the artwork inside its box. */
+/** Inner SVG transform that rotates/scales/stretches/flips the artwork inside
+ *  its box. The (possibly non-uniform) scale sits right of the rotation, so it
+ *  stretches the artwork along its LOCAL axes — matching box()'s w/h swap. */
 export function innerTransform(n: Component): string {
   const s = SYM[n.type as SymbolKey] ?? FALLBACK_DIM;
   const sc = n.scale || 1;
   const rot = normRot(n.rot);
   const fx = n.flip ? -1 : 1;
   const { w: ew, h: eh } = box(n);
-  return `translate(${ew / 2},${eh / 2}) rotate(${rot}) scale(${sc * fx},${sc}) translate(${-s.w / 2},${-s.h / 2})`;
+  return `translate(${ew / 2},${eh / 2}) rotate(${rot}) scale(${sc * (n.sx || 1) * fx},${sc * (n.sy || 1)}) translate(${-s.w / 2},${-s.h / 2})`;
 }
 
 /** Convert a pointer position (relative to the SVG element) to world coords. */
@@ -356,8 +360,8 @@ export function proj(x: number, y: number): { x: number; y: number } {
 export function isoPlacement(n: Component) {
   const s = SYM[n.type as SymbolKey] ?? FALLBACK_DIM;
   const sc = n.scale || 1;
-  const bw = s.w * sc;
-  const bh = s.h * sc;
+  const bw = s.w * sc * (n.sx || 1);
+  const bh = s.h * sc * (n.sy || 1);
   const { w: ew, h: eh } = box(n);
   const gp = proj(n.x + bw / 2, n.y + bh / 2);
   const lift = 12 + eh * 0.55;
