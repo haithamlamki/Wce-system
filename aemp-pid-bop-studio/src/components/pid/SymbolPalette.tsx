@@ -6,44 +6,30 @@
 //  itself is the canvas's "click = pending, needs approval" flow, so
 //  `onPlaceCentre` (which also owns the approve-bar state) is passed in.
 // ============================================================================
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useProject } from '../../state/ProjectContext';
 import { SYM, SYM_ORDER, type SymbolKey } from '../../lib/symbols';
 import { safeColor } from '../../lib/sanitizeSvg';
-import { parseDrawing } from '../../lib/layoutImport';
 import SymbolLibrary from '../SymbolLibrary';
 import SvgMarkup from '../SvgMarkup';
 
 export default function SymbolPalette({ onPlaceCentre }: { onPlaceCentre: (type: SymbolKey) => void }) {
   const p = useProject();
-  const drawingRef = useRef<HTMLInputElement | null>(null);
   const [palQuery, setPalQuery] = useState('');
   const [palCollapsed, setPalCollapsed] = useState<Set<string>>(new Set());
   const [palHover, setPalHover] = useState<SymbolKey | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
 
-  async function onImportDrawing(file: File) {
-    try {
-      const { template, pipes, source } = parseDrawing(await file.text());
-      const n = p.loadLayout(template, pipes);
-      alert(`Imported ${n} items + ${pipes.length} pipe runs (${source}). Equipment was matched to library symbols; review tags before saving.`);
-    } catch (e) {
-      alert(`Could not import drawing: ${(e as Error).message}`);
-    }
-  }
-
+  // "Import from AEMP" / "Import drawing…" buttons were removed by request —
+  // diagrams are started clean, built from the master, or opened from Projects.
   return (
     <>
       <aside style={paletteStyle}>
         <div style={palHeader}>
           <button style={primaryBtn} onClick={p.loadMaster}>Build Full P&amp;ID</button>
-          <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => p.importAEMP()}>Import from AEMP</button>
-          <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => drawingRef.current?.click()}>Import drawing…</button>
           <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--ink)' }} onClick={() => setShowLibrary(true)}>⊞ Symbol library</button>
           <button style={{ ...primaryBtn, background: 'var(--panel2)', color: 'var(--red)', marginBottom: 0 }}
             onClick={() => { if (confirm('Clear the entire canvas — all equipment, piping and annotations?')) p.clearCanvas(); }}>Clear canvas</button>
-          <input ref={drawingRef} type="file" accept=".html,.htm,.json,.js,text/html,application/json" style={{ display: 'none' }}
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportDrawing(f); e.target.value = ''; }} />
           <input placeholder="Search symbols…" value={palQuery} onChange={(e) => setPalQuery(e.target.value)} style={palSearch} />
         </div>
         <div style={palScroll}>
