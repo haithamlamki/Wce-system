@@ -1,0 +1,1581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rig String Builder — BHA · Pipe Tally · Ton-Mile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0e1b23;--panel:#132630;--panel-2:#1b3440;--steel-900:#28414c;--steel-600:#5c727c;
+  --steel-400:#93a5ac;--steel-200:#c9d3d6;--paper:#f3f5f4;--paper-2:#ffffff;--line:#d7dedd;--line-dark:#24404c;
+  --amber:#f5a524;--amber-deep:#c47c07;--link:#1f9d63;--link-tint:#e6f5ec;--danger:#d9503f;--danger-tint:#fbe7e4;
+  --disp:"Barlow Semi Condensed",-apple-system,Segoe UI,Roboto,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}html,body{margin:0}
+body{font-family:var(--disp);color:var(--ink);background:var(--paper);-webkit-font-smoothing:antialiased}
+.appbar{background:var(--ink);color:#eaf1f2;border-bottom:3px solid var(--amber);position:sticky;top:0;z-index:40}
+.appbar-inner{display:flex;align-items:stretch;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px;padding:12px 18px}
+.mark{width:34px;height:34px;flex:none;position:relative;background:var(--amber);border-radius:3px;box-shadow:inset 0 0 0 2px var(--ink);display:grid;place-items:center}
+.mark::before{content:"";width:4px;height:20px;background:var(--ink)}
+.mark::after{content:"";position:absolute;bottom:4px;width:16px;height:4px;background:var(--ink)}
+.brand h1{font-size:19px;line-height:1;margin:0;letter-spacing:.3px;font-weight:700;text-transform:uppercase}
+.brand .sub{font-size:11px;color:var(--steel-400);letter-spacing:1.5px;text-transform:uppercase;margin-top:3px}
+.appbar-spacer{flex:1 1 auto}
+.tools{display:flex;align-items:center;gap:6px;padding:10px 14px;flex-wrap:wrap}
+.tbtn{font-family:var(--disp);font-size:12.5px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:#cfe0e4;background:var(--panel-2);border:1px solid var(--line-dark);padding:8px 12px;border-radius:4px;cursor:pointer;white-space:nowrap}
+.tbtn:hover{background:var(--steel-900);color:#fff}
+.tbtn.warn:hover{background:var(--danger);border-color:var(--danger)}
+.tbtn.gear{background:var(--amber);color:var(--ink);border-color:var(--amber-deep)}
+.tbtn.gear:hover{background:#ffb733}
+.wellstrip{background:var(--panel);border-top:1px solid var(--line-dark)}
+.wellstrip-inner{display:flex;flex-wrap:wrap}
+.wf{display:flex;flex-direction:column;padding:8px 14px;border-right:1px solid var(--line-dark);flex:1 1 130px;min-width:120px}
+.wf label{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--steel-400);margin-bottom:3px}
+.wf input{font-family:var(--mono);font-size:13px;background:transparent;border:0;border-bottom:1px solid transparent;color:#f0f6f7;padding:2px 0;width:100%}
+.wf input:focus{outline:none;border-bottom-color:var(--amber)}
+.tabs{display:flex;background:var(--ink);padding:0 12px;overflow-x:auto}
+.tab{font-family:var(--disp);font-weight:600;font-size:14px;letter-spacing:.6px;text-transform:uppercase;color:var(--steel-400);background:transparent;border:0;border-top:3px solid transparent;padding:13px 20px 12px;cursor:pointer;white-space:nowrap}
+.tab .cnt{font-family:var(--mono);font-size:11px;color:var(--steel-600);margin-left:7px}
+.tab[aria-selected="true"]{color:#fff;background:var(--paper);border-top-color:var(--amber);border-radius:6px 6px 0 0}
+.tab[aria-selected="true"] .cnt{color:var(--amber-deep)}
+.wrap{max-width:1560px;margin:0 auto;padding:16px;display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+@media(max-width:1080px){.wrap{grid-template-columns:1fr}}
+.rail{position:sticky;top:150px}
+@media(max-width:1080px){.rail{position:static}}
+.card{background:var(--paper-2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.card + .card{margin-top:14px}
+.card h2{font-size:12px;letter-spacing:1.6px;text-transform:uppercase;margin:0;padding:11px 14px;color:var(--panel);background:linear-gradient(var(--paper),#eaeeec);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.card h2 .dot{width:8px;height:8px;border-radius:2px;background:var(--amber)}
+.summary-body{padding:6px 14px 14px;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+.metric{background:var(--paper-2);padding:10px 4px 8px}
+.metric .v{font-family:var(--mono);font-weight:600;font-size:20px;line-height:1;color:var(--ink)}
+.metric .v small{font-size:11px;color:var(--steel-600);font-weight:500;margin-left:2px}
+.metric .k{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--steel-600);margin-top:5px}
+.metric.hero{grid-column:1/3;background:var(--ink)}
+.metric.hero .v{color:var(--amber);font-size:27px}
+.metric.hero .k{color:var(--steel-400)}
+.metric.linked .v{color:var(--link)}
+.schematic{display:flex;gap:12px;padding:14px}
+.gauge{width:58px;flex:none}
+.leg{flex:1;display:flex;flex-direction:column;justify-content:center;gap:12px}
+.legrow{display:flex;align-items:flex-start;gap:9px;font-size:12.5px}
+.legrow .sw{width:14px;height:14px;border-radius:3px;flex:none;margin-top:1px}
+.legrow b{font-family:var(--mono);font-weight:600;display:block}
+.legrow span{color:var(--steel-600);font-size:11px;letter-spacing:.4px;text-transform:uppercase}
+.linknote{font-size:11.5px;color:var(--steel-600);padding:0 14px 14px;line-height:1.5}
+.linknote b{color:var(--link)}
+/* slip/cut mini status in rail */
+.slipcut{padding:12px 14px;border-top:1px solid var(--line)}
+.bar{height:9px;border-radius:5px;background:#e7ecea;overflow:hidden;margin:6px 0 3px}
+.bar > i{display:block;height:100%;border-radius:5px}
+.scrow{margin-bottom:12px}
+.scrow .lab{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--steel-600)}
+.scrow .lab b{font-family:var(--mono);color:var(--ink)}
+.builder{background:var(--paper-2);border:1px solid var(--line);border-radius:8px;overflow:hidden;min-height:400px}
+.bhead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;background:linear-gradient(var(--paper-2),#f7f9f8)}
+.bhead h2{font-size:17px;margin:0;letter-spacing:.4px;text-transform:uppercase;font-weight:700}
+.bhead .hint{font-size:12px;color:var(--steel-600)}
+.bhead .grow{flex:1}
+.abtn{font-family:var(--disp);font-weight:600;font-size:13px;letter-spacing:.4px;text-transform:uppercase;border:1px solid var(--steel-900);background:var(--ink);color:#fff;padding:8px 13px;border-radius:5px;cursor:pointer}
+.abtn:hover{background:var(--panel-2)}
+.abtn.amber{background:var(--amber);color:var(--ink);border-color:var(--amber-deep)}
+.abtn.amber:hover{background:#ffb733}
+.abtn.ghost{background:transparent;color:var(--panel);border-color:var(--line)}
+.abtn.ghost:hover{background:var(--paper);border-color:var(--steel-400)}
+.palette{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px dashed var(--line);background:#fbfcfb;align-items:center}
+.chip{font-family:var(--disp);font-size:12px;font-weight:500;letter-spacing:.3px;border:1px solid var(--line);background:var(--paper-2);color:var(--panel);padding:6px 10px;border-radius:20px;cursor:pointer}
+.chip:hover{border-color:var(--amber);background:#fff8ec}
+.tscroll{overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+thead th{position:sticky;top:0;z-index:2;background:var(--panel);color:#dce8ea;font-family:var(--disp);font-weight:600;font-size:11px;letter-spacing:.7px;text-transform:uppercase;padding:9px 8px;text-align:right;white-space:nowrap;border-bottom:2px solid var(--amber)}
+thead th.l{text-align:left}
+thead th.linkcol{color:var(--link);background:#0e2a20}
+tbody td{padding:0;border-bottom:1px solid var(--line);text-align:right;background:var(--paper-2)}
+tbody tr:hover td{background:#fbfdfc}
+tbody tr.standstart td{border-top:2px solid var(--steel-400)}
+td input{font-family:var(--mono);font-size:13px;border:0;background:transparent;padding:8px;width:100%;text-align:right;color:var(--ink)}
+td input.l{text-align:left;font-family:var(--disp)}
+td input:focus{outline:2px solid var(--amber);outline-offset:-2px;background:#fffdf6;border-radius:2px}
+td.calc{padding:8px;font-family:var(--mono);color:var(--steel-600)}
+td.calc.strong{color:var(--ink);font-weight:600}
+td.linked{padding:8px;font-family:var(--mono);color:var(--link);font-weight:600;background:var(--link-tint)}
+tbody tr:hover td.linked{background:#d9efe1}
+td.idx{padding:8px;font-family:var(--mono);color:var(--steel-400);text-align:center;font-size:12px}
+td.stand{font-family:var(--mono);color:var(--amber-deep);font-weight:600;text-align:center;padding:8px}
+td.act{text-align:center;padding:0 6px}
+.rm{border:0;background:transparent;color:var(--steel-400);cursor:pointer;font-size:16px;line-height:1;padding:6px;border-radius:4px}
+.rm:hover{color:#fff;background:var(--danger)}
+.jarcell{text-align:center;padding:6px}.jarcell input{width:16px;height:16px;accent-color:var(--amber-deep);cursor:pointer}
+tr.warnrow td{background:var(--danger-tint)!important}
+td.flag{padding:4px 6px;text-align:center;font-size:15px}
+.empty{padding:44px 20px;text-align:center;color:var(--steel-600)}
+.empty h3{margin:0 0 6px;font-size:16px;color:var(--panel)}
+.params{border-top:1px solid var(--line);background:#f7f9f8;padding:14px 16px}
+.params h3{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--steel-600);margin:0 0 10px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.pf{display:flex;flex-direction:column}
+.pf label{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--steel-600);margin-bottom:3px}
+.pf input,.pf select{font-family:var(--mono);font-size:13px;border:1px solid var(--line);border-radius:4px;padding:7px 8px;background:#fff;color:var(--ink)}
+.pf input:focus,.pf select:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 2px #f5a52433}
+.pf .auto{font-size:10px;color:var(--link);cursor:pointer;margin-top:3px;letter-spacing:.4px;text-transform:uppercase}
+.pf .auto:hover{text-decoration:underline}
+.stripe{padding:9px 16px;background:var(--ink);color:#cfe0e4;font-size:12px;display:flex;gap:22px;flex-wrap:wrap;align-items:center}
+.stripe b{font-family:var(--mono);color:#fff}.stripe .lk{color:var(--amber)}
+/* alarm banner */
+.alarm{margin:0;padding:14px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.alarm.ok{background:var(--link-tint)}
+.alarm.slip{background:#fff4e0}
+.alarm.cut{background:var(--danger-tint)}
+.alarm .sig{width:46px;height:46px;border-radius:8px;flex:none;display:grid;place-items:center;font-size:24px;color:#fff}
+.alarm.ok .sig{background:var(--link)}
+.alarm.slip .sig{background:var(--amber-deep);animation:pulse 1.4s infinite}
+.alarm.cut .sig{background:var(--danger);animation:pulse .9s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 #0002}50%{box-shadow:0 0 0 8px #0000}}
+.alarm .msg{flex:1;min-width:200px}
+.alarm .msg h3{margin:0 0 3px;font-size:16px;letter-spacing:.4px;text-transform:uppercase}
+.alarm .msg p{margin:0;font-size:12.5px;color:var(--steel-900)}
+.alarm .metv{text-align:right}
+.alarm .metv .v{font-family:var(--mono);font-weight:600;font-size:17px}
+.alarm .metv .k{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--steel-600)}
+@media(prefers-reduced-motion:reduce){.alarm .sig{animation:none!important}}
+/* modal */
+.overlay{position:fixed;inset:0;background:#0e1b23cc;display:none;place-items:center;z-index:60;padding:18px;overflow:auto}
+.overlay.on{display:grid}
+.modal{background:var(--paper-2);border-radius:10px;max-width:460px;width:100%;overflow:hidden;border:1px solid var(--line);margin:auto}
+.modal.wide{max-width:720px}
+.modal h3{margin:0;padding:15px 18px;font-size:15px;letter-spacing:.5px;text-transform:uppercase;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:space-between}
+.modal h3 .x{cursor:pointer;color:var(--steel-400);font-size:20px;line-height:1}
+.modal .body{padding:18px;max-height:70vh;overflow:auto}
+.modal .sect{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--amber-deep);font-weight:700;margin:4px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.modal .sect:not(:first-child){margin-top:22px}
+.modal .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.modal .row{display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;border-top:1px solid var(--line);background:#f7f9f8}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:6px;font-size:13px;opacity:0;transition:.25s;z-index:70;border-left:3px solid var(--link)}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+@media print{
+  .appbar,.rail,.palette,.bhead .abtn,.act,.tools,.stripe .lk,.flag{display:none!important}
+  .wrap{display:block;max-width:none;padding:0}.builder{border:0}
+  thead th{color:#000;background:#eee;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  td.linked{background:#eee;color:#000}
+}
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <div class="appbar-inner">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"></div>
+      <div><h1>Rig String Builder</h1><div class="sub">BHA · Pipe Tally · Ton-Mile</div></div>
+    </div>
+    <div class="appbar-spacer"></div>
+    <div class="tools">
+      <button class="tbtn gear" id="btnSettings">⚙ Settings &amp; units</button>
+      <button class="tbtn" id="btnBhaCsv">BHA CSV</button>
+      <button class="tbtn" id="btnPipeCsv">Tally CSV</button>
+      <button class="tbtn" id="btnTmCsv">TM CSV</button>
+      <button class="tbtn" id="btnDailyCsv">Daily CSV</button>
+      <button class="tbtn" id="btnSave">Save .json</button>
+      <button class="tbtn" id="btnLoad">Load</button>
+      <button class="tbtn" id="btnPrint">Print</button>
+      <button class="tbtn warn" id="btnReset">Reset</button>
+      <input type="file" id="fileInput" accept="application/json" hidden>
+    </div>
+  </div>
+  <div class="wellstrip"><div class="wellstrip-inner" id="wellStrip"></div></div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="bha" aria-selected="true">Bottom Hole Assembly <span class="cnt" id="tabBhaCnt"></span></button>
+    <button class="tab" role="tab" data-tab="pipe" aria-selected="false">Pipe Tally <span class="cnt" id="tabPipeCnt"></span></button>
+    <button class="tab" role="tab" data-tab="tm" aria-selected="false">Ton-Mile <span class="cnt" id="tabTmCnt"></span></button>
+    <button class="tab" role="tab" data-tab="daily" aria-selected="false">Daily Updates <span class="cnt" id="tabDailyCnt"></span></button>
+    <button class="tab" role="tab" data-tab="rot" aria-selected="false">Rotating Hrs <span class="cnt" id="tabRotCnt"></span></button>
+    <button class="tab" role="tab" data-tab="pumps" aria-selected="false">Mud Pumps <span class="cnt" id="tabPumpsCnt"></span></button>
+    <button class="tab" role="tab" data-tab="trip" aria-selected="false">Trip Sheet <span class="cnt" id="tabTripCnt"></span></button>
+    <button class="tab" role="tab" data-tab="kill" aria-selected="false">Kill Sheet</button>
+    <button class="tab" role="tab" data-tab="form" aria-selected="false">Formulas</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <aside class="rail">
+    <section class="card">
+      <h2><span class="dot"></span> String Summary</h2>
+      <div class="summary-body" id="summary"></div>
+      <div class="schematic">
+        <svg class="gauge" id="gauge" viewBox="0 0 58 260" aria-label="Drill string schematic"></svg>
+        <div class="leg" id="legend"></div>
+      </div>
+      <p class="linknote">The <b>BHA length</b> feeds the Pipe Tally offset, and total depth (BHA + pipe) feeds the <b>Ton-Mile</b> log.</p>
+      <div class="slipcut" id="slipcut"></div>
+    </section>
+  </aside>
+  <section id="builderSlot"></section>
+</main>
+
+<!-- bulk add joints -->
+<div class="overlay" id="bulkOverlay">
+  <div class="modal">
+    <h3>Add joints in bulk <span class="x" data-close="bulk">×</span></h3>
+    <div class="body">
+      <div class="pf" style="margin-bottom:12px"><label>How many joints (singles)</label><input type="number" id="bulkCount" value="30" min="1" step="1"></div>
+      <div class="pf" style="margin-bottom:12px"><label>Typical joint length</label><input type="number" id="bulkLen" value="9.65" step="0.01"></div>
+      <div class="pf" style="margin-bottom:12px"><label>Connection</label><input type="text" id="bulkConn" value="4 ½'' IF"></div>
+      <div class="pf"><label>Remarks</label><input type="text" id="bulkRemark" value=""></div>
+    </div>
+    <div class="row"><button class="abtn ghost" data-close="bulk">Cancel</button><button class="abtn amber" id="bulkAdd">Add joints</button></div>
+  </div>
+</div>
+
+<!-- settings + units -->
+<div class="overlay" id="setOverlay">
+  <div class="modal wide">
+    <h3>Settings &amp; units <span class="x" data-close="set">×</span></h3>
+    <div class="body" id="setBody"></div>
+    <div class="row"><button class="abtn amber" data-close="set">Done</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ===================================================== UNITS ===================================================== */
+const UNIT_DEFS = {
+  len:  {label:'Length / depth', canon:'m',   opts:{m:{f:1,l:'m'}, ft:{f:3.280839895,l:'ft'}}},
+  wt:   {label:'Weight (mass)',  canon:'kg',  opts:{kg:{f:1,l:'kg'}, t:{f:0.001,l:'t'}, lb:{f:2.20462262,l:'lb'}, klb:{f:0.00220462,l:'klb'}}},
+  force:{label:'Hookload',       canon:'daN', opts:{daN:{f:1,l:'daN'}, tf:{f:1/980.665,l:'tf'}, klbf:{f:1/444.82216,l:'klbf'}}},
+  work: {label:'Ton-mile / work',canon:'tm',  opts:{tm:{f:1,l:'ton·mi'}, tkm:{f:1.459972,l:'t·km'}, mnm:{f:14.31693,l:'MN·m'}}},
+  mud:  {label:'Mud weight',     canon:'sg',  opts:{sg:{f:1,l:'SG'}, ppg:{f:8.345404,l:'ppg'}}},
+  press:{label:'Pump pressure',  canon:'psi', opts:{psi:{f:1,l:'psi'}, bar:{f:0.06894757,l:'bar'}, kPa:{f:6.894757,l:'kPa'}}},
+  temp: {label:'Temperature',    canon:'C',   opts:{C:{f:1,l:'°C'}, F:{f:1,l:'°F'}}},
+  vol:  {label:'Volume (mud)',   canon:'bbl', opts:{bbl:{f:1,l:'bbl'}, m3:{f:0.15898729,l:'m³'}}},
+};
+const state = {
+  units:{len:'m', wt:'kg', force:'daN', work:'tm', mud:'sg', press:'psi', temp:'C', vol:'bbl'},
+  well:{ rig:"205", well:"ABBN-20", date:"2025-10-31", section:'8.5"', dp:"5\" DP" },
+  bha:{ rows:[], mudSG:1.15, bfManual:false, bfVal:0, circ:"2.5–3.0 m³/min", bit:"", make:"Smith", nozzle:"", tfa:0.994 },
+  pipe:{ perStand:3, bhaOverride:false, bhaManual:0, rows:[], _lastLen:9.65, _lastConn:"4 ½'' IF" },
+  tm:{
+    rows:[],
+    prev:{ sinceCut:1200, sinceSlip:1200, accu:103983, lineRem:1097 }, // carried from previous month
+    params:{
+      drawworks:"1320-UDBE 1800HP", drumDia:'30" x 56¼"', derrick:'144 ft',
+      crown:'6 x 52", 1 x 60"', travelling:'6 x 60"', tbaWeight:25,
+      lineMaker:"Brunton Wolf W/R", lineSize:'1 3/8"', lineLength:2286, lineGrade:"EIPS 6x19S 854kN", reel:"2",
+      dateOn:"2025-10-01", dateOff:"",
+      tmGoalPerFoot:20, lengthOfSlip:12, lengthOfCut:24,
+      tmBetweenSlips:800, tmBetweenCuts:1600, noOfLines:12, lineStart:1073
+    }
+  },
+  // ---- shared DAILY UPDATES record: the single daily entry that feeds rotating hours & mud pumps ----
+  daily:{ rows:[] }, // {id,date,depth,rotHrs,mp1,mp2,mp3,mudSG,visc,sand,temp,spm,press,remark}
+  // ---- ROTATING HOURS: per-tool accumulation toward inspection ----
+  rot:{ inspInterval:200, tools:[] }, // tool: {id,type,size,serial,baseWell,baseInsp,lastInsp,inString}
+  // ---- MUD PUMPS: per-pump operating hours + consumable part life ----
+  pumps:{ list:[] }, // pump:{id,name,serial,type,liner,base,parts:[{id,name,limit,base,lastChg}]}
+  // ---- TRIP SHEET: POOH / RIH displacement vs trip tank ----
+  trip:{ mode:'POOH', tubular:'5" 19.5# DP', wet:false, tolStand:0.5, tolAccum:2, rows:[] },
+  // rows: {id,tankStart,tankFinish,remark}
+  // ---- KILL SHEET: IWCF surface BOP vertical well (API field units) ----
+  kill:{
+    cmw:'', lopPress:'', mwAtTest:'',
+    shoeSize:9.625, shoeID:8.681, shoeMD:'', shoeTVD:'',
+    holeSize:8.5, holeMD:'', holeTVD:'',
+    dpOD:5, dpID:4.276, dcOD:8, dcID:3,
+    pumps:[{displ:0.102,spm:30,pl:800},{displ:0.102,spm:30,pl:800}],
+    activePump:0,
+    sidpp:'', sicp:'', pitGain:'',
+    vol:{ dpLen:'',dpCap:'', hwLen:'',hwCap:'', dcLen:'',dcCap:'',
+          dcOhLen:'',dcOhCap:'', dpOhLen:'',dpOhCap:'', dpCsgLen:'',dpCsgCap:'', surfVol:200 },
+    steps:10
+  },
+  view:"bha"
+};
+/* field-unit converters — kill/trip math is API field units regardless of display unit */
+const M2FT=3.280839895, SG2PPG=8.345404;
+const toFt=m=>(+m||0)*M2FT, toPpg=sg=>(+sg||0)*SG2PPG;
+/* API capacity/annulus (bbl/ft) from inches */
+const capOf=id=>(+id||0)**2/1029.4;
+const annOf=(dh,dp)=>(((+dh||0)**2-(+dp||0)**2))/1029.4;
+let uid=1; const nid=()=>uid++;
+const STEEL_SG=7.85;
+function bfFromSG(sg){ const v=1-(+sg||0)/STEEL_SG; return v>0?v:0; }
+
+/* unit helpers: convert canonical -> display and back */
+function uf(kind){ return UNIT_DEFS[kind].opts[state.units[kind]].f; }
+function ul(kind){ return UNIT_DEFS[kind].opts[state.units[kind]].l; }
+function disp(kind,canon){ if(canon===''||canon==null||isNaN(canon))return ''; if(kind==='temp')return state.units.temp==='F'?(canon*9/5+32):canon; return canon*uf(kind); }
+function parse(kind,val){ if(val===''||val==null)return ''; val=+val; if(kind==='temp')return state.units.temp==='F'?((val-32)*5/9):val; return val/uf(kind); }
+
+/* ===================================================== COMPUTE ===================================================== */
+function bhaCompute(){
+  const r=state.bha.rows; let cumL=0,cumW=0;
+  r.forEach(x=>{cumL+=(+x.len||0);cumW+=(+x.wt||0);x._cumL=cumL;x._cumW=cumW;});
+  const factor=state.bha.bfManual?(+state.bha.bfVal||0):bfFromSG(state.bha.mudSG);
+  let jarIdx=-1; r.forEach((x,i)=>{if(x.jar&&jarIdx<0)jarIdx=i;});
+  let belowLen=0,belowAir=0; if(jarIdx>=0){for(let i=0;i<jarIdx;i++){belowLen+=(+r[i].len||0);belowAir+=(+r[i].wt||0);}}
+  return {totalLen:cumL,airWt:cumW,mudWt:cumW*factor,factor,jarIdx,belowLen,belowAir,belowMud:belowAir*factor};
+}
+function bhaLength(){ return bhaCompute().totalLen; }
+function pipeCompute(){
+  const p=state.pipe,n=p.perStand;
+  const bhaLen=p.bhaOverride?(+p.bhaManual||0):bhaLength();
+  let cum=0;
+  p.rows.forEach((x,i)=>{
+    cum+=(+x.len||0); x._cum=cum;
+    x._standStart=(i%n===0); x._standNo=Math.floor(i/n)+1; x._cumDpBha=bhaLen+cum;
+    if(x._standStart){let s=0;for(let k=i;k<Math.min(i+n,p.rows.length);k++)s+=(+p.rows[k].len||0);x._standLen=s;} else x._standLen=null;
+  });
+  return {bhaLen,dpLen:cum,stands:Math.ceil(p.rows.length/n),md:bhaLen+cum,joints:p.rows.length};
+}
+function currentMD(){ return pipeCompute().md; }
+
+/* Ton-mile accumulation — reproduces the source sheet exactly */
+function tmCompute(){
+  const P=state.tm.params, pr=state.tm.prev;
+  let sinceCut=+pr.sinceCut||0, sinceSlip=+pr.sinceSlip||0, accu=+pr.accu||0, lineRem=+pr.lineRem||0;
+  state.tm.rows.forEach(row=>{
+    const tot=(+row.tripTM||0)+(+row.drlgTM||0);
+    const svc=(+row.service||1)||1;
+    const actual=tot/svc;
+    row._tot=tot; row._actual=actual;
+    if(+row.cut>0) sinceCut=0; else sinceCut+=actual;
+    if(+row.slip>0 || +row.cut>0) sinceSlip=0; else sinceSlip+=actual;
+    accu+=actual; lineRem-=(+row.slip||0);
+    row._sinceCut=sinceCut; row._sinceSlip=sinceSlip; row._accu=accu; row._lineRem=lineRem;
+    row._slipWarn=(+row.slip||0)>P.lengthOfSlip;
+    row._cutWarn=(+row.cut||0)>P.lengthOfCut;
+  });
+  const slipDue = sinceSlip>=P.tmBetweenSlips;
+  const cutDue  = sinceCut>=P.tmBetweenCuts;
+  return {sinceCut,sinceSlip,accu,lineRem,slipDue,cutDue,
+    slipRatio:P.tmBetweenSlips?sinceSlip/P.tmBetweenSlips:0,
+    cutRatio:P.tmBetweenCuts?sinceCut/P.tmBetweenCuts:0};
+}
+
+/* ===================================================== HELPERS ===================================================== */
+const $=s=>document.querySelector(s);
+const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt!=null)e.textContent=txt;return e;};
+const fmt=(v,d=2)=>{if(v===''||v==null||isNaN(v))return '—';return Number(v).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});};
+const numStr=v=>{if(v===''||v==null||isNaN(v))return '';return String(Math.round(v*1e6)/1e6);}; /* no grouping — safe for <input type=number> */
+function fmtU(kind,canon,d){ if(canon===''||canon==null||isNaN(canon))return '—'; if(d==null)d=(kind==='wt'&&state.units.wt==='kg')?0:2; return fmt(disp(kind,canon),d); }
+let toastT; function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),1900);}
+
+/* ===================================================== WELL STRIP ===================================================== */
+const WELL_FIELDS=[["rig","Rig No"],["well","Well No"],["date","Date"],["section","Section / Hole"],["dp","Pipe Type"]];
+function renderWell(){
+  const host=$('#wellStrip');host.innerHTML='';
+  WELL_FIELDS.forEach(([k,label])=>{
+    const w=el('div','wf');const l=el('label',null,label);const i=el('input');
+    i.type=k==='date'?'date':'text';i.value=state.well[k]||'';
+    i.addEventListener('input',()=>{state.well[k]=i.value;});
+    w.append(l,i);host.append(w);
+  });
+}
+
+/* ===================================================== SUMMARY + SCHEMATIC + SLIP/CUT ===================================================== */
+function renderSummary(){
+  const b=bhaCompute(),p=pipeCompute(),tm=tmCompute();
+  const S=$('#summary');S.innerHTML='';
+  const cell=(kind,canon,k,cls='',d)=>{const m=el('div','metric'+(cls?' '+cls:''));const vv=el('div','v');vv.innerHTML=`${fmtU(kind,canon,d)} <small>${ul(kind)}</small>`;m.append(vv,el('div','k',k));return m;};
+  const raw=(v,unit,k,cls='')=>{const m=el('div','metric'+(cls?' '+cls:''));const vv=el('div','v');vv.innerHTML=`${fmt(v,0)}${unit?` <small>${unit}</small>`:''}`;m.append(vv,el('div','k',k));return m;};
+  S.append(
+    cell('len',p.md,'Total measured depth','hero'),
+    cell('len',b.totalLen,'BHA length','linked'),
+    cell('len',p.dpLen,'Drill-pipe length'),
+    cell('wt',b.mudWt,'BHA weight in mud'),
+    cell('wt',b.airWt,'BHA weight in air'),
+    raw(p.joints,'','Joints'),
+    raw(p.stands,'','Stands'),
+  );
+  // schematic (proportions unit-independent)
+  const g=$('#gauge');const H=250,top=6,w=26,x=16,total=Math.max(p.md,1e-4);
+  const dpH=Math.max((p.dpLen/total)*H,p.dpLen>0?3:0), bhaH=Math.max((b.totalLen/total)*H,b.totalLen>0?3:0);
+  const NS='http://www.w3.org/2000/svg';g.innerHTML='';
+  const rect=(y,h,fill)=>{const r=document.createElementNS(NS,'rect');r.setAttribute('x',x);r.setAttribute('y',y);r.setAttribute('width',w);r.setAttribute('height',Math.max(h,0));r.setAttribute('fill',fill);return r;};
+  const line=(y,c)=>{const l=document.createElementNS(NS,'line');l.setAttribute('x1',x-6);l.setAttribute('x2',x+w+6);l.setAttribute('y1',y);l.setAttribute('y2',y);l.setAttribute('stroke',c);l.setAttribute('stroke-width',2);return l;};
+  const text=(tx,ty,t,c,a='start')=>{const e=document.createElementNS(NS,'text');e.setAttribute('x',tx);e.setAttribute('y',ty);e.setAttribute('fill',c);e.setAttribute('font-size',9);e.setAttribute('font-family','IBM Plex Mono, monospace');e.setAttribute('text-anchor',a);e.textContent=t;return e;};
+  g.append(line(top,'#5c727c'),text(x-8,top+3,'0','#93a5ac','end'),rect(top,dpH,'#5c727c'));
+  const bhaY=top+dpH;g.append(rect(bhaY,bhaH,'#f5a524'),line(bhaY,'#1f9d63'),text(x+w+8,bhaY+3,fmt(disp('len',b.totalLen),0),'#1f9d63','start'));
+  const bitY=Math.min(bhaY+bhaH,top+H);const tri=document.createElementNS(NS,'polygon');
+  tri.setAttribute('points',`${x},${bitY} ${x+w},${bitY} ${x+w/2},${bitY+9}`);tri.setAttribute('fill','#0e1b23');
+  g.append(tri,text(x+w+8,bitY+4,fmt(disp('len',p.md),0),'#c47c07','start'));
+  const L=$('#legend');L.innerHTML='';
+  const lr=(c,name,canon)=>{const r=el('div','legrow');const s=el('span','sw');s.style.background=c;const box=el('div');box.append(el('b',null,fmtU('len',canon)+' '+ul('len')),el('span',null,name));r.append(s,box);return r;};
+  L.append(lr('#5c727c','Drill pipe',p.dpLen),lr('#f5a524','Bottom hole assembly',b.totalLen),lr('#1f9d63','Shared → tally offset',b.totalLen));
+  // slip/cut mini
+  renderSlipCut(tm);
+  $('#tabBhaCnt').textContent=state.bha.rows.length?`(${state.bha.rows.length})`:'';
+  $('#tabPipeCnt').textContent=state.pipe.rows.length?`(${state.pipe.rows.length})`:'';
+  $('#tabTmCnt').textContent=state.tm.rows.length?`(${state.tm.rows.length})`:'';
+  $('#tabDailyCnt').textContent=state.daily.rows.length?`(${state.daily.rows.length})`:'';
+  $('#tabRotCnt').textContent=state.rot.tools.length?`(${state.rot.tools.length})`:'';
+  $('#tabPumpsCnt').textContent=state.pumps.list.length?`(${state.pumps.list.length})`:'';
+  $('#tabTripCnt').textContent=state.trip.rows.length?`(${state.trip.rows.length})`:'';
+}
+function renderSlipCut(tm){
+  const P=state.tm.params;const host=$('#slipcut');host.innerHTML='';
+  const mk=(title,ratio,since,thr,due,col)=>{
+    const r=el('div','scrow');
+    const lab=el('div','lab');lab.innerHTML=`<span>${title}</span><b>${fmtU('work',since,0)} / ${fmtU('work',thr,0)}</b>`;
+    const bar=el('div','bar');const i=el('i');i.style.width=Math.min(ratio*100,100)+'%';
+    i.style.background=due?col:(ratio>=0.8?'var(--amber)':'#8fb8a2');bar.append(i);
+    const st=el('div');st.style.cssText='font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:'+(due?col:'var(--steel-600)');
+    st.textContent=due?('▲ '+(title.includes('cut')?'slip & cut now':'slip now')):(fmtU('work',Math.max(thr-since,0),0)+' '+ul('work')+' to go');
+    r.append(lab,bar,st);return r;
+  };
+  const t=el('div');t.style.cssText='font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--steel-600);margin-bottom:8px';
+  t.textContent='Drilling-line status';
+  host.append(t,
+    mk('T-M to next slip',tm.slipRatio,tm.sinceSlip,P.tmBetweenSlips,tm.slipDue,'var(--amber-deep)'),
+    mk('T-M to next cut',tm.cutRatio,tm.sinceCut,P.tmBetweenCuts,tm.cutDue,'var(--danger)'));
+  const rem=el('div','scrow');rem.style.marginBottom='0';
+  rem.innerHTML=`<div class="lab"><span>Line remaining</span><b>${fmtU('len',tm.lineRem,0)} ${ul('len')}</b></div>`;
+  host.append(rem);
+  const m=maintenanceCount();
+  const mm=el('div');mm.style.cssText='margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);display:flex;gap:6px;flex-wrap:wrap';
+  const pill=(label,n)=>{const s=el('span');s.style.cssText=`font-size:11px;font-weight:700;letter-spacing:.3px;padding:4px 9px;border-radius:20px;background:${n?'var(--danger-tint)':'var(--link-tint)'};color:${n?'var(--danger)':'var(--link)'}`;s.textContent=(n?('▲ '+n+' '):'✓ ')+label;return s;};
+  mm.append(pill('tools to inspect',m.insp),pill('pump parts',m.parts));
+  host.append(mm);
+}
+
+/* ===================================================== TABLE CELL FACTORIES ===================================================== */
+function td_idx(n){return el('td','idx',String(n));}
+function td_stand(id){const t=el('td','stand');t.dataset.cell='stand-'+id;return t;}
+function td_calc(id,key,extra){const t=el('td','calc'+(extra?' '+extra:''));t.dataset.cell=key+'-'+id;return t;}
+function td_linked(id,key){const t=el('td','linked');t.dataset.cell=key+'-'+id;return t;}
+function td_remove(fn){const t=el('td','act');const b=el('button','rm','×');b.title='Remove';b.onclick=fn;t.append(b);return t;}
+/* kind: 'text' | 'plain'(number as-is) | 'len' | 'wt' | 'inch' | 'force' | 'work' */
+function td_input(row,key,kind,align,after){
+  const t=el('td');const i=el('input');if(align==='l')i.className='l';
+  const unitKind = (kind==='len'||kind==='wt'||kind==='force'||kind==='work')?kind:null;
+  const numeric = kind!=='text';
+  i.type = numeric?'number':'text';
+  if(numeric)i.step = kind==='inch'?'0.001':'0.01';
+  if(unitKind) i.value = numStr(disp(unitKind,row[key]));
+  else i.value = row[key]??'';
+  i.addEventListener('input',()=>{
+    if(unitKind) row[key]= i.value===''?'':parse(unitKind,+i.value);
+    else if(numeric) row[key]= i.value===''?'':+i.value;
+    else row[key]=i.value;
+    if(key==='len'&&state.view==='pipe') state.pipe._lastLen=row[key];
+    if(key==='conn'&&state.view==='pipe') state.pipe._lastConn=row[key];
+    if(after)after();
+  });
+  t.append(i);return t;
+}
+
+/* ===================================================== BHA VIEW ===================================================== */
+const PRESETS=[
+  ["Bit",{desc:'Bit',od:12.25,conn:'6 5/8" Reg'}],["Bit Sub",{desc:'Bit Sub',od:8,idb:2.8,fnod:8,conn:'6 5/8" Reg P x B'}],
+  ["Near-Bit Stab",{desc:'Near Bit Stab',od:12.25,idb:3,fnod:8,conn:'6 5/8" Reg P x B'}],["Shock Sub",{desc:'Shock Sub',od:8,idb:3,fnod:8,conn:'6 5/8" Reg P x B'}],
+  ["Drill Collar",{desc:'Drill Collar',od:8,idb:3,fnod:8,conn:'6 5/8" Reg P x B',len:9.1,wt:2271}],["Stabilizer",{desc:'Stabilizer',od:12.25,idb:3,fnod:8,conn:'6 5/8" Reg P x B'}],
+  ["Jar",{desc:'Hydraulic Jar',od:8,idb:2.8,fnod:8,conn:'6 5/8" Reg P x B',jar:true}],["X/O",{desc:'Cross-Over',od:8,idb:3,fnod:8,conn:'X-Over'}],
+  ["HWDP",{desc:'HWDP',od:5,idb:3,fnod:6.625,conn:'4 ½" IF P x B',len:9.15,wt:588}],["MWD",{desc:'MWD',od:8,idb:3,fnod:8,conn:'6 5/8" Reg P x B'}],
+  ["RSS",{desc:'RSS',od:8.25,idb:3,fnod:8,conn:'6 5/8" Reg P x B'}],["Float Sub",{desc:'Float Sub',od:8,idb:3,fnod:8,conn:'6 5/8" Reg P x B'}],
+];
+function blankBha(d={}){return {id:nid(),desc:d.desc||'',od:d.od??'',idb:d.idb??'',fnod:d.fnod??'',fnlen:d.fnlen??'',serial:'',conn:d.conn||'',len:d.len??'',wt:d.wt??'',jar:!!d.jar};}
+function renderBHA(){
+  const slot=$('#builderSlot');slot.innerHTML='';const box=el('section','builder');
+  const head=el('div','bhead');head.append(el('h2',null,'Bottom Hole Assembly'),el('div','hint',`Bit at bottom (row 1) → up. Lengths in ${ul('len')}, weights in ${ul('wt')}.`),el('div','grow'));
+  const addBtn=el('button','abtn amber','+ Add component');addBtn.onclick=()=>{state.bha.rows.push(blankBha());recalc();};head.append(addBtn);box.append(head);
+  const pal=el('div','palette');pal.append(el('span','hint','Quick insert:'));
+  PRESETS.forEach(([label,data])=>{const c=el('button','chip',label);c.onclick=()=>{state.bha.rows.push(blankBha(data));recalc();toast(label+' added');};pal.append(c);});
+  box.append(pal);
+  if(!state.bha.rows.length){const e=el('div','empty');e.append(el('h3',null,'No components yet'),el('div',null,'Use the quick-insert chips or “Add component” to start from the bit up.'));box.append(e);slot.append(box);attachBhaParams(box);return;}
+  const scroll=el('div','tscroll'),tbl=el('table'),thead=el('thead'),htr=el('tr');
+  [["#","idx"],["Description","l"],["OD in","r"],["ID in","r"],["FN OD in","r"],[`FN len ${ul('len')}`,"r"],["Serial","l"],["Connection","l"],[`Length ${ul('len')}`,"r"],[`Cum len ${ul('len')}`,"r"],[`Weight ${ul('wt')}`,"r"],[`Cum wt ${ul('wt')}`,"r"],["Jar","r"],["","r"]]
+    .forEach(([t,cl])=>{htr.append(el('th',cl==='l'?'l':'',t));});
+  thead.append(htr);tbl.append(thead);const tb=el('tbody');
+  state.bha.rows.forEach((row,i)=>{
+    const tr=el('tr');tr.dataset.id=row.id;
+    tr.append(td_idx(i+1),td_input(row,'desc','text','l'),td_input(row,'od','inch'),td_input(row,'idb','inch'),td_input(row,'fnod','inch'),td_input(row,'fnlen','len'),
+      td_input(row,'serial','text','l'),td_input(row,'conn','text','l'),td_input(row,'len','len',null,()=>recalc(true)),td_calc(row.id,'cumL','strong'),
+      td_input(row,'wt','wt',null,()=>recalc(true)),td_calc(row.id,'cumW'));
+    const jt=el('td','jarcell');const jc=el('input');jc.type='checkbox';jc.checked=!!row.jar;
+    jc.onchange=()=>{state.bha.rows.forEach(r2=>r2.jar=false);row.jar=jc.checked;recalc();};jt.append(jc);tr.append(jt);
+    tr.append(td_remove(()=>{state.bha.rows=state.bha.rows.filter(r=>r!==row);recalc();}));tb.append(tr);
+  });
+  tbl.append(tb);scroll.append(tbl);box.append(scroll);
+  const st=el('div','stripe');st.innerHTML=`Buoyancy factor <b id="s_bf"></b> · In air <b id="s_air"></b> ${ul('wt')} · In mud <b id="s_mud"></b> ${ul('wt')} <span class="lk">· Below jar (mud) <b id="s_below"></b> ${ul('wt')}</span>`;box.append(st);
+  attachBhaParams(box);slot.append(box);updateBhaCalc();
+}
+function attachBhaParams(box){
+  const p=el('div','params');p.append(el('h3',null,'Assembly parameters'));const grid=el('div','pgrid');
+  const mkText=(label,key)=>{const f=el('div','pf');f.append(el('label',null,label));const i=el('input');i.value=state.bha[key]??'';i.addEventListener('input',()=>{state.bha[key]=i.value;});f.append(i);return f;};
+  const mkNum=(label,key,cb)=>{const f=el('div','pf');f.append(el('label',null,label));const i=el('input');i.type='number';i.step='0.001';i.value=state.bha[key]??'';i.addEventListener('input',()=>{state.bha[key]=i.value===''?'':+i.value;if(cb)cb();});f.append(i);return f;};
+  const mudLabel=`Mud weight (${ul('mud')})`;
+  const mudF=el('div','pf');mudF.append(el('label',null,mudLabel));const mudI=el('input');mudI.type='number';mudI.step='0.001';mudI.value=numStr(disp('mud',state.bha.mudSG));
+  mudI.addEventListener('input',()=>{state.bha.mudSG=mudI.value===''?'':parse('mud',+mudI.value);if(!state.bha.bfManual){state.bha.bfVal=bfFromSG(state.bha.mudSG);}recalc();refreshBf();});mudF.append(mudI);
+  const bff=el('div','pf');bff.append(el('label',null,'Buoyancy factor'));const bfi=el('input');bfi.id='bfInput';bfi.type='number';bfi.step='0.0001';
+  bfi.value=(state.bha.bfManual?state.bha.bfVal:bfFromSG(state.bha.mudSG)).toFixed(4);
+  bfi.addEventListener('input',()=>{state.bha.bfManual=true;state.bha.bfVal=+bfi.value;recalc();});
+  const auto=el('div','auto','↻ auto from mud');auto.onclick=()=>{state.bha.bfManual=false;state.bha.bfVal=bfFromSG(state.bha.mudSG);bfi.value=bfFromSG(state.bha.mudSG).toFixed(4);recalc();};bff.append(bfi,auto);
+  grid.append(mudF,bff,mkText('Circulation rate','circ'),mkText('Bit type','bit'),mkText('Make','make'),mkText('Nozzles','nozzle'),mkNum('TFA','tfa'));
+  p.append(grid);box.append(p);
+}
+function refreshBf(){const bfi=$('#bfInput');if(bfi&&!state.bha.bfManual)bfi.value=bfFromSG(state.bha.mudSG).toFixed(4);}
+function updateBhaCalc(){
+  const c=bhaCompute();
+  state.bha.rows.forEach(r=>{const cl=document.querySelector(`[data-cell="cumL-${r.id}"]`);if(cl)cl.textContent=fmtU('len',r._cumL);const cw=document.querySelector(`[data-cell="cumW-${r.id}"]`);if(cw)cw.textContent=fmtU('wt',r._cumW);});
+  const set=(id,v)=>{const e=$(id);if(e)e.textContent=v;};
+  set('#s_bf',fmt(c.factor,4));set('#s_air',fmtU('wt',c.airWt));set('#s_mud',fmtU('wt',c.mudWt));set('#s_below',c.jarIdx>=0?fmtU('wt',c.belowMud):'— (mark a jar)');
+}
+
+/* ===================================================== PIPE VIEW ===================================================== */
+function blankJoint(){return {id:nid(),len:state.pipe._lastLen||9.65,conn:state.pipe._lastConn||"4 ½'' IF",remark:'',sn:''};}
+function renderPipe(){
+  const slot=$('#builderSlot');slot.innerHTML='';const box=el('section','builder');
+  const head=el('div','bhead');head.append(el('h2',null,'Pipe Tally'),el('div','hint',`Stands of ${state.pipe.perStand}. Depths carry the BHA length automatically.`),el('div','grow'));
+  const addStand=el('button','abtn ghost',`+ Stand (${state.pipe.perStand})`);addStand.onclick=()=>{for(let k=0;k<state.pipe.perStand;k++)state.pipe.rows.push(blankJoint());recalc();};
+  const bulk=el('button','abtn ghost','+ Bulk…');bulk.onclick=()=>openOverlay('bulk');
+  const addJ=el('button','abtn amber','+ Joint');addJ.onclick=()=>{state.pipe.rows.push(blankJoint());recalc();};
+  head.append(addStand,bulk,addJ);box.append(head);
+  const p=pipeCompute();const link=el('div','palette');link.style.alignItems='center';
+  const lbl=el('span','hint');lbl.style.fontWeight='600';lbl.textContent='Depth offset — BHA length:';
+  const val=el('span');val.id='pipeBhaVal';val.style.cssText='font-family:var(--mono);font-weight:700;color:'+(state.pipe.bhaOverride?'#c47c07':'#1f9d63');val.textContent=fmtU('len',p.bhaLen)+' '+ul('len');
+  const src=el('span','hint');src.textContent=state.pipe.bhaOverride?'  (manual override)':'  ← live from BHA builder';
+  const ov=el('button','chip',state.pipe.bhaOverride?'Use linked BHA':'Override manually');
+  ov.onclick=()=>{if(!state.pipe.bhaOverride){state.pipe.bhaOverride=true;state.pipe.bhaManual=bhaLength();}else state.pipe.bhaOverride=false;recalc();renderPipe();};
+  link.append(lbl,val,src,ov);
+  if(state.pipe.bhaOverride){const mi=el('input');mi.type='number';mi.step='0.01';mi.value=numStr(disp('len',state.pipe.bhaManual));mi.style.cssText='font-family:var(--mono);width:120px;border:1px solid var(--line);border-radius:4px;padding:6px';mi.oninput=()=>{state.pipe.bhaManual=parse('len',+mi.value);recalc();};link.append(mi);}
+  box.append(link);
+  if(!state.pipe.rows.length){const e=el('div','empty');e.append(el('h3',null,'No joints yet'),el('div',null,'Add a joint, a full stand, or use Bulk to lay out the string quickly.'));box.append(e);slot.append(box);return;}
+  const scroll=el('div','tscroll'),tbl=el('table'),thead=el('thead'),htr=el('tr');
+  [["Joint","r"],["Stand","r"],["SN","l"],[`Length ${ul('len')}`,"r"],[`Stand ${ul('len')}`,"r"],[`Cum len ${ul('len')}`,"r"],[`Cum DP+BHA ${ul('len')}`,"link"],["Connection","l"],["Remarks","l"],["","r"]]
+    .forEach(([t,cl])=>{htr.append(el('th',cl==='l'?'l':(cl==='link'?'linkcol':''),t));});
+  thead.append(htr);tbl.append(thead);const tb=el('tbody');
+  state.pipe.rows.forEach((row,i)=>{
+    const tr=el('tr');tr.dataset.id=row.id;if(i%state.pipe.perStand===0)tr.classList.add('standstart');
+    tr.append(td_idx(i+1),td_stand(row.id),td_input(row,'sn','text','l'),td_input(row,'len','len',null,()=>recalc(true)),
+      td_calc(row.id,'standLen','strong'),td_calc(row.id,'cum'),td_linked(row.id,'cumDpBha'),td_input(row,'conn','text','l'),td_input(row,'remark','text','l'),
+      td_remove(()=>{state.pipe.rows=state.pipe.rows.filter(r=>r!==row);recalc();}));
+    tb.append(tr);
+  });
+  tbl.append(tb);scroll.append(tbl);box.append(scroll);slot.append(box);updatePipeCalc();
+}
+function updatePipeCalc(){
+  const p=pipeCompute();
+  state.pipe.rows.forEach(r=>{
+    const g=k=>document.querySelector(`[data-cell="${k}-${r.id}"]`);
+    let c=g('cum');if(c)c.textContent=fmtU('len',r._cum);
+    let sl=g('standLen');if(sl)sl.textContent=r._standLen!=null?fmtU('len',r._standLen):'';
+    let d=g('cumDpBha');if(d)d.textContent=fmtU('len',r._cumDpBha);
+    let st=g('stand');if(st)st.textContent=r._standStart?r._standNo:'';
+  });
+  const v=$('#pipeBhaVal');if(v){v.textContent=fmtU('len',p.bhaLen)+' '+ul('len');v.style.color=state.pipe.bhaOverride?'#c47c07':'#1f9d63';}
+}
+
+/* ===================================================== TON-MILE VIEW ===================================================== */
+function blankTm(prefillDepth){
+  const last=state.tm.rows[state.tm.rows.length-1];
+  const d=new Date(); const iso=d.toISOString().slice(0,10);
+  return {id:nid(),date:iso,depth:prefillDepth??currentMD(),wtInd:'',safety:last?last.safety:9,service:last?last.service:1.15,
+          holePipe:autoHolePipe(),tripTM:'',drlgTM:'',slip:'',cut:'',remark:''};
+}
+function autoHolePipe(){
+  const bit=(state.bha.rows[0]&&state.bha.rows[0].od)||'';
+  const dp=state.well.dp||'';
+  return (bit?('Ø'+bit+'"'):'')+(dp?(' / '+dp):'');
+}
+function renderTM(){
+  const slot=$('#builderSlot');slot.innerHTML='';const box=el('section','builder');const tm=tmCompute();
+  // ALARM BANNER
+  const cls = tm.cutDue?'cut':(tm.slipDue?'slip':'ok');
+  const al=el('div','alarm '+cls);
+  const sig=el('div','sig',cls==='ok'?'✓':'▲');
+  const msg=el('div','msg');
+  if(cls==='cut'){msg.append(el('h3',null,'Slip & cut the drilling line'));msg.append(el('p',null,`Accumulated ${fmtU('work',tm.sinceCut,0)} ${ul('work')} since last cut — the ${fmtU('work',state.tm.params.tmBetweenCuts,0)} ${ul('work')} cut interval is reached. Slip and cut ${fmtU('len',state.tm.params.lengthOfCut,1)} ${ul('len')}.`));}
+  else if(cls==='slip'){msg.append(el('h3',null,'Slip the drilling line'));msg.append(el('p',null,`Accumulated ${fmtU('work',tm.sinceSlip,0)} ${ul('work')} since last slip — the ${fmtU('work',state.tm.params.tmBetweenSlips,0)} ${ul('work')} slip interval is reached. Slip ${fmtU('len',state.tm.params.lengthOfSlip,1)} ${ul('len')}.`));}
+  else {msg.append(el('h3',null,'Drilling line OK'));msg.append(el('p',null,`${fmtU('work',Math.max(state.tm.params.tmBetweenSlips-tm.sinceSlip,0),0)} ${ul('work')} to next slip · ${fmtU('work',Math.max(state.tm.params.tmBetweenCuts-tm.sinceCut,0),0)} ${ul('work')} to next cut.`));}
+  const m1=el('div','metv');m1.innerHTML=`<div class="v">${fmtU('work',tm.sinceSlip,0)}</div><div class="k">since slip (${ul('work')})</div>`;
+  const m2=el('div','metv');m2.innerHTML=`<div class="v">${fmtU('work',tm.sinceCut,0)}</div><div class="k">since cut (${ul('work')})</div>`;
+  al.append(sig,msg,m1,m2);box.append(al);
+  // header + add controls
+  const head=el('div','bhead');head.append(el('h2',null,'Ton-Mile log'),el('div','hint','Manually logged per trip/day · depth auto-pulled from the string.'),el('div','grow'));
+  const addRow=el('button','abtn amber','+ Log entry');addRow.onclick=()=>{state.tm.rows.push(blankTm());recalc();};
+  head.append(addRow);box.append(head);
+  // linked readouts
+  const p=pipeCompute(),b=bhaCompute();
+  const link=el('div','palette');link.style.alignItems='center';
+  const chipRO=(k,v,c)=>{const s=el('span');s.style.cssText='font-size:12px';s.innerHTML=`<span style="color:var(--steel-600);text-transform:uppercase;letter-spacing:.5px">${k}</span> <b style="font-family:var(--mono);color:${c}">${v}</b>`;return s;};
+  link.append(el('span','hint','Linked from BHA + Pipe tally:'),
+    chipRO('Current depth (MD)',fmtU('len',p.md)+' '+ul('len'),'#1f9d63'),
+    chipRO('BHA wt in mud',fmtU('wt',b.mudWt)+' '+ul('wt'),'#1f9d63'),
+    chipRO('DP length',fmtU('len',p.dpLen)+' '+ul('len'),'#5c727c'));
+  const push=el('button','chip','↧ Use MD as depth in new entry');push.onclick=()=>{state.tm.rows.push(blankTm(p.md));recalc();toast('Entry added at MD '+fmtU('len',p.md)+' '+ul('len'));};
+  link.append(push);box.append(link);
+
+  if(!state.tm.rows.length){const e=el('div','empty');e.append(el('h3',null,'No log entries yet'),el('div',null,'Add a log entry per trip or day. Enter Trip and Drilling ton-miles; the sheet accumulates and warns you when to slip or cut.'));box.append(e);slot.append(box);attachTmParams(box);return;}
+  const scroll=el('div','tscroll'),tbl=el('table'),thead=el('thead'),htr=el('tr');
+  [["Date","l"],["Trip","r"],[`Depth ${ul('len')}`,"r"],[`Wt ind ${ul('force')}`,"r"],["SF","r"],["Svc","r"],["Hole / pipe","l"],
+   [`Trip TM ${ul('work')}`,"r"],[`Drlg TM ${ul('work')}`,"r"],[`Tot TM`,"r"],[`Actual TM`,"r"],
+   [`Since slip`,"r"],[`Since cut`,"r"],[`Slip ${ul('len')}`,"r"],[`Cut ${ul('len')}`,"r"],[`Accu TM`,"link"],[`Line rem ${ul('len')}`,"r"],["Remarks","l"],["","r"]]
+    .forEach(([t,cl])=>{htr.append(el('th',cl==='l'?'l':(cl==='link'?'linkcol':''),t));});
+  thead.append(htr);tbl.append(thead);const tb=el('tbody');
+  state.tm.rows.forEach((row,i)=>{
+    const tr=el('tr');tr.dataset.id=row.id;
+    // date
+    const dtd=el('td');const di=el('input');di.type='date';di.className='l';di.style.fontFamily='var(--mono)';di.value=row.date||'';di.oninput=()=>{row.date=di.value;};dtd.append(di);
+    tr.append(dtd);
+    tr.append(el('td','idx',String(i+1)));
+    tr.append(td_input(row,'depth','len',null,()=>recalc(true)));
+    tr.append(td_input(row,'wtInd','force'));
+    tr.append(td_input(row,'safety','plain'));
+    tr.append(td_input(row,'service','plain',null,()=>recalc(true)));
+    tr.append(td_input(row,'holePipe','text','l'));
+    tr.append(td_input(row,'tripTM','work',null,()=>recalc(true)));
+    tr.append(td_input(row,'drlgTM','work',null,()=>recalc(true)));
+    tr.append(td_calc(row.id,'tot','strong'));
+    tr.append(td_calc(row.id,'actual','strong'));
+    tr.append(td_calc(row.id,'sinceSlip'));
+    tr.append(td_calc(row.id,'sinceCut'));
+    tr.append(td_input(row,'slip','len',null,()=>recalc(true)));
+    tr.append(td_input(row,'cut','len',null,()=>recalc(true)));
+    tr.append(td_linked(row.id,'accu'));
+    tr.append(td_calc(row.id,'lineRem'));
+    tr.append(td_input(row,'remark','text','l'));
+    tr.append(td_remove(()=>{state.tm.rows=state.tm.rows.filter(r=>r!==row);recalc();}));
+    tb.append(tr);
+  });
+  tbl.append(tb);scroll.append(tbl);box.append(scroll);
+  attachTmParams(box);slot.append(box);updateTmCalc();
+}
+function attachTmParams(box){
+  const p=el('div','params');p.append(el('h3',null,'Carried-over totals (start of this log)'));
+  const grid=el('div','pgrid');const P=state.tm.prev;
+  const mk=(label,kind,key)=>{const f=el('div','pf');f.append(el('label',null,`${label} (${ul(kind)})`));const i=el('input');i.type='number';i.step='0.01';i.value=numStr(disp(kind,P[key]));i.addEventListener('input',()=>{P[key]=i.value===''?0:parse(kind,+i.value);recalc();});f.append(i);return f;};
+  grid.append(mk('T-M since last slip','work','sinceSlip'),mk('T-M since last cut','work','sinceCut'),mk('Accumulated on line','work','accu'),mk('Line remaining','len','lineRem'));
+  p.append(grid);
+  const note=el('p','linknote');note.style.padding='10px 0 0';
+  note.innerHTML=`Slip interval <b>${fmtU('work',state.tm.params.tmBetweenSlips,0)} ${ul('work')}</b> · Cut interval <b>${fmtU('work',state.tm.params.tmBetweenCuts,0)} ${ul('work')}</b> · Length of slip <b>${fmtU('len',state.tm.params.lengthOfSlip,1)} ${ul('len')}</b> · Length of cut <b>${fmtU('len',state.tm.params.lengthOfCut,1)} ${ul('len')}</b> — change these in ⚙ Settings.`;
+  p.append(note);box.append(p);
+}
+function updateTmCalc(){
+  tmCompute();
+  state.tm.rows.forEach(r=>{
+    const g=k=>document.querySelector(`[data-cell="${k}-${r.id}"]`);
+    let e;
+    if(e=g('tot'))e.textContent=fmtU('work',r._tot,1);
+    if(e=g('actual'))e.textContent=fmtU('work',r._actual,1);
+    if(e=g('sinceSlip'))e.textContent=fmtU('work',r._sinceSlip,0);
+    if(e=g('sinceCut'))e.textContent=fmtU('work',r._sinceCut,0);
+    if(e=g('accu'))e.textContent=fmtU('work',r._accu,0);
+    if(e=g('lineRem'))e.textContent=fmtU('len',r._lineRem,0);
+    const tr=document.querySelector(`tr[data-id="${r.id}"]`);
+    if(tr){ tr.classList.toggle('warnrow', r._slipWarn||r._cutWarn);
+      // add a caution flag cell? use title on row
+      tr.title = r._slipWarn?`Hesitate: slip ${fmtU('len',r.slip,1)} ${ul('len')} exceeds length of slip (${fmtU('len',state.tm.params.lengthOfSlip,1)})`
+               : r._cutWarn?`Hesitate: cut ${fmtU('len',r.cut,1)} ${ul('len')} exceeds length of cut (${fmtU('len',state.tm.params.lengthOfCut,1)})`:'';
+    }
+  });
+}
+
+/* ===================================================== DAILY UPDATES (shared record) ===================================================== */
+function dailySums(){
+  const d=state.daily.rows;
+  const sum=(key)=>d.reduce((s,r)=>s+(+r[key]||0),0);
+  const sumSince=(key,date)=>d.reduce((s,r)=>s+((date&&r.date&&r.date<=date)?0:(+r[key]||0)),0);
+  return {rot:sum('rotHrs'),mp:[sum('mp1'),sum('mp2'),sum('mp3')],
+    sumSince, // sumSince(key,date) counts rows strictly AFTER date
+    latest:d.length?d[d.length-1]:null};
+}
+function blankDaily(){
+  const last=state.daily.rows[state.daily.rows.length-1];
+  return {id:nid(),date:new Date().toISOString().slice(0,10),depth:currentMD(),rotHrs:'',
+    mp1:'',mp2:'',mp3:'',mudSG:state.bha.mudSG,visc:last?last.visc:'',sand:'',temp:last?last.temp:'',spm:last?last.spm:'',press:'',remark:''};
+}
+function renderDaily(){
+  const slot=$('#builderSlot');slot.innerHTML='';const box=el('section','builder');
+  const head=el('div','bhead');head.append(el('h2',null,'Daily Updates'),el('div','hint','One row per day — the master record. Rotating Hrs & Mud Pumps read from here automatically.'),el('div','grow'));
+  const add=el('button','abtn amber','+ Day');add.onclick=()=>{state.daily.rows.push(blankDaily());recalc();};head.append(add);box.append(head);
+  const note=el('div','palette');note.style.alignItems='center';
+  note.append(el('span','hint','Depth auto-pulled from string · mud SG defaults from BHA · this will be fed by the daily drilling report.'));
+  const useMD=el('button','chip','↧ New day at current MD');useMD.onclick=()=>{const r=blankDaily();r.depth=currentMD();state.daily.rows.push(r);recalc();};note.append(useMD);
+  box.append(note);
+  if(!state.daily.rows.length){const e=el('div','empty');e.append(el('h3',null,'No daily records yet'),el('div',null,'Add a day and enter rotating hours + each pump’s operating hours. Everything downstream updates automatically.'));box.append(e);slot.append(box);return;}
+  const scroll=el('div','tscroll'),tbl=el('table'),thead=el('thead'),htr=el('tr');
+  [["Date","l"],[`Depth ${ul('len')}`,"r"],["Rot hrs","r"],["MP1 hrs","r"],["MP2 hrs","r"],["MP3 hrs","r"],
+   [`Mud ${ul('mud')}`,"r"],["Visc","r"],["Sand%","r"],[`Temp`,"r"],["SPM","r"],[`Press ${ul('press')}`,"r"],["Remarks","l"],["","r"]]
+    .forEach(([t,cl])=>{htr.append(el('th',cl==='l'?'l':'',t));});
+  thead.append(htr);tbl.append(thead);const tb=el('tbody');
+  state.daily.rows.forEach(row=>{
+    const tr=el('tr');tr.dataset.id=row.id;
+    const dtd=el('td');const di=el('input');di.type='date';di.className='l';di.style.fontFamily='var(--mono)';di.value=row.date||'';di.oninput=()=>{row.date=di.value;recalc(true);};dtd.append(di);tr.append(dtd);
+    tr.append(td_input(row,'depth','len',null,()=>recalc(true)));
+    tr.append(td_input(row,'rotHrs','plain',null,()=>recalc(true)));
+    tr.append(td_input(row,'mp1','plain',null,()=>recalc(true)));
+    tr.append(td_input(row,'mp2','plain',null,()=>recalc(true)));
+    tr.append(td_input(row,'mp3','plain',null,()=>recalc(true)));
+    tr.append(td_input(row,'mudSG','mud'));
+    tr.append(td_input(row,'visc','plain'));
+    tr.append(td_input(row,'sand','plain'));
+    tr.append(td_input(row,'temp','temp'));
+    tr.append(td_input(row,'spm','plain'));
+    tr.append(td_input(row,'press','press'));
+    tr.append(td_input(row,'remark','text','l'));
+    tr.append(td_remove(()=>{state.daily.rows=state.daily.rows.filter(r=>r!==row);recalc();}));
+    tb.append(tr);
+  });
+  tbl.append(tb);scroll.append(tbl);box.append(scroll);
+  const st=el('div','stripe');st.id='dailyStripe';st.innerHTML=dailyStripeHtml();
+  box.append(st);
+  slot.append(box);
+}
+function dailyStripeHtml(){
+  const ds=dailySums();
+  return `Days logged <b>${state.daily.rows.length}</b> · Rotating hrs total <b>${fmt(ds.rot,0)}</b> · Pump hrs <b>MP1 ${fmt(ds.mp[0],0)}</b> / <b>MP2 ${fmt(ds.mp[1],0)}</b> / <b>MP3 ${fmt(ds.mp[2],0)}</b>`;
+}
+function updateDailyCalc(){ const s=$('#dailyStripe'); if(s)s.innerHTML=dailyStripeHtml(); }
+
+/* ===================================================== ROTATING HOURS ===================================================== */
+function rotCompute(){
+  const ds=dailySums();const iv=state.rot.inspInterval||0;
+  const tools=state.rot.tools.map(t=>{
+    const add=t.inString?ds.rot:0;
+    const totalWell=(+t.baseWell||0)+add;
+    const sinceAdd=t.inString?ds.sumSince('rotHrs',t.lastInsp||''):0;
+    const sinceInsp=(+t.baseInsp||0)+sinceAdd;
+    return {...t,totalWell,sinceInsp,due:iv>0&&sinceInsp>=iv,ratio:iv>0?sinceInsp/iv:0};
+  });
+  return {tools,dueCount:tools.filter(t=>t.due).length};
+}
+function importSerialsFromBHA(){
+  let n=0;
+  state.bha.rows.forEach(c=>{
+    const sn=(c.serial||'').trim();
+    if(!sn)return;
+    if(state.rot.tools.some(t=>(t.serial||'').trim()===sn))return;
+    state.rot.tools.push({id:nid(),type:c.desc||'Tool',size:c.od||'',serial:sn,baseWell:0,baseInsp:0,lastInsp:'',inString:true});
+    n++;
+  });
+  recalc();toast(n?`${n} tool(s) imported from BHA`:'No new serials in BHA');
+}
+function renderRot(){
+  const slot=$('#builderSlot');slot.innerHTML='';const box=el('section','builder');const rc=rotCompute();
+  const cls=rc.dueCount?'cut':'ok';const al=el('div','alarm '+cls);al.id='rotAlarm';
+  al.append((()=>{const s=el('div','sig',rc.dueCount?'▲':'✓');return s;})());
+  const msg=el('div','msg');
+  if(rc.dueCount){msg.append(el('h3',null,`${rc.dueCount} tool(s) due inspection`),el('p',null,`Rotating hours since last inspection reached the ${fmt(state.rot.inspInterval,0)} hr interval. Pull and inspect the flagged serials.`));}
+  else {msg.append(el('h3',null,'All tools within inspection interval'),el('p',null,`Inspection interval ${fmt(state.rot.inspInterval,0)} rotating hrs · change it in ⚙ Settings.`));}
+  al.append(msg);box.append(al);
+  const head=el('div','bhead');head.append(el('h2',null,'Rotating Hours'),el('div','hint','Each in-string tool gains the daily rotating hours from Daily Updates.'),el('div','grow'));
+  const imp=el('button','abtn ghost','⟲ Import serials from BHA');imp.onclick=importSerialsFromBHA;
+  const add=el('button','abtn amber','+ Tool');add.onclick=()=>{state.rot.tools.push({id:nid(),type:'',size:'',serial:'',baseWell:0,baseInsp:0,lastInsp:'',inString:true});recalc();};
+  head.append(imp,add);box.append(head);
+  const ds=dailySums();
+  const link=el('div','palette');link.style.alignItems='center';
+  link.append(el('span','hint','Linked:'),(()=>{const s=el('span');s.style.fontSize='12px';s.innerHTML=`<span style="color:var(--steel-600);text-transform:uppercase;letter-spacing:.5px">Rotating hrs logged</span> <b style="font-family:var(--mono);color:#1f9d63">${fmt(ds.rot,0)} hr</b>`;return s;})());
+  box.append(link);
+  if(!state.rot.tools.length){const e=el('div','empty');e.append(el('h3',null,'No tools tracked yet'),el('div',null,'Import serials from the BHA (recommended) or add tools manually. In-string tools accumulate the daily rotating hours.'));box.append(e);slot.append(box);return;}
+  const scroll=el('div','tscroll'),tbl=el('table'),thead=el('thead'),htr=el('tr');
+  [["#","idx"],["Tool","l"],["Size","r"],["Serial","l"],["In string","r"],["Total hrs (well)","r"],["Since insp.","r"],["Status","l"],["Last insp.","l"],["","r"]]
+    .forEach(([t,cl])=>{htr.append(el('th',cl==='l'?'l':'',t));});
+  thead.append(htr);tbl.append(thead);const tb=el('tbody');
+  rc.tools.forEach((t,i)=>{
+    const row=state.rot.tools[i];
+    const tr=el('tr');tr.dataset.id=row.id;if(t.due)tr.classList.add('warnrow');
+    tr.append(el('td','idx',String(i+1)));
+    tr.append(td_input(row,'type','text','l'));
+    tr.append(td_input(row,'size','plain'));
+    tr.append(td_input(row,'serial','text','l'));
+    const ist=el('td','jarcell');const cb=el('input');cb.type='checkbox';cb.checked=!!row.inString;cb.onchange=()=>{row.inString=cb.checked;recalc();};ist.append(cb);tr.append(ist);
+    const tw=el('td','calc strong');tw.dataset.cell='rtot-'+row.id;tw.textContent=fmt(t.totalWell,0);tr.append(tw);
+    const si=el('td','calc strong');si.dataset.cell='rsince-'+row.id;si.textContent=fmt(t.sinceInsp,0);si.style.color=t.due?'var(--danger)':'';tr.append(si);
+    const stc=el('td');stc.dataset.cell='rstat-'+row.id;stc.style.cssText='padding:8px;text-align:left';stc.innerHTML=statusPill(t.ratio,t.due,'inspect');tr.append(stc);
+    const li=el('td');const lii=el('input');lii.type='date';lii.className='l';lii.style.fontFamily='var(--mono)';lii.value=row.lastInsp||'';lii.oninput=()=>{row.lastInsp=lii.value;recalc(true);};li.append(lii);tr.append(li);
+    const act=el('td','act');const insp=el('button','chip','✓ Insp.');insp.title='Mark inspected today (resets since-inspection)';insp.style.marginRight='4px';
+    insp.onclick=()=>{row.lastInsp=new Date().toISOString().slice(0,10);row.baseInsp=0;recalc();toast('Marked inspected');};
+    const rm=el('button','rm','×');rm.onclick=()=>{state.rot.tools=state.rot.tools.filter(r=>r!==row);recalc();};
+    act.append(insp,rm);tr.append(act);
+    tb.append(tr);
+  });
+  tbl.append(tb);scroll.append(tbl);box.append(scroll);slot.append(box);
+}
+function updateRotCalc(){
+  const rc=rotCompute();
+  rc.tools.forEach((t,i)=>{
+    const id=state.rot.tools[i].id;const g=k=>document.querySelector(`[data-cell="${k}-${id}"]`);let e;
+    if(e=g('rtot'))e.textContent=fmt(t.totalWell,0);
+    if(e=g('rsince')){e.textContent=fmt(t.sinceInsp,0);e.style.color=t.due?'var(--danger)':'';}
+    if(e=g('rstat'))e.innerHTML=statusPill(t.ratio,t.due,'inspect');
+    const tr=document.querySelector(`tr[data-id="${id}"]`);if(tr)tr.classList.toggle('warnrow',t.due);
+  });
+  const al=$('#rotAlarm');if(al){const due=rc.dueCount;al.className='alarm '+(due?'cut':'ok');
+    al.querySelector('.sig').textContent=due?'▲':'✓';
+    al.querySelector('.msg h3').textContent=due?`${due} tool(s) due inspection`:'All tools within inspection interval';
+    al.querySelector('.msg p').textContent=due?`Rotating hours since last inspection reached the ${fmt(state.rot.inspInterval,0)} hr interval. Pull and inspect the flagged serials.`:`Inspection interval ${fmt(state.rot.inspInterval,0)} rotating hrs · change it in ⚙ Settings.`;}
+}
+function statusPill(ratio,due,verb){
+  const pct=Math.min(Math.round(ratio*100),999);
+  let bg,fg,txt;
+  if(due){bg='var(--danger)';fg='#fff';txt=(verb==='inspect'?'INSPECT NOW':'REPLACE NOW');}
+  else if(ratio>=0.8){bg='#fff0d6';fg='var(--amber-deep)';txt='DUE SOON · '+pct+'%';}
+  else {bg='var(--link-tint)';fg='var(--link)';txt='OK · '+pct+'%';}
+  return `<span style="font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:.5px;padding:3px 8px;border-radius:20px;background:${bg};color:${fg}">${txt}</span>`;
+}
+
+/* ===================================================== MUD PUMPS ===================================================== */
+function defaultPumpParts(){
+  return [['Liner L',400],['Liner M',400],['Liner R',400],['Piston L',300],['Piston M',300],['Piston R',300],['Valves (set)',250],['Valve seats (set)',250],['Fluid end',5000]]
+    .map(([name,limit])=>({id:nid(),name,limit,base:0,lastChg:''}));
+}
+function ensurePumps(){ if(!state.pumps.list.length){ [1,2,3].forEach(n=>state.pumps.list.push({id:nid(),name:'MP'+n,serial:'',type:'FD-1600',liner:'6 ¼"',base:0,parts:defaultPumpParts()})); } }
+function pumpsCompute(){
+  const ds=dailySums();
+  const list=state.pumps.list.map((p,i)=>{
+    const total=(+p.base||0)+ds.mp[i];
+    const parts=p.parts.map(pt=>{
+      const since=(+pt.base||0)+ds.sumSince('mp'+(i+1),pt.lastChg||'');
+      return {...pt,since,due:pt.limit>0&&since>=pt.limit,ratio:pt.limit>0?since/pt.limit:0};
+    });
+    return {...p,total,parts,dueCount:parts.filter(x=>x.due).length,dailyHrs:ds.mp[i]};
+  });
+  return {list,dueCount:list.reduce((s,p)=>s+p.dueCount,0)};
+}
+function renderPumps(){
+  const slot=$('#builderSlot');slot.innerHTML='';const box=el('section','builder');ensurePumps();const pc=pumpsCompute();
+  const cls=pc.dueCount?'cut':'ok';const al=el('div','alarm '+cls);al.id='pumpsAlarm';
+  al.append((()=>{const s=el('div','sig',pc.dueCount?'▲':'✓');return s;})());
+  const msg=el('div','msg');
+  if(pc.dueCount){msg.append(el('h3',null,`${pc.dueCount} pump part(s) due replacement`),el('p',null,'Operating hours reached the service limit on the flagged fluid-end parts.'));}
+  else {msg.append(el('h3',null,'All pump parts within service life'),el('p',null,'Daily operating hours per pump come from Daily Updates. Set part limits in each pump card.'));}
+  al.append(msg);box.append(al);
+  const head=el('div','bhead');head.append(el('h2',null,'Mud Pumps'),el('div','hint','Each pump’s daily operating hours roll onto every consumable part.'),el('div','grow'));box.append(head);
+  const ds=dailySums();const latest=ds.latest;
+  const link=el('div','palette');link.style.alignItems='center';
+  link.append(el('span','hint','Latest daily reading:'));
+  const chip=(k,v)=>{const s=el('span');s.style.fontSize='12px';s.innerHTML=`<span style="color:var(--steel-600);text-transform:uppercase;letter-spacing:.5px">${k}</span> <b style="font-family:var(--mono)">${v}</b>`;return s;};
+  link.append(chip('Mud',latest?fmtU('mud',latest.mudSG)+' '+ul('mud'):'—'),chip('SPM',latest&&latest.spm!==''?latest.spm:'—'),chip('Press',latest&&latest.press!==''?fmtU('press',latest.press)+' '+ul('press'):'—'),chip('Temp',latest&&latest.temp!==''?fmtU('temp',latest.temp)+' '+ul('temp'):'—'));
+  box.append(link);
+  // one card per pump
+  const grid=el('div');grid.style.cssText='padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px';
+  pc.list.forEach((p,i)=>{
+    const pump=state.pumps.list[i];
+    const card=el('div');card.style.cssText='border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--paper-2)';
+    const ch=el('div');ch.style.cssText='padding:10px 12px;background:linear-gradient(var(--paper),#eaeeec);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+    const nm=el('input');nm.value=pump.name;nm.style.cssText='font-family:var(--disp);font-weight:700;font-size:15px;border:0;background:transparent;width:64px;color:var(--ink)';nm.oninput=()=>{pump.name=nm.value;};
+    ch.append(nm);
+    const meta=el('div');meta.style.cssText='display:flex;gap:6px;flex-wrap:wrap;font-size:11px';
+    const mini=(ph,key,w)=>{const wrn=el('input');wrn.placeholder=ph;wrn.value=pump[key]||'';wrn.style.cssText=`font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:4px;padding:4px 6px;width:${w}px`;wrn.oninput=()=>{pump[key]=wrn.value;};return wrn;};
+    meta.append(mini('Serial','serial',80),mini('Type','type',80),mini('Liner','liner',60));
+    ch.append(meta);
+    const tot=el('div');tot.style.cssText='margin-left:auto;text-align:right';tot.dataset.cell='ptot-'+pump.id;tot.innerHTML=`<div style="font-family:var(--mono);font-weight:600;font-size:16px">${fmt(p.total,0)} <small style="font-size:11px;color:var(--steel-600)">hrs total</small></div><div style="font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--steel-600)">+${fmt(p.dailyHrs,0)} hr this log</div>`;
+    ch.append(tot);card.append(ch);
+    // parts table
+    const t=el('table');t.style.fontSize='12.5px';
+    const th=el('thead');const htr=el('tr');[["Part","l"],["Since chg","r"],["Limit","r"],["Status","l"],["Chg","r"]].forEach(([x,cl])=>htr.append(el('th',cl==='l'?'l':'',x)));th.append(htr);t.append(th);
+    const tb=el('tbody');
+    p.parts.forEach((pt,j)=>{
+      const part=pump.parts[j];const tr=el('tr');if(pt.due)tr.classList.add('warnrow');
+      const nmc=el('td');const ni=el('input');ni.className='l';ni.value=part.name;ni.oninput=()=>{part.name=ni.value;};nmc.append(ni);tr.append(nmc);
+      const sc=el('td','calc strong');sc.dataset.cell='psince-'+part.id;sc.textContent=fmt(pt.since,0);sc.style.color=pt.due?'var(--danger)':'';tr.append(sc);
+      tr.append(td_input(part,'limit','plain',null,()=>recalc(true)));
+      const st=el('td');st.dataset.cell='pstat-'+part.id;st.style.cssText='padding:6px 8px;text-align:left';st.innerHTML=statusPill(pt.ratio,pt.due,'replace');tr.append(st);
+      const act=el('td','act');const chg=el('button','chip','↺');chg.title='Mark replaced today (reset hours)';chg.onclick=()=>{part.lastChg=new Date().toISOString().slice(0,10);part.base=0;recalc();toast(part.name+' reset');};
+      const rm=el('button','rm','×');rm.onclick=()=>{pump.parts=pump.parts.filter(x=>x!==part);recalc();};act.append(chg,rm);tr.append(act);
+      tb.append(tr);
+    });
+    t.append(tb);card.append(t);
+    const foot=el('div');foot.style.cssText='padding:8px 12px;border-top:1px solid var(--line);display:flex;gap:8px';
+    const addP=el('button','chip','+ Part');addP.onclick=()=>{pump.parts.push({id:nid(),name:'New part',limit:300,base:0,lastChg:''});recalc();};
+    foot.append(addP);card.append(foot);
+    grid.append(card);
+  });
+  box.append(grid);slot.append(box);
+}
+function updatePumpsCalc(){
+  const pc=pumpsCompute();
+  pc.list.forEach((p,i)=>{
+    const tot=document.querySelector(`[data-cell="ptot-${state.pumps.list[i].id}"]`);
+    if(tot)tot.innerHTML=`<div style="font-family:var(--mono);font-weight:600;font-size:16px">${fmt(p.total,0)} <small style="font-size:11px;color:var(--steel-600)">hrs total</small></div><div style="font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--steel-600)">+${fmt(p.dailyHrs,0)} hr this log</div>`;
+    p.parts.forEach((pt,j)=>{
+      const pid=state.pumps.list[i].parts[j].id;
+      const sc=document.querySelector(`[data-cell="psince-${pid}"]`);if(sc){sc.textContent=fmt(pt.since,0);sc.style.color=pt.due?'var(--danger)':'';}
+      const st=document.querySelector(`[data-cell="pstat-${pid}"]`);if(st)st.innerHTML=statusPill(pt.ratio,pt.due,'replace');
+    });
+  });
+  const al=$('#pumpsAlarm');if(al){const due=pc.dueCount;al.className='alarm '+(due?'cut':'ok');
+    al.querySelector('.sig').textContent=due?'▲':'✓';
+    al.querySelector('.msg h3').textContent=due?`${due} pump part(s) due replacement`:'All pump parts within service life';
+    al.querySelector('.msg p').textContent=due?'Operating hours reached the service limit on the flagged fluid-end parts.':'Daily operating hours per pump come from Daily Updates. Set part limits in each pump card.';}
+}
+/* ===================================================== TRIP SHEET ===================================================== */
+/* [name, openEnd bbl/m, openEnd bbl/std, closedEnd bbl/m, closedEnd bbl/std, avg std len m] — from DRL-MS-FM-03-019 */
+const TUBULARS=[
+ ['3.5" 13.3# DP',0.01797,0.512,0.04218,1.202,28.5],
+ ['3.5" 15.5# DP',0.02031,0.579,0.04218,1.202,28.5],
+ ['4" 14# DP',0.01953,0.556605,0.0531216,1.5139656,28.5],
+ ['5" 19.5# DP',0.02812,0.813,0.08359,2.415,28.9],
+ ['5" 25.6# DP',0.03515,1.016,0.08359,2.415,28.9],
+ ['3.5" HWDP',0.03025,0.8679,0.04402,1.26425,28.7],
+ ['4" HWDP',0.03412,0.97242,0.05512,1.57092,28.5],
+ ['5" HWDP',0.05887,1.65422,0.08786,2.4719,28.1],
+ ['9 1/2" DC',0.253165,6.9879,0.28763,7.9377,27.6],
+ ['8 1/4" DC',0.19171,5.36798,0.216936,6.06967,28],
+ ['8" DC',0.17479,4.89347,0.20397,5.71115,28],
+ ['6 1/2" DC',0.106864,2.99395,0.13466,3.7676,28],
+ ['4 3/4" DC',0.054344,1.53471,0.07044,1.98758,28],
+ ['18 5/8" Csg',0.100815558,null,1.102697616,null,null],
+ ['13 3/8" Csg',0.084065245,null,0.568632371,null,null],
+ ['9 5/8" Csg',0.062923463,null,0.294479297,null,null],
+ ['7" (35#) Csg',0.041154329,null,0.155771644,null,null],
+ ['7" (32#) Csg',0.037703890,null,0.155771644,null,null],
+ ['5 1/2" Csg',0.026850690,null,0.096173149,null,null],
+ ['4 1/2" Csg',0.020953576,null,0.064366374,null,null],
+];
+function tubRec(){ return TUBULARS.find(x=>x[0]===state.trip.tubular)||TUBULARS[3]; }
+function tripCompute(){
+  const t=state.trip, tub=tubRec();
+  const perM = t.wet? tub[3] : tub[1];
+  const perStd = t.wet? tub[4] : tub[2];
+  const avg = tub[5];
+  let th=0, ac=0;
+  t.rows.forEach((r,i)=>{
+    const D = (perStd!=null) ? perStd : perM*(+r.len||0);
+    th+=D;
+    const A=+r.tankStart||0, B=+r.tankFinish||0;
+    const hasReading = r.tankStart!=='' && r.tankFinish!=='' && r.tankStart!=null && r.tankFinish!=null;
+    const C = hasReading ? (t.mode==='POOH' ? (A-B) : (B-A)) : 0;
+    ac+=C;
+    const E = t.mode==='POOH' ? (D-C) : (C-D);
+    const H = t.mode==='POOH' ? (th-ac) : (ac-th);
+    r._D=D; r._F=th; r._C=hasReading?C:''; r._G=ac; r._E=hasReading?E:''; r._H=H; r._n=i+1;
+    r._warn = hasReading && Math.abs(E)>t.tolStand;
+  });
+  const last=t.rows[t.rows.length-1];
+  const accum = last? last._H : 0;
+  return {perM,perStd,avg,thTotal:th,acTotal:ac,accum,
+    alarm:Math.abs(accum)>t.tolAccum, gaining:accum>0, rows:t.rows};
+}
+function blankTripRow(){ return {id:nid(),tankStart:'',tankFinish:'',len:tubRec()[5]||28.9,remark:''}; }
+function renderTrip(){
+  const slot=$('#builderSlot');slot.innerHTML='';const box=el('section','builder');const tc=tripCompute();
+  const cls=tc.alarm?(tc.gaining?'cut':'slip'):'ok';const al=el('div','alarm '+cls);al.id='tripAlarm';
+  al.append(el('div','sig',tc.alarm?'▲':'✓'));
+  const msg=el('div','msg');msg.innerHTML=tripAlarmHtml(tc);al.append(msg);
+  const m1=el('div','metv');m1.innerHTML=`<div class="v" id="tripAccumV">${fmtU('vol',tc.accum,2)}</div><div class="k">accum ${tc.gaining?'gain':'loss'} (${ul('vol')})</div>`;
+  al.append(m1);box.append(al);
+  const head=el('div','bhead');head.append(el('h2',null,'Trip Sheet'),el('div','hint','One row per stand · trip tank readings vs theoretical displacement.'),el('div','grow'));
+  const addStd=el('button','abtn ghost','+ 5 stands');addStd.onclick=()=>{for(let i=0;i<5;i++)state.trip.rows.push(blankTripRow());recalc();};
+  const add=el('button','abtn amber','+ Stand');add.onclick=()=>{state.trip.rows.push(blankTripRow());recalc();};
+  head.append(addStd,add);box.append(head);
+  const ctl=el('div','palette');ctl.style.alignItems='center';
+  const seg=(label,val,cur,fn)=>{const b=el('button','chip',label);if(val===cur){b.style.cssText='background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700';}b.onclick=fn;return b;};
+  ctl.append(el('span','hint','Operation:'),
+    seg('POOH','POOH',state.trip.mode,()=>{state.trip.mode='POOH';recalc();}),
+    seg('RIH','RIH',state.trip.mode,()=>{state.trip.mode='RIH';recalc();}));
+  ctl.append(el('span','hint','·  Pipe:'));
+  const sel=el('select');sel.style.cssText='font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:4px;padding:5px 6px';
+  TUBULARS.forEach(t=>{const o=el('option',null,t[0]);o.value=t[0];if(t[0]===state.trip.tubular)o.selected=true;sel.append(o);});
+  sel.onchange=()=>{state.trip.tubular=sel.value;recalc();};ctl.append(sel);
+  ctl.append(el('span','hint','·'),
+    seg(state.trip.mode==='POOH'?'Pull DRY (open end)':'RIH no float (open end)','dry',state.trip.wet?'wet':'dry',()=>{state.trip.wet=false;recalc();}),
+    seg(state.trip.mode==='POOH'?'Pull WET (closed end)':'RIH with float (closed end)','wet',state.trip.wet?'wet':'dry',()=>{state.trip.wet=true;recalc();}));
+  const dsp=el('span','hint');dsp.style.marginLeft='auto';
+  dsp.innerHTML=`<b style="font-family:var(--mono);color:var(--link)">${tc.perStd!=null?fmt(tc.perStd,3)+' bbl/std':fmt(tc.perM,5)+' bbl/m'}</b>`;
+  ctl.append(dsp);box.append(ctl);
+  const p=pipeCompute();
+  const link=el('div','palette');link.style.alignItems='center';
+  const chip=(k,v,c)=>{const s=el('span');s.style.fontSize='12px';s.innerHTML=`<span style="color:var(--steel-600);text-transform:uppercase;letter-spacing:.5px">${k}</span> <b style="font-family:var(--mono);color:${c||'var(--ink)'}">${v}</b>`;return s;};
+  link.append(el('span','hint','Linked:'),chip('Stands in string',p.stands,'#1f9d63'),chip('Current MD',fmtU('len',p.md)+' '+ul('len'),'#1f9d63'));
+  const fill=el('button','chip','↧ Fill rows for whole string');
+  fill.onclick=()=>{state.trip.rows=[];for(let i=0;i<p.stands;i++)state.trip.rows.push(blankTripRow());recalc();toast(p.stands+' stands added');};
+  link.append(fill);box.append(link);
+  if(!state.trip.rows.length){const e=el('div','empty');e.append(el('h3',null,'No stands logged yet'),el('div',null,'Add stands, then enter the trip-tank level at the start and finish of each. Gains and losses are flagged automatically.'));box.append(e);slot.append(box);return;}
+  const VU=ul('vol');
+  const scroll=el('div','tscroll'),tbl=el('table'),thead=el('thead'),htr=el('tr');
+  [["Std","idx"],[`Theo disp (D) ${VU}`,"r"],[`Theo accum (F) ${VU}`,"r"],[`Tank start (A) ${VU}`,"r"],[`Tank finish (B) ${VU}`,"r"],
+   [`Actual disp (C) ${VU}`,"r"],[`Actual accum (G) ${VU}`,"r"],[`Gain/Loss (E) ${VU}`,"r"],[`Accum ± (H) ${VU}`,"link"],["Remarks","l"],["","r"]]
+    .forEach(([t,cl])=>{htr.append(el('th',cl==='l'?'l':(cl==='link'?'linkcol':''),t));});
+  thead.append(htr);tbl.append(thead);const tb=el('tbody');
+  state.trip.rows.forEach(row=>{
+    const tr=el('tr');tr.dataset.id=row.id;if(row._warn)tr.classList.add('warnrow');
+    tr.append(el('td','idx',String(row._n)));
+    tr.append(td_calc(row.id,'tD'));tr.append(td_calc(row.id,'tF'));
+    tr.append(td_input(row,'tankStart','vol',null,()=>recalc(true)));
+    tr.append(td_input(row,'tankFinish','vol',null,()=>recalc(true)));
+    tr.append(td_calc(row.id,'tC','strong'));tr.append(td_calc(row.id,'tG'));
+    tr.append(td_calc(row.id,'tE','strong'));tr.append(td_linked(row.id,'tH'));
+    tr.append(td_input(row,'remark','text','l'));
+    tr.append(td_remove(()=>{state.trip.rows=state.trip.rows.filter(r=>r!==row);recalc();}));
+    tb.append(tr);
+  });
+  tbl.append(tb);scroll.append(tbl);box.append(scroll);
+  const st=el('div','stripe');st.id='tripStripe';st.innerHTML=tripStripeHtml(tc);box.append(st);
+  const note=el('div','params');
+  note.innerHTML=`<h3>Convention</h3><p class="linknote" style="padding:0">${state.trip.mode==='POOH'
+    ? 'POOH: C = A − B, E = D − C, H = F − G. The hole should <b>take</b> mud as steel is removed — taking <b>less</b> than theoretical is a <b>gain</b> (possible influx).'
+    : 'RIH: C = B − A, E = C − D, H = G − F. The hole should <b>return</b> mud as steel goes in — returning <b>more</b> than theoretical is a <b>gain</b> (possible influx).'}<br>Check fluid weight in and out every 30 minutes and whenever necessary.</p>`;
+  box.append(note);
+  slot.append(box);updateTripCalc();
+}
+function tripAlarmHtml(tc){
+  if(!tc.alarm) return `<h3>Trip tank on theoretical</h3><p>Accumulated difference ${fmtU('vol',tc.accum,2)} ${ul('vol')} — within the ${fmtU('vol',state.trip.tolAccum,2)} ${ul('vol')} tolerance.</p>`;
+  return tc.gaining
+    ? `<h3>Gain — possible influx</h3><p>The well has held ${fmtU('vol',Math.abs(tc.accum),2)} ${ul('vol')} more than theoretical, over the ${fmtU('vol',state.trip.tolAccum,2)} ${ul('vol')} tolerance. <b>Stop, flow check, and be prepared to shut in.</b></p>`
+    : `<h3>Loss — possible losses to formation</h3><p>The well has taken ${fmtU('vol',Math.abs(tc.accum),2)} ${ul('vol')} more than theoretical, over the ${fmtU('vol',state.trip.tolAccum,2)} ${ul('vol')} tolerance. <b>Stop and investigate losses.</b></p>`;
+}
+function tripStripeHtml(tc){
+  return `Stands <b>${tc.rows.length}</b> · Theoretical <b>${fmtU('vol',tc.thTotal,2)}</b> ${ul('vol')} · Actual <b>${fmtU('vol',tc.acTotal,2)}</b> ${ul('vol')} · <span class="lk">Accum ${tc.gaining?'gain':'loss'} <b>${fmtU('vol',tc.accum,2)}</b> ${ul('vol')}</span> · Tolerance ±<b>${fmtU('vol',state.trip.tolAccum,2)}</b>`;
+}
+function updateTripCalc(){
+  const tc=tripCompute();
+  tc.rows.forEach(r=>{
+    const g=k=>document.querySelector(`[data-cell="${k}-${r.id}"]`);let e;
+    if(e=g('tD'))e.textContent=fmtU('vol',r._D,3);
+    if(e=g('tF'))e.textContent=fmtU('vol',r._F,2);
+    if(e=g('tC'))e.textContent=r._C===''?'—':fmtU('vol',r._C,3);
+    if(e=g('tG'))e.textContent=fmtU('vol',r._G,2);
+    if(e=g('tE')){e.textContent=r._E===''?'—':fmtU('vol',r._E,3);e.style.color=r._warn?'var(--danger)':'';}
+    if(e=g('tH'))e.textContent=fmtU('vol',r._H,2);
+    const tr=document.querySelector(`tr[data-id="${r.id}"]`);if(tr)tr.classList.toggle('warnrow',!!r._warn);
+  });
+  const al=$('#tripAlarm');if(al){al.className='alarm '+(tc.alarm?(tc.gaining?'cut':'slip'):'ok');
+    al.querySelector('.sig').textContent=tc.alarm?'▲':'✓';
+    al.querySelector('.msg').innerHTML=tripAlarmHtml(tc);
+    const v=$('#tripAccumV');if(v)v.textContent=fmtU('vol',tc.accum,2);}
+  const s=$('#tripStripe');if(s)s.innerHTML=tripStripeHtml(tc);
+}
+
+/* ===================================================== KILL SHEET ===================================================== */
+function killAutoFill(){
+  const k=state.kill,p=pipeCompute();
+  const sum=re=>state.bha.rows.filter(r=>re.test(r.desc||'')).reduce((s,r)=>s+(+r.len||0),0);
+  const hw=sum(/hwdp|heavy/i), dc=sum(/collar|\bdc\b/i);
+  k.holeMD=p.md; k.holeTVD=p.md; // vertical well: TVD = MD
+  k.vol.dpLen=p.dpLen; k.vol.hwLen=hw; k.vol.dcLen=dc;
+  k.vol.dpCap=capOf(k.dpID); k.vol.hwCap=capOf(3); k.vol.dcCap=capOf(k.dcID);
+  const shoeMD=+k.shoeMD||0, holeMD=+k.holeMD||0;
+  const ohLen=Math.max(holeMD-shoeMD,0);
+  k.vol.dcOhLen=Math.min(dc,ohLen);
+  k.vol.dpOhLen=Math.max(ohLen-k.vol.dcOhLen,0);
+  k.vol.dpCsgLen=shoeMD;
+  k.vol.dcOhCap=annOf(k.holeSize,k.dcOD);
+  k.vol.dpOhCap=annOf(k.holeSize,k.dpOD);
+  k.vol.dpCsgCap=annOf(k.shoeID,k.dpOD);
+  const latest=dailySums().latest;
+  if(latest&&latest.mudSG!=='')k.cmw=latest.mudSG; else if(k.cmw==='')k.cmw=state.bha.mudSG;
+  recalc();toast('Auto-filled from string, hole & daily record');
+}
+function killCompute(){
+  const k=state.kill;
+  const cmw=toPpg(k.cmw!==''?k.cmw:state.bha.mudSG);
+  const shoeTVDft=toFt(k.shoeTVD), holeTVDft=toFt(k.holeTVD);
+  const A=+k.lopPress||0, B=toPpg(k.mwAtTest);
+  const mamw = shoeTVDft? B + A/(shoeTVDft*0.052) : 0;
+  const maasp= shoeTVDft? (mamw-cmw)*0.052*shoeTVDft : 0;
+  const pump=k.pumps[k.activePump]||k.pumps[0];
+  const displ=+pump.displ||0, spm=+pump.spm||0, pl=+pump.pl||0;
+  const sidpp=+k.sidpp||0, sicp=+k.sicp||0, pitGain=+k.pitGain||0;
+  const kmw = holeTVDft? cmw + sidpp/(holeTVDft*0.052) : cmw;
+  const icp = pl + sidpp;
+  const fcp = cmw? (kmw/cmw)*pl : 0;
+  const K = icp-fcp;
+  const V=k.vol;
+  const mk=(lenM,cap)=>{const L=toFt(lenM),vol=L*(+cap||0);return {L,cap:+cap||0,vol,stk:displ?vol/displ:0,min:(displ&&spm)?(vol/displ)/spm:0};};
+  const dp=mk(V.dpLen,V.dpCap), hw=mk(V.hwLen,V.hwCap), dc=mk(V.dcLen,V.dcCap);
+  const D = dp.vol+hw.vol+dc.vol;
+  const E = displ? D/displ : 0;
+  const Emin = spm? E/spm : 0;
+  const dcOh=mk(V.dcOhLen,V.dcOhCap), dpOh=mk(V.dpOhLen,V.dpOhCap), dpCsg=mk(V.dpCsgLen,V.dpCsgCap);
+  const F = dcOh.vol+dpOh.vol;
+  const G = dpCsg.vol;
+  const H = F+G;
+  const I = D+H;
+  const J = +V.surfVol||0;
+  const total = I+J;
+  const annStk = displ? H/displ : 0, annMin = spm? annStk/spm : 0;
+  const totStk = displ? I/displ : 0, totMin = spm? totStk/spm : 0;
+  const per100 = E? K*100/E : 0;
+  const shoeMD=+k.shoeMD||0, holeMD=+k.holeMD||0;
+  const geomBad = holeMD>0 && shoeMD>0 && holeMD<shoeMD; // hole cannot be shallower than the shoe
+  return {cmw,mamw,maasp,kmw,icp,fcp,K,per100,displ,spm,pl,sidpp,sicp,pitGain,
+    dp,hw,dc,D,E,Emin,dcOh,dpOh,dpCsg,F,G,H,I,J,total,annStk,annMin,totStk,totMin,
+    maaspExceeded: maasp>0 && sicp>maasp, geomBad, shoeMD, holeMD, shoeTVDft, holeTVDft};
+}
+function renderKill(){
+  const slot=$('#builderSlot');slot.innerHTML='';const box=el('section','builder');const c=killCompute();
+  const warn=c.maaspExceeded||c.geomBad;
+  const al=el('div','alarm '+(c.maaspExceeded?'cut':(c.geomBad?'slip':'ok')));al.id='killAlarm';
+  al.append(el('div','sig',warn?'▲':'✓'));
+  const msg=el('div','msg');msg.innerHTML=killAlarmHtml(c);al.append(msg);
+  const m1=el('div','metv');m1.innerHTML=`<div class="v">${fmtU('press',c.maasp,0)}</div><div class="k">MAASP (${ul('press')})</div>`;
+  const m2=el('div','metv');m2.innerHTML=`<div class="v">${fmtU('press',c.sicp,0)}</div><div class="k">SICP (${ul('press')})</div>`;
+  al.append(m1,m2);box.append(al);
+  const head=el('div','bhead');head.append(el('h2',null,'Kill Sheet'),el('div','hint','IWCF surface BOP · vertical well · API field units.'),el('div','grow'));
+  const af=el('button','abtn ghost','⟲ Auto-fill from string');af.onclick=killAutoFill;head.append(af);box.append(head);
+  const body=el('div');body.style.cssText='padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px';
+  const K=state.kill;
+  const card=(title)=>{const d=el('div');d.style.cssText='border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--paper-2)';
+    const h=el('div');h.style.cssText='padding:9px 12px;background:linear-gradient(var(--paper),#eaeeec);border-bottom:1px solid var(--line);font-size:11px;letter-spacing:1.4px;text-transform:uppercase;font-weight:700;color:var(--panel)';h.textContent=title;d.append(h);
+    const g=el('div');g.style.cssText='padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px';d.append(g);d._g=g;return d;};
+  const fld=(g,label,obj,key,kind,tag)=>{const f=el('div','pf');f.append(el('label',null,label));const i=el('input');i.type='number';i.step='0.001';
+    i.dataset.kf=(tag||'')+key;
+    i.value=kind?numStr(disp(kind,obj[key])):(obj[key]??'');
+    i.addEventListener('input',()=>{obj[key]= i.value===''?'':(kind?parse(kind,+i.value):+i.value); recalc(true);});
+    f.append(i);g.append(f);return f;};
+  const out=(g,label,val,unit,big)=>{const f=el('div','pf');f.append(el('label',null,label));
+    const d=el('div');d.style.cssText=`font-family:var(--mono);font-weight:600;font-size:${big?18:14}px;padding:6px 0;color:${big?'var(--link)':'var(--ink)'}`;
+    d.textContent=val+(unit?' '+unit:'');g.append(f);f.append(d);return d;};
+  const c1=card('Formation strength (LOT)');
+  fld(c1._g,`Surface LOT press (A) ${ul('press')}`,K,'lopPress','press');
+  fld(c1._g,`MW at test (B) ${ul('mud')}`,K,'mwAtTest','mud');
+  out(c1._g,'Max allowable MW (C)',fmt(c.mamw,2),'ppg');
+  out(c1._g,'Initial MAASP',fmtU('press',c.maasp,0),ul('press'),true);
+  body.append(c1);
+  const c2=card('Current well data');
+  fld(c2._g,`Current MW ${ul('mud')}`,K,'cmw','mud');
+  fld(c2._g,'Shoe size (in)',K,'shoeSize');
+  fld(c2._g,'Shoe ID (in)',K,'shoeID');
+  fld(c2._g,`Shoe MD ${ul('len')}`,K,'shoeMD','len');
+  fld(c2._g,`Shoe TVD ${ul('len')}`,K,'shoeTVD','len');
+  fld(c2._g,'Hole size (in)',K,'holeSize');
+  fld(c2._g,`Hole MD ${ul('len')}`,K,'holeMD','len');
+  fld(c2._g,`Hole TVD ${ul('len')}`,K,'holeTVD','len');
+  fld(c2._g,'DP OD (in)',K,'dpOD');fld(c2._g,'DP ID (in)',K,'dpID');
+  fld(c2._g,'DC OD (in)',K,'dcOD');fld(c2._g,'DC ID (in)',K,'dcID');
+  body.append(c2);
+  const c3=card('Slow pump rate data');
+  K.pumps.forEach((p,i)=>{
+    const t=el('div');t.style.cssText='grid-column:1/3;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--amber-deep);font-weight:700;display:flex;align-items:center;gap:8px';
+    const r=el('input');r.type='radio';r.name='killpump';r.checked=K.activePump===i;r.style.accentColor='var(--amber-deep)';
+    r.onchange=()=>{K.activePump=i;recalc();};
+    t.append(r,document.createTextNode('Pump '+(i+1)+(K.activePump===i?' (in use)':'')));
+    c3._g.append(t);
+    fld(c3._g,'Displacement bbl/stk',p,'displ',null,'p'+i);
+    fld(c3._g,'Rate SPM',p,'spm',null,'p'+i);
+    fld(c3._g,`Dynamic press loss (PL) ${ul('press')}`,p,'pl','press','p'+i);
+    const sp=el('div');sp.style.gridColumn='1/3';c3._g.append(sp);
+  });
+  body.append(c3);
+  const c4=card('Kick data');
+  fld(c4._g,`SIDPP ${ul('press')}`,K,'sidpp','press');
+  fld(c4._g,`SICP ${ul('press')}`,K,'sicp','press');
+  fld(c4._g,`Pit gain ${ul('vol')}`,K,'pitGain','vol');
+  out(c4._g,'Kill mud weight (KMW)',fmt(c.kmw,2),'ppg',true);
+  out(c4._g,'Initial circ press (ICP)',fmtU('press',c.icp,0),ul('press'),true);
+  out(c4._g,'Final circ press (FCP)',fmtU('press',c.fcp,0),ul('press'),true);
+  body.append(c4);
+  box.append(body);
+  const vh=el('div','bhead');vh.style.borderTop='1px solid var(--line)';vh.append(el('h2',null,'Pre-recorded volume data'));vh.querySelector('h2').style.fontSize='15px';box.append(vh);
+  const VU=ul('vol'),LU=ul('len');
+  const scroll=el('div','tscroll'),tbl=el('table'),thead=el('thead'),htr=el('tr');
+  [["Section","l"],[`Length ${LU}`,"r"],["Capacity bbl/ft","r"],[`Volume ${VU}`,"r"],["Strokes","r"],["Time min","r"]].forEach(([t,cl])=>htr.append(el('th',cl==='l'?'l':'',t)));
+  thead.append(htr);tbl.append(thead);const tb=el('tbody');
+  const V=state.kill.vol;
+  const tag=(td,k)=>{const i=td.querySelector('input');if(i)i.dataset.kf='vol.'+k;return td;};
+  const vrow=(name,lenKey,capKey,res)=>{
+    const tr=el('tr');const n=el('td');n.style.cssText='padding:8px;text-align:left';n.textContent=name;tr.append(n);
+    tr.append(tag(td_input(V,lenKey,'len',null,()=>recalc(true)),lenKey));
+    tr.append(tag(td_input(V,capKey,'plain',null,()=>recalc(true)),capKey));
+    const v=el('td','calc strong');v.dataset.cell='kv-'+lenKey;v.textContent=fmtU('vol',res.vol,2);tr.append(v);
+    const s=el('td','calc');s.dataset.cell='ks-'+lenKey;s.textContent=fmt(res.stk,0);tr.append(s);
+    const m=el('td','calc');m.dataset.cell='km-'+lenKey;m.textContent=fmt(res.min,1);tr.append(m);
+    tb.append(tr);
+  };
+  const totRow=(label,vol,stk,min,tag)=>{
+    const tr=el('tr');tr.style.background='#f7f9f8';
+    const n=el('td');n.style.cssText='padding:8px;text-align:left;font-weight:700';n.innerHTML=label+(tag?` <span style="color:var(--amber-deep);font-family:var(--mono)">(${tag})</span>`:'');tr.append(n);
+    tr.append(el('td'),el('td'));
+    const v=el('td','linked');v.textContent=fmtU('vol',vol,2);tr.append(v);
+    const s=el('td','calc strong');s.textContent=stk!=null?fmt(stk,0):'';tr.append(s);
+    const m=el('td','calc strong');m.textContent=min!=null?fmt(min,1):'';tr.append(m);
+    tb.append(tr);
+  };
+  vrow('Drill pipe','dpLen','dpCap',c.dp);
+  vrow('Heavy wall drill pipe','hwLen','hwCap',c.hw);
+  vrow('Drill collars','dcLen','dcCap',c.dc);
+  totRow('Drill string volume',c.D,c.E,c.Emin,'D / E');
+  vrow('DC × open hole','dcOhLen','dcOhCap',c.dcOh);
+  vrow('DP/HWDP × open hole','dpOhLen','dpOhCap',c.dpOh);
+  totRow('Open hole volume',c.F,null,null,'F');
+  vrow('DP × casing','dpCsgLen','dpCsgCap',c.dpCsg);
+  totRow('Casing annulus volume',c.G,null,null,'G');
+  totRow('Total annulus volume',c.H,c.annStk,c.annMin,'F+G = H');
+  totRow('Total well system volume',c.I,c.totStk,c.totMin,'D+H = I');
+  const sr=el('tr');const sn=el('td');sn.style.cssText='padding:8px;text-align:left';sn.textContent='Active surface volume (J)';sr.append(sn);
+  sr.append(el('td'),el('td'));sr.append(tag(td_input(V,'surfVol','vol',null,()=>recalc(true)),'surfVol'));sr.append(el('td'),el('td'));tb.append(sr);
+  totRow('Total active fluid system',c.total,null,null,'I+J');
+  tbl.append(tb);scroll.append(tbl);box.append(scroll);
+  const sh=el('div','bhead');sh.style.borderTop='1px solid var(--line)';sh.append(el('h2',null,'Drill pipe pressure step-down schedule'));sh.querySelector('h2').style.fontSize='15px';
+  sh.append(el('div','hint',`ICP → FCP over ${fmt(c.E,0)} strokes to bit · ${fmtU('press',c.per100,1)} ${ul('press')} per 100 strokes`));
+  box.append(sh);
+  const s2=el('div','tscroll'),t2=el('table'),th2=el('thead'),h2=el('tr');
+  [["Step","idx"],["Strokes","r"],[`Drill pipe pressure ${ul('press')}`,"r"]].forEach(([t,cl])=>h2.append(el('th',cl==='l'?'l':'',t)));
+  th2.append(h2);t2.append(th2);const b2=el('tbody');
+  const n=state.kill.steps||10;
+  for(let i=0;i<=n;i++){
+    const f=i/n, stk=c.E*f, pr=c.icp-(c.icp-c.fcp)*f;
+    const tr=el('tr');if(i===0||i===n)tr.style.background='#f7f9f8';
+    tr.append(el('td','idx',i===0?'ICP':(i===n?'FCP':String(i))));
+    const s=el('td','calc strong');s.textContent=fmt(stk,0);tr.append(s);
+    const p2=el('td','linked');p2.textContent=fmtU('press',pr,0);tr.append(p2);
+    b2.append(tr);
+  }
+  t2.append(b2);s2.append(t2);box.append(s2);
+  const st=el('div','stripe');
+  st.innerHTML=`KMW <b>${fmt(c.kmw,2)} ppg</b> · ICP <b>${fmtU('press',c.icp,0)} ${ul('press')}</b> · FCP <b>${fmtU('press',c.fcp,0)} ${ul('press')}</b> · K = ICP−FCP <b>${fmtU('press',c.K,0)}</b> · Strokes to bit <b>${fmt(c.E,0)}</b> · <span class="lk">Total system <b>${fmtU('vol',c.total,1)} ${ul('vol')}</b></span>`;
+  box.append(st);
+  slot.append(box);
+}
+/* kill sheet outputs are interdependent — re-render, but preserve caret so typing is unbroken */
+function updateKillCalc(){
+  const a=document.activeElement;
+  const key=(a&&a.dataset)?a.dataset.kf:null;
+  const st=a?a.selectionStart:null, en=a?a.selectionEnd:null;
+  renderKill();
+  if(key){
+    const n=document.querySelector(`[data-kf="${key}"]`);
+    if(n){n.focus();try{n.setSelectionRange(st,en);}catch(e){}}
+  }
+}
+function killAlarmHtml(c){
+  if(c.geomBad) return `<h3>Check well geometry</h3><p>Hole MD ${fmtU('len',c.holeMD,0)} ${ul('len')} is <b>above</b> the casing shoe at ${fmtU('len',c.shoeMD,0)} ${ul('len')} — the sheet can’t compute a valid annulus. Correct the depths, or auto-fill once the pipe tally reflects the real string.</p>`;
+  if(c.maaspExceeded) return `<h3>SICP above MAASP</h3><p>Shut-in casing pressure ${fmtU('press',c.sicp,0)} ${ul('press')} exceeds MAASP ${fmtU('press',c.maasp,0)} ${ul('press')} — risk of breaking down the shoe. Consider volumetric methods and consult the well control plan.</p>`;
+  return `<h3>Kill sheet ready</h3><p>Enter LOT, well and pump data, then kick data. Values feed the step-down schedule below. Auto-fill pulls lengths and capacities from the BHA, pipe tally and daily record.</p>`;
+}
+
+/* ===================================================== FORMULAS (IWCF EX-0035) ===================================================== */
+const F_=(n,name,unit,vars,calc,note)=>({n,name,unit,vars,calc,note});
+const FORMULAS=[
+ F_(1,'Hydrostatic pressure','psi',[['mw','Fluid density','ppg'],['tvd','TVD','ft']],v=>v.mw*0.052*v.tvd,'mw × 0.052 × TVD'),
+ F_(2,'Pressure gradient','psi/ft',[['mw','Fluid density','ppg']],v=>v.mw*0.052,'mw × 0.052'),
+ F_(3,'Fluid density','ppg',[['hp','Hydrostatic pressure','psi'],['tvd','TVD','ft']],v=>v.hp/(v.tvd*0.052),'HP ÷ TVD ÷ 0.052'),
+ F_(4,'Formation pressure','psi',[['hp','HP in drillstring','psi'],['sidpp','SIDPP','psi']],v=>v.hp+v.sidpp,'HP + SIDPP'),
+ F_(5,'Pump output','bbl/min',[['displ','Pump displacement','bbl/stk'],['spm','Pump rate','SPM']],v=>v.displ*v.spm,'displacement × SPM'),
+ F_(6,'Equivalent circulating density','ppg',[['mw','Fluid density','ppg'],['apl','Annular pressure loss','psi'],['tvd','TVD','ft']],v=>v.mw+v.apl/(v.tvd*0.052),'mw + APL ÷ TVD ÷ 0.052'),
+ F_(7,'Fluid density with trip margin','ppg',[['mw','Fluid density','ppg'],['tm','Trip margin','psi'],['tvd','TVD','ft']],v=>v.mw+v.tm/(v.tvd*0.052),'mw + TM ÷ TVD ÷ 0.052'),
+ F_(8,'New pump pressure (new rate)','psi',[['p','Current pump pressure','psi'],['n','New rate','SPM'],['c','Current rate','SPM']],v=>v.p*Math.pow(v.n/v.c,2),'P × (new SPM ÷ current SPM)²'),
+ F_(9,'New pump pressure (new density)','psi',[['p','Current pump pressure','psi'],['n','New fluid density','ppg'],['c','Current fluid density','ppg']],v=>v.p*(v.n/v.c),'P × (new ppg ÷ current ppg)'),
+ F_(10,'Maximum allowable fluid density','ppg',[['lotmw','LOT fluid density','ppg'],['lotp','Surface LOT pressure','psi'],['shoe','Casing shoe TVD','ft']],v=>v.lotmw+v.lotp/(v.shoe*0.052),'LOT mw + LOT psi ÷ shoe TVD ÷ 0.052'),
+ F_(11,'MAASP','psi',[['mamw','Max allowable density','ppg'],['cmw','Current density','ppg'],['shoe','Casing shoe TVD','ft']],v=>(v.mamw-v.cmw)*0.052*v.shoe,'(MAMW − CMW) × 0.052 × shoe TVD'),
+ F_(12,'Kill fluid density','ppg',[['cmw','Current fluid density','ppg'],['sidpp','SIDPP','psi'],['tvd','TVD','ft']],v=>v.cmw+v.sidpp/(v.tvd*0.052),'CMW + SIDPP ÷ TVD ÷ 0.052'),
+ F_(13,'Initial circulating pressure','psi',[['pl','Circ press at kill rate','psi'],['sidpp','SIDPP','psi']],v=>v.pl+v.sidpp,'PL + SIDPP'),
+ F_(14,'Final circulating pressure','psi',[['kmw','Kill fluid density','ppg'],['cmw','Current fluid density','ppg'],['pl','Circ press at kill rate','psi']],v=>(v.kmw/v.cmw)*v.pl,'(KMW ÷ CMW) × PL'),
+ F_(15,'Gas migration rate','ft/hr',[['rate','Rise in surface pressure','psi/hr'],['mw','Fluid density','ppg']],v=>v.rate/(v.mw*0.052),'psi/hr ÷ mw ÷ 0.052'),
+ F_(16,'Gas law — solve V₂','bbl',[['p1','P₁','psi'],['v1','V₁','bbl'],['p2','P₂','psi']],v=>v.p1*v.v1/v.p2,'P₁V₁ = P₂V₂ → V₂ = P₁V₁ ÷ P₂'),
+ F_(17,'Pressure drop/ft tripping dry','psi/ft',[['mw','Fluid density','ppg'],['md','Metal displacement','bbl/ft'],['cap','Riser/casing capacity','bbl/ft']],v=>(v.mw*0.052*v.md)/(v.cap-v.md),'mw×0.052×MD ÷ (cap − MD)'),
+ F_(18,'Pressure drop/ft tripping wet','psi/ft',[['mw','Fluid density','ppg'],['ced','Closed end displacement','bbl/ft'],['cap','Riser/casing capacity','bbl/ft']],v=>(v.mw*0.052*v.ced)/(v.cap-v.ced),'mw×0.052×CED ÷ (cap − CED)'),
+ F_(19,'Level drop pulling collars dry','ft',[['len','Length of collars','ft'],['md','Metal displacement','bbl/ft'],['cap','Riser/casing capacity','bbl/ft']],v=>v.len*v.md/v.cap,'len × MD ÷ cap'),
+ F_(20,'Level drop pulling collars wet','ft',[['len','Length of collars','ft'],['ced','Closed end displacement','bbl/ft'],['cap','Riser/casing capacity','bbl/ft']],v=>v.len*v.ced/v.cap,'len × CED ÷ cap'),
+ F_(21,'Length to pull dry before overbalance lost','ft',[['ob','Overbalance','psi'],['cap','Riser/casing capacity','bbl/ft'],['md','Metal displacement','bbl/ft'],['mw','Fluid density','ppg']],v=>v.ob*(v.cap-v.md)/(v.mw*0.052*v.md),'OB × (cap − MD) ÷ (mw×0.052×MD)'),
+ F_(22,'Length to pull wet before overbalance lost','ft',[['ob','Overbalance','psi'],['cap','Riser/casing capacity','bbl/ft'],['ced','Closed end displacement','bbl/ft'],['mw','Fluid density','ppg']],v=>v.ob*(v.cap-v.ced)/(v.mw*0.052*v.ced),'OB × (cap − CED) ÷ (mw×0.052×CED)'),
+ F_(23,'Volume to bleed (gas migration, vertical)','bbl',[['wp','Working pressure to bleed','psi'],['ann','Annular capacity','bbl/ft'],['mw','Fluid density','ppg']],v=>v.wp*v.ann/(v.mw*0.052),'WP × ann cap ÷ (mw × 0.052)'),
+ F_(24,'Slug volume for a length of dry pipe','bbl',[['len','Length of dry pipe','ft'],['cap','Pipe capacity','bbl/ft'],['cmw','Current fluid density','ppg'],['smw','Slug density','ppg']],v=>v.len*v.cap*v.cmw/(v.smw-v.cmw),'len × cap × CMW ÷ (SMW − CMW)'),
+ F_(25,'Pit gain due to slug U-tubing','bbl',[['sv','Slug volume','bbl'],['smw','Slug density','ppg'],['cmw','Current fluid density','ppg']],v=>v.sv*(v.smw/v.cmw-1),'SV × (SMW ÷ CMW − 1)'),
+ F_(26,'Riser margin','ppg',[['ag','Air gap','ft'],['wd','Water depth','ft'],['mw','Fluid density','ppg'],['wdns','Water density','ppg'],['tvd','TVD','ft']],v=>((v.ag+v.wd)*v.mw-(v.wd*v.wdns))/(v.tvd-v.ag-v.wd),'((AG+WD)×mw − WD×wdens) ÷ (TVD − AG − WD)'),
+ F_(27,'HP loss if casing float fails','psi',[['mw','Fluid density','ppg'],['cap','Casing capacity','bbl/ft'],['h','Unfilled casing height','ft'],['ann','Annular capacity','bbl/ft']],v=>(v.mw*0.052*v.cap*v.h)/(v.cap+v.ann),'mw×0.052×cap×h ÷ (cap + ann)'),
+];
+const fvals={};
+function renderForm(){
+  const slot=$('#builderSlot');slot.innerHTML='';const box=el('section','builder');
+  const head=el('div','bhead');head.append(el('h2',null,'Well Control Formulas'),el('div','hint','IWCF EX-0035 · Drilling English API formula sheet · live calculators.'),el('div','grow'));
+  const src=el('div','hint');src.style.cssText='font-family:var(--mono);font-size:11px';src.textContent='All values in API field units';
+  head.append(src);box.append(head);
+  const sb=el('div','palette');
+  const si=el('input');si.placeholder='Search formulas…';si.style.cssText='font-family:var(--disp);font-size:13px;border:1px solid var(--line);border-radius:20px;padding:7px 14px;flex:1;min-width:180px';
+  si.oninput=()=>{const q=si.value.toLowerCase();
+    document.querySelectorAll('[data-fcard]').forEach(cd=>{cd.style.display=cd.dataset.fcard.includes(q)?'':'none';});};
+  sb.append(si);
+  const seedBtn=el('button','chip','↧ Pull values from kill sheet');
+  seedBtn.onclick=()=>{const c=killCompute();
+    Object.assign(fvals,{mw:+fmt(c.cmw,2),cmw:+fmt(c.cmw,2),tvd:Math.round(c.holeTVDft),shoe:Math.round(c.shoeTVDft),
+      sidpp:c.sidpp,pl:c.pl,displ:c.displ,spm:c.spm,kmw:+fmt(c.kmw,2),mamw:+fmt(c.mamw,2),
+      lotmw:+fmt(toPpg(state.kill.mwAtTest),2),lotp:+state.kill.lopPress||0});
+    renderForm();toast('Filled from kill sheet');};
+  sb.append(seedBtn);box.append(sb);
+  const grid=el('div');grid.style.cssText='padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px';
+  const cards=[];
+  FORMULAS.forEach(f=>{
+    const cd=el('div');cd.dataset.fcard=(f.n+' '+f.name+' '+f.note).toLowerCase();
+    cd.style.cssText='border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--paper-2);display:flex;flex-direction:column';
+    const h=el('div');h.style.cssText='padding:9px 12px;background:linear-gradient(var(--paper),#eaeeec);border-bottom:1px solid var(--line)';
+    h.innerHTML=`<div style="font-size:13.5px;font-weight:700;letter-spacing:.2px"><span style="font-family:var(--mono);color:var(--amber-deep)">${f.n}.</span> ${f.name}</div>
+      <div style="font-family:var(--mono);font-size:10.5px;color:var(--steel-600);margin-top:3px">${f.note}</div>`;
+    cd.append(h);
+    const g=el('div');g.style.cssText='padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1';
+    const res=el('div');
+    const recompute=()=>{
+      const v={};let ok=true;
+      f.vars.forEach(([k])=>{const x=fvals[k];if(x===''||x==null||isNaN(x))ok=false;v[k]=+x||0;});
+      let outv='—';
+      if(ok){const r=f.calc(v);outv=isFinite(r)?fmt(r,Math.abs(r)<10?3:2):'—';}
+      res.innerHTML=`<div style="font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--steel-600)">Result</div>
+        <div style="font-family:var(--mono);font-weight:600;font-size:19px;color:${ok?'var(--link)':'var(--steel-400)'}">${outv} <small style="font-size:11px;color:var(--steel-600)">${f.unit}</small></div>`;
+    };
+    f.vars.forEach(([k,label,unit])=>{
+      const fl=el('div','pf');fl.append(el('label',null,`${label} (${unit})`));
+      const i=el('input');i.type='number';i.step='0.001';i.value=fvals[k]??'';
+      i.addEventListener('input',()=>{fvals[k]=i.value===''?'':+i.value;cards.forEach(c2=>c2._rc());});
+      fl.append(i);g.append(fl);
+    });
+    cd.append(g);
+    res.style.cssText='padding:10px 12px;border-top:1px solid var(--line);background:#f7f9f8';
+    cd.append(res);cd._rc=recompute;recompute();
+    cards.push(cd);grid.append(cd);
+  });
+  box.append(grid);slot.append(box);
+}
+
+/* maintenance roll-up for the rail */
+function maintenanceCount(){ return {insp:rotCompute().dueCount, parts:pumpsCompute().dueCount}; }
+
+
+function recalc(soft){
+  if(soft){
+    if(state.view==='bha')updateBhaCalc();
+    else if(state.view==='pipe')updatePipeCalc();
+    else if(state.view==='tm')updateTmCalc();
+    else if(state.view==='daily')updateDailyCalc();
+    else if(state.view==='rot')updateRotCalc();
+    else if(state.view==='pumps')updatePumpsCalc();
+    else if(state.view==='trip')updateTripCalc();
+    else if(state.view==='kill')updateKillCalc();
+    renderSummary();return;
+  }
+  renderCurrent();renderSummary();
+}
+function renderCurrent(){
+  if(state.view==='bha')renderBHA();
+  else if(state.view==='pipe')renderPipe();
+  else if(state.view==='tm')renderTM();
+  else if(state.view==='daily')renderDaily();
+  else if(state.view==='rot')renderRot();
+  else if(state.view==='pumps')renderPumps();
+  else if(state.view==='trip')renderTrip();
+  else if(state.view==='kill')renderKill();
+  else if(state.view==='form')renderForm();
+}
+function setTab(v){state.view=v;document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.tab===v));renderCurrent();renderSummary();}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>setTab(t.dataset.tab));
+
+/* ===================================================== OVERLAYS ===================================================== */
+function openOverlay(id){$('#'+id+'Overlay').classList.add('on');}
+function closeOverlay(id){$('#'+id+'Overlay').classList.remove('on');}
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeOverlay(b.dataset.close));
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('on');}));
+$('#bulkAdd').onclick=()=>{
+  const n=Math.max(1,parseInt($('#bulkCount').value)||1);
+  const len=parse('len',+$('#bulkLen').value||0),conn=$('#bulkConn').value,rem=$('#bulkRemark').value;
+  for(let k=0;k<n;k++)state.pipe.rows.push({id:nid(),len,conn,remark:rem,sn:''});
+  state.pipe._lastLen=len;state.pipe._lastConn=conn;closeOverlay('bulk');recalc();toast(n+' joints added');
+};
+
+/* ===================================================== SETTINGS MODAL ===================================================== */
+$('#btnSettings').onclick=()=>{buildSettings();openOverlay('set');};
+function buildSettings(){
+  const host=$('#setBody');host.innerHTML='';
+  // UNITS
+  host.append(el('div','sect','Measurement units'));
+  const ug=el('div','grid');
+  Object.keys(UNIT_DEFS).forEach(kind=>{
+    const def=UNIT_DEFS[kind];const f=el('div','pf');f.append(el('label',null,def.label));
+    const sel=el('select');Object.keys(def.opts).forEach(u=>{const o=el('option',null,def.opts[u].l);o.value=u;if(state.units[kind]===u)o.selected=true;sel.append(o);});
+    sel.onchange=()=>{state.units[kind]=sel.value;renderWell();renderCurrent();renderSummary();};
+    f.append(sel);ug.append(f);
+  });
+  host.append(ug);
+  // LINE / EQUIPMENT PARAMS
+  host.append(el('div','sect','Drilling line — slip & cut program'));
+  const P=state.tm.params;const pg=el('div','grid');
+  const num=(label,kind,key)=>{const f=el('div','pf');f.append(el('label',null,kind?`${label} (${ul(kind)})`:label));const i=el('input');i.type='number';i.step='0.01';i.value=kind?numStr(disp(kind,P[key])):P[key];i.oninput=()=>{P[key]=kind?(i.value===''?0:parse(kind,+i.value)):(+i.value||0);renderSummary();if(state.view==='tm')updateTmCalc();};f.append(i);return f;};
+  const txt=(label,key)=>{const f=el('div','pf');f.append(el('label',null,label));const i=el('input');i.value=P[key]??'';i.oninput=()=>{P[key]=i.value;};f.append(i);return f;};
+  pg.append(
+    num('T-M between slips','work','tmBetweenSlips'),
+    num('T-M between cuts','work','tmBetweenCuts'),
+    num('Length of slip','len','lengthOfSlip'),
+    num('Length of cut','len','lengthOfCut'),
+    num('No. of lines strung',null,'noOfLines'),
+    num('T-M goal per foot',null,'tmGoalPerFoot'),
+  );
+  host.append(pg);
+  host.append(el('div','sect','Rig & line data (reference)'));
+  const rg=el('div','grid');
+  rg.append(txt('Drawworks','drawworks'),txt('Drum dia.','drumDia'),txt('Derrick height','derrick'),txt('Crown sheave','crown'),txt('Travelling sheave','travelling'),
+    num('Weight of TBA','wt','tbaWeight'),txt('Line maker','lineMaker'),txt('Line size','lineSize'),num('Line length','len','lineLength'),txt('Grade & strength','lineGrade'),
+    txt('Reel','reel'),txt('Date on','dateOn'),txt('Date off','dateOff'));
+  host.append(rg);
+  host.append(el('div','sect','Maintenance intervals'));
+  const mg=el('div','grid');
+  const iif=el('div','pf');iif.append(el('label',null,'Rotating hrs between inspections'));const iii=el('input');iii.type='number';iii.step='1';iii.value=state.rot.inspInterval;iii.oninput=()=>{state.rot.inspInterval=+iii.value||0;renderSummary();if(state.view==='rot')updateRotCalc();};iif.append(iii);
+  mg.append(iif);host.append(mg);
+  const mnote=el('p','linknote');mnote.style.padding='8px 0 0';mnote.textContent='Individual mud-pump part limits are set on each pump card in the Mud Pumps tab.';
+  host.append(mnote);
+  host.append(el('div','sect','Trip sheet tolerances'));
+  const tg=el('div','grid');const T=state.trip;
+  const tnum=(label,kind,key)=>{const f=el('div','pf');f.append(el('label',null,`${label} (${ul(kind)})`));const i=el('input');i.type='number';i.step='0.01';i.value=numStr(disp(kind,T[key]));i.oninput=()=>{T[key]=i.value===''?0:parse(kind,+i.value);renderSummary();if(state.view==='trip')updateTripCalc();};f.append(i);return f;};
+  tg.append(tnum('Per-stand tolerance','vol','tolStand'),tnum('Accumulated tolerance','vol','tolAccum'));
+  host.append(tg);
+  const tnote=el('p','linknote');tnote.style.padding='8px 0 0';
+  tnote.innerHTML='A stand is flagged when its gain/loss exceeds the per-stand tolerance; the alarm fires when the <b>accumulated</b> difference exceeds the accumulated tolerance.';
+  host.append(tnote);
+  host.append(el('div','sect','Pipe tally'));
+  const pt=el('div','grid');
+  const psf=el('div','pf');psf.append(el('label',null,'Joints per stand'));const psi=el('input');psi.type='number';psi.min='1';psi.value=state.pipe.perStand;psi.oninput=()=>{state.pipe.perStand=Math.max(1,parseInt(psi.value)||1);renderSummary();};psf.append(psi);
+  pt.append(psf);host.append(pt);
+}
+
+/* ===================================================== EXPORT / IMPORT ===================================================== */
+function dl(name,text,type='text/plain'){const b=new Blob([text],{type});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
+function csvCell(v){v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
+function toCsv(rows){return rows.map(r=>r.map(csvCell).join(',')).join('\n');}
+function bhaCsv(){
+  const c=bhaCompute();const LU=ul('len'),WU=ul('wt');
+  const head=['#','Description','OD in','ID in','FN OD in','FN len '+LU,'Serial','Connection','Length '+LU,'Cum len '+LU,'Weight '+WU,'Cum wt '+WU,'Jar'];
+  const rows=state.bha.rows.map((r,i)=>[i+1,r.desc,r.od,r.idb,r.fnod,fmt(disp('len',r.fnlen)),r.serial,r.conn,fmt(disp('len',r.len)),fmt(disp('len',r._cumL)),fmt(disp('wt',r.wt)),fmt(disp('wt',r._cumW)),r.jar?'JAR':'']);
+  const foot=[[],['Buoyancy factor',c.factor.toFixed(4)],['BHA length '+LU,fmt(disp('len',c.totalLen))],['Weight in air '+WU,fmt(disp('wt',c.airWt))],['Weight in mud '+WU,fmt(disp('wt',c.mudWt))]];
+  return toCsv([[`Rig ${state.well.rig}  Well ${state.well.well}  Section ${state.well.section}  ${state.well.date}`],[],head,...rows,...foot]);
+}
+function pipeCsv(){
+  const p=pipeCompute();const LU=ul('len');
+  const head=['Joint','Stand','SN','Length '+LU,'Stand len '+LU,'Cum len '+LU,'Cum DP+BHA '+LU,'Connection','Remarks'];
+  const rows=state.pipe.rows.map((r,i)=>[i+1,r._standStart?r._standNo:'',r.sn,fmt(disp('len',r.len)),r._standLen!=null?fmt(disp('len',r._standLen)):'',fmt(disp('len',r._cum)),fmt(disp('len',r._cumDpBha)),r.conn,r.remark]);
+  return toCsv([[`Rig ${state.well.rig}  Well ${state.well.well}  BHA offset ${fmt(disp('len',p.bhaLen))} ${LU}`],[],head,...rows,[],['DP length '+LU,fmt(disp('len',p.dpLen))],['Total MD '+LU,fmt(disp('len',p.md))]]);
+}
+function tmCsv(){
+  tmCompute();const WU=ul('work'),LU=ul('len'),FU=ul('force');
+  const head=['Date','Trip','Depth '+LU,'Wt ind '+FU,'SF','Svc','Hole/pipe','Trip TM '+WU,'Drlg TM '+WU,'Tot TM','Actual TM','Since slip','Since cut','Slip '+LU,'Cut '+LU,'Accu TM','Line rem '+LU,'Alarm','Remarks'];
+  const rows=state.tm.rows.map((r,i)=>{
+    const alarm=r._cutWarn?'CUT>limit':(r._slipWarn?'SLIP>limit':'');
+    return [r.date,i+1,fmt(disp('len',r.depth)),fmt(disp('force',r.wtInd)),r.safety,r.service,r.holePipe,fmt(disp('work',r.tripTM)),fmt(disp('work',r.drlgTM)),fmt(disp('work',r._tot),1),fmt(disp('work',r._actual),1),fmt(disp('work',r._sinceSlip),0),fmt(disp('work',r._sinceCut),0),fmt(disp('len',r.slip)),fmt(disp('len',r.cut)),fmt(disp('work',r._accu),0),fmt(disp('len',r._lineRem),0),alarm,r.remark];
+  });
+  const P=state.tm.params;
+  return toCsv([[`Rig ${state.well.rig}  Well ${state.well.well}  ${state.well.date}`],
+    [`Slip interval ${fmt(disp('work',P.tmBetweenSlips))} ${WU}`,`Cut interval ${fmt(disp('work',P.tmBetweenCuts))} ${WU}`,`Length of slip ${fmt(disp('len',P.lengthOfSlip))} ${LU}`,`Length of cut ${fmt(disp('len',P.lengthOfCut))} ${LU}`],[],head,...rows]);
+}
+$('#btnBhaCsv').onclick=()=>{recalc(true);dl(`BHA_${state.well.well}.csv`,bhaCsv(),'text/csv');toast('BHA exported');};
+$('#btnPipeCsv').onclick=()=>{recalc(true);dl(`PipeTally_${state.well.well}.csv`,pipeCsv(),'text/csv');toast('Pipe tally exported');};
+$('#btnTmCsv').onclick=()=>{recalc(true);dl(`TonMile_${state.well.well}.csv`,tmCsv(),'text/csv');toast('Ton-mile log exported');};
+function dailyCsv(){
+  const LU=ul('len'),MU=ul('mud'),PU=ul('press'),TU=ul('temp');
+  const head=['Date','Depth '+LU,'Rot hrs','MP1 hrs','MP2 hrs','MP3 hrs','Mud '+MU,'Visc','Sand%','Temp '+TU,'SPM','Press '+PU,'Remarks'];
+  const rows=state.daily.rows.map(r=>[r.date,fmt(disp('len',r.depth)),r.rotHrs,r.mp1,r.mp2,r.mp3,fmt(disp('mud',r.mudSG)),r.visc,r.sand,fmt(disp('temp',r.temp)),r.spm,fmt(disp('press',r.press)),r.remark]);
+  const ds=dailySums();
+  return toCsv([[`Rig ${state.well.rig}  Well ${state.well.well}  Daily updates`],[],head,...rows,[],['Rotating hrs total',fmt(ds.rot,0)],['MP1 total',fmt(ds.mp[0],0)],['MP2 total',fmt(ds.mp[1],0)],['MP3 total',fmt(ds.mp[2],0)]]);
+}
+$('#btnDailyCsv').onclick=()=>{recalc(true);dl(`Daily_${state.well.well}.csv`,dailyCsv(),'text/csv');toast('Daily record exported');};
+$('#btnSave').onclick=()=>{dl(`RigString_${state.well.well}.json`,JSON.stringify(state,null,2),'application/json');toast('Project saved');};
+$('#btnLoad').onclick=()=>$('#fileInput').click();
+$('#fileInput').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;const rd=new FileReader();
+  rd.onload=()=>{try{
+    const o=JSON.parse(rd.result);
+    if(o.units)state.units=Object.assign(state.units,o.units);
+    if(o.well)state.well=Object.assign(state.well,o.well);
+    if(o.bha)state.bha=Object.assign(state.bha,o.bha);
+    if(o.pipe)state.pipe=Object.assign(state.pipe,o.pipe);
+    if(o.tm){state.tm.rows=o.tm.rows||[];if(o.tm.prev)state.tm.prev=Object.assign(state.tm.prev,o.tm.prev);if(o.tm.params)state.tm.params=Object.assign(state.tm.params,o.tm.params);}
+    if(o.daily)state.daily.rows=o.daily.rows||[];
+    if(o.rot){state.rot.tools=o.rot.tools||[];if(o.rot.inspInterval!=null)state.rot.inspInterval=o.rot.inspInterval;}
+    if(o.pumps)state.pumps.list=o.pumps.list||[];
+    if(o.trip)state.trip=Object.assign(state.trip,o.trip);
+    if(o.kill){const V=Object.assign({},state.kill.vol,o.kill.vol||{});state.kill=Object.assign(state.kill,o.kill);state.kill.vol=V;}
+    let mx=0;[...(state.bha.rows||[]),...(state.pipe.rows||[]),...(state.tm.rows||[]),...(state.daily.rows||[]),...(state.rot.tools||[]),...(state.pumps.list||[]),...(state.trip.rows||[])].forEach(r=>{r.id=r.id||nid();mx=Math.max(mx,r.id);(r.parts||[]).forEach(pt=>{pt.id=pt.id||nid();mx=Math.max(mx,pt.id);});});uid=mx+1;
+    renderWell();setTab(state.view||'bha');toast('Project loaded');
+  }catch(err){toast('Could not read that file');}};
+  rd.readAsText(f);e.target.value='';
+};
+$('#btnPrint').onclick=()=>window.print();
+$('#btnReset').onclick=()=>{if(!confirm('Clear BHA, pipe joints, ton-mile log, daily records, tools and pump hours? Well header, units and settings are kept.'))return;state.bha.rows=[];state.pipe.rows=[];state.tm.rows=[];state.daily.rows=[];state.rot.tools=[];state.pumps.list=[];state.trip.rows=[];
+  Object.assign(state.kill,{lopPress:'',mwAtTest:'',sidpp:'',sicp:'',pitGain:'',shoeMD:'',shoeTVD:'',holeMD:'',holeTVD:''});
+  recalc();toast('Cleared');};
+
+/* ===================================================== SEED ===================================================== */
+function seed(){
+  [['12¼" Bit',{desc:'12¼" Bit',od:12.25,conn:'6 5/8" Reg',len:0.30,wt:120}],
+   ['Bit Sub',{desc:'Bit Sub',od:8,idb:2.8,fnod:8,conn:'6 5/8" Reg P x B',len:0.9,wt:280}],
+   ['Near-Bit Stab',{desc:'Near Bit Stab',od:12.25,idb:3,fnod:8,conn:'6 5/8" Reg P x B',len:2.1,wt:700}],
+   ['DC1',{desc:'8" DC #1',od:8,idb:3,fnod:8,conn:'6 5/8" Reg P x B',len:9.1,wt:2271}],
+   ['DC2',{desc:'8" DC #2',od:8,idb:3,fnod:8,conn:'6 5/8" Reg P x B',len:9.1,wt:2271}],
+   ['Jar',{desc:'Hydraulic Jar',od:8,idb:2.8,fnod:8,conn:'6 5/8" Reg P x B',len:9.3,wt:2100,jar:true}],
+   ['DC3',{desc:'8" DC #3',od:8,idb:3,fnod:8,conn:'6 5/8" Reg P x B',len:9.1,wt:2271}],
+   ['HWDP1',{desc:'5" HWDP #1',od:5,idb:3,fnod:6.625,conn:'4 ½" IF P x B',len:9.15,wt:588}],
+   ['HWDP2',{desc:'5" HWDP #2',od:5,idb:3,fnod:6.625,conn:'4 ½" IF P x B',len:9.15,wt:588}],
+  ].forEach(([,d])=>state.bha.rows.push(blankBha(d)));
+  [9.68,9.64,9.66,9.65,9.70,9.58,9.62,9.67,9.60,9.69,9.63,9.65].forEach(l=>state.pipe.rows.push({id:nid(),len:l,conn:"4 ½'' IF",remark:'On rack',sn:''}));
+  // TM log seeded from the Oct-2025 sheet pattern
+  const tmSeed=[
+    ['2025-10-16',70,30,9,1.15,'Ø8¼"',0,10,0,0,'Rig maint. & drill 26" hole to 70m'],
+    ['2025-10-17',70,30,9,1.15,'Ø8¼"',0,3,12,24,'Slip & cut 24m & RIH 17.5" BHA'],
+    ['2025-10-18',624,72,9,1.15,'Ø8¼" 5"',0,122,0,0,'Cont drill 17.5" to 624m'],
+    ['2025-10-19',978,80,9,1.15,'Ø8¼" 5"',56,90,0,0,'Drill to TD 978m, POOH'],
+    ['2025-10-22',1299,85,9,1.15,'Ø8½" 5"',52,82,0,0,'RIH 12¼" BHA & drill to 1299m'],
+    ['2025-10-23',1878,105,9,1.15,'Ø8½" 5"',0,164,0,0,'Cont drill 12¼" to 1878m'],
+    ['2025-10-24',2421,125,8.4,1.15,'Ø8½" 5"',0,176,0,0,'Cont drill 12¼" to 2421m'],
+    ['2025-10-25',2645,130,8.4,1.15,'Ø8½" 5"',39,78,0,0,'Drill to 2645m TD, POOH'],
+    ['2025-10-26',2645,16,8.4,1.15,'Ø8½" 5"',114,0,12,0,'Slip drilling line & POOH RSS BHA'],
+    ['2025-10-29',2822,96,6,1.15,'Ø8½" 5"',145,56,0,0,'RIH 8½" BHA & drill to 2822m'],
+    ['2025-10-30',3132,99,6,1.15,'Ø8½" 5"',102,0,0,0,'Drill 8½" to 3132m'],
+    ['2025-10-31',3515,125,6,1.15,'Ø8½" 5"',136,0,0,0,'Drill 8½" to 3515m'],
+  ];
+  tmSeed.forEach(([date,depth,wt,sf,svc,hp,trip,drlg,slip,cut,rem])=>{
+    state.tm.rows.push({id:nid(),date,depth,wtInd:wt,safety:sf,service:svc,holePipe:hp,tripTM:trip,drlgTM:drlg,slip,cut,remark:rem});
+  });
+  // Daily updates record (feeds rotating hrs + pumps)
+  const dailySeed=[
+    ['2025-10-16',70,6,4,4,0,1.15,60,0,60,80,2000],
+    ['2025-10-18',624,18,13,13,0,1.15,60,0,60,80,2300],
+    ['2025-10-19',978,20,0,0,0,1.15,55,0,60,80,2100],
+    ['2025-10-22',1299,16,12,0,12,1.20,50,0,55,65,1500],
+    ['2025-10-23',1878,22,18,18,0,1.20,50,0,60,65,2000],
+    ['2025-10-24',2421,21,15,15,0,1.20,60,0,60,65,2400],
+    ['2025-10-25',2645,19,23,23,0,1.20,60,0,60,65,2700],
+    ['2025-10-29',2822,17,13,13,0,1.20,60,0,60,65,2800],
+    ['2025-10-30',3132,20,20,0,20,1.38,60,0,60,65,2500],
+    ['2025-10-31',3515,18,9,9,0,1.38,60,0,60,65,2500],
+  ];
+  dailySeed.forEach(([date,depth,rot,mp1,mp2,mp3,sg,visc,sand,temp,spm,press])=>{
+    state.daily.rows.push({id:nid(),date,depth,rotHrs:rot,mp1,mp2,mp3,mudSG:sg,visc,sand,temp,spm,press,remark:''});
+  });
+  // Rotating tools — import serials that exist in the BHA, plus a couple spares with prior hours
+  importSerialsSilent();
+  state.rot.inspInterval=250;
+  const bw=[420,360,510,690,690,180,690,120,120], bi=[10,30,0,60,20,95,0,15,40]; // lifetime & since-inspection bases
+  state.rot.tools.forEach((t,i)=>{ t.baseWell=bw[i]||0; t.baseInsp=bi[i]||0; });
+  // Mud pumps with prior operating hours + part life already accrued (hours since last change)
+  ensurePumps();
+  const partBase=[290,180,120,180,80,160,110,90,2845], pumpTotals=[2845,2210,1980];
+  state.pumps.list.forEach((p,i)=>{ p.base=pumpTotals[i]; p.serial=['1202','1203','1204'][i]; p.parts.forEach((pt,j)=>{pt.base=partBase[j]||0;}); });
+  // Trip sheet — POOH 5" 19.5# dry: theoretical 0.813 bbl/std, tank drawn down each stand
+  state.trip.mode='POOH';state.trip.tubular='5" 19.5# DP';state.trip.wet=false;
+  let lvl=62.0;
+  [0.81,0.82,0.80,0.81,0.83,0.79,0.81,0.82].forEach(act=>{
+    const start=lvl, finish=+(lvl-act).toFixed(2); lvl=finish;
+    state.trip.rows.push({id:nid(),tankStart:start,tankFinish:finish,len:28.9,remark:''});
+  });
+  // Kill sheet — self-consistent example well: 9 5/8" shoe @ 2,000 m, 8 1/2" hole to 3,515 m
+  // (matches the final depth in the daily record). "Auto-fill from string" re-links it to the live tally.
+  const K=state.kill;
+  K.lopPress=1200; K.mwAtTest=1.15; K.cmw=1.38;
+  K.shoeSize=9.625; K.shoeID=8.681; K.shoeMD=2000; K.shoeTVD=2000;
+  K.holeSize=8.5; K.holeMD=3515; K.holeTVD=3515;
+  K.dpOD=5; K.dpID=4.276; K.dcOD=8; K.dcID=3;
+  K.pumps=[{displ:0.102,spm:30,pl:800},{displ:0.102,spm:30,pl:820}];
+  K.sidpp=400; K.sicp=500; K.pitGain=10;
+  K.vol.dpLen=3085; K.vol.hwLen=250; K.vol.dcLen=180;      // sums to 3,515 m of string
+  K.vol.dpCap=capOf(K.dpID); K.vol.hwCap=capOf(3); K.vol.dcCap=capOf(K.dcID);
+  K.vol.dcOhLen=180; K.vol.dpOhLen=1335; K.vol.dpCsgLen=2000; // open hole = 3515 − 2000 = 1515 m
+  K.vol.dcOhCap=annOf(K.holeSize,K.dcOD); K.vol.dpOhCap=annOf(K.holeSize,K.dpOD); K.vol.dpCsgCap=annOf(K.shoeID,K.dpOD);
+  K.vol.surfVol=200;
+}
+function importSerialsSilent(){
+  state.bha.rows.forEach(c=>{const sn=(c.serial||'').trim();if(!sn)return;if(state.rot.tools.some(t=>(t.serial||'').trim()===sn))return;
+    state.rot.tools.push({id:nid(),type:c.desc||'Tool',size:c.od||'',serial:sn,baseWell:0,baseInsp:0,lastInsp:'',inString:true});});
+  // if BHA had no serials seeded, add a representative tool set so the tab isn't empty
+  if(!state.rot.tools.length){
+    [['8" Drill Collar',8,'205022'],['8" Drill Collar',8,'20502'],['Hydraulic Jar',8,'J-4471'],['12¼" Stab',12.25,'ST-889'],['5" HWDP',5,'794'],['5" HWDP',5,'793'],['MWD',8,'MWD-31'],['RSS',8.25,'RSS-77']]
+      .forEach(([type,size,serial])=>state.rot.tools.push({id:nid(),type,size,serial,baseWell:0,baseInsp:0,lastInsp:'',inString:true}));
+  }
+}
+
+/* ===================================================== INIT ===================================================== */
+state.bha.bfVal=bfFromSG(state.bha.mudSG);
+renderWell();seed();setTab('bha');renderSummary();
+</script>
+</body>
+</html>
