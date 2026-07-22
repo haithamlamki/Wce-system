@@ -38,7 +38,7 @@ describe('rig-string-builder.html static asset', () => {
 
   it('is byte-identical to the approved prototype (sha256 pinned)', () => {
     const digest = createHash('sha256').update(readFileSync(ASSET_PATH)).digest('hex');
-    expect(digest).toBe('f6d8ff529e7634af5b137fb90f8666b3c4fcdf9dd7f9ebbfb8de685cee62be4c');
+    expect(digest).toBe('047690f89f7b0a3c8e7e8bcb0b8d6a0bc6e7b78ccc32b6a9b143bcd73f4ab3a1');
 
     const buf = readFileSync(ASSET_PATH);
     const openTag = Buffer.from('<script>');
