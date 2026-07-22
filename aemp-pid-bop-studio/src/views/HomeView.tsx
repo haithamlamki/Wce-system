@@ -88,6 +88,13 @@ export default function HomeView() {
             note={offline ? 'Requires cloud sign-in' : (!loaded ? 'Checking access…' : tubularOk ? 'Module 2 · Tubular' : 'No access — ask an administrator')}
             disabled={offline || (loaded && !tubularOk)}
           />
+          <ModuleCard
+            to="/rig-string"
+            icon="⛓"
+            title="Rig String Builder"
+            sub="BHA builder, pipe tally, ton-mile log, daily updates, rotating hours, mud pumps, trip sheet and kill sheet."
+            note="Module 3 · Drill String"
+          />
         </div>
       </div>
     </div>

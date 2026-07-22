@@ -18,6 +18,10 @@ import HomeView from './views/HomeView';
 // Tubular Fleet Management is code-split so the WCE bundle is unaffected.
 const TubularModule = lazy(() => import('./modules/tubular/TubularModule'));
 
+// Rig String Builder is the verbatim single-file prototype in an iframe;
+// the wrapper is tiny but lazy-loading keeps module boundaries uniform.
+const RigStringModule = lazy(() => import('./modules/rigstring/RigStringModule'));
+
 type ThemeMode = 'auto' | 'light' | 'dark';
 
 const TABS = [
@@ -103,7 +107,8 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
   // so the WCE appbar is hidden entirely there. On /home a minimal header
   // remains; WCE deep links (/full, /bop, …) are unchanged.
   const inTubular = pathname.startsWith('/tubular');
-  const inWce = !inTubular && pathname !== '/home';
+  const inRigString = pathname.startsWith('/rig-string');
+  const inWce = !inTubular && !inRigString && pathname !== '/home';
   return (
     <>
       {!inTubular && (
@@ -145,6 +150,14 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
             element={
               <Suspense fallback={<div className="placeholder">Loading Tubular Fleet Management…</div>}>
                 <TubularModule />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/rig-string"
+            element={
+              <Suspense fallback={<div className="placeholder">Loading Rig String Builder…</div>}>
+                <RigStringModule />
               </Suspense>
             }
           />
