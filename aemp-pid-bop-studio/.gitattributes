@@ -1,0 +1,4 @@
+# Byte-pinned artifact: its sha256 is asserted in src/modules/rigstring/asset.test.ts
+# and its inline-script hash in vercel.json. -text stops core.autocrlf from rewriting
+# line endings on Windows checkouts, which would break both pins locally.
+public/rig-string-builder.html -text
