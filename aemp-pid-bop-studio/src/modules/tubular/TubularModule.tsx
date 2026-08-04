@@ -18,7 +18,7 @@ import MasterSheetView from './views/MasterSheetView';
 import ContractsView from './views/ContractsView';
 import OrdersView from './views/OrdersView';
 import ReferenceView from './views/ReferenceView';
-import AssistantView from './views/AssistantView';
+import FloatingAssistant from './components/FloatingAssistant';
 import TubularDashboardView from './views/TubularDashboardView';
 
 // Leaflet is heavy and map-only — keep it out of the main tubular chunk.
@@ -64,7 +64,7 @@ function AccessGate() {
       } />
       <Route path="reference" element={<ReferenceView />} />
       <Route path="manual" element={<Navigate to="/tubular/reference" replace />} />
-      <Route path="assistant" element={<AssistantView />} />
+      <Route path="assistant" element={<Navigate to="/tubular" replace />} />
       <Route path="import" element={<ImportView />} />
       <Route path="*" element={<EmptyState ico="?" title="Not Found" desc="This Tubular page does not exist." />} />
     </Routes>
@@ -81,6 +81,7 @@ export default function TubularModule() {
           <main>
             <AccessGate />
           </main>
+          <FloatingAssistant />
         </div>
       </ToastProvider>
     </TubularProvider>
