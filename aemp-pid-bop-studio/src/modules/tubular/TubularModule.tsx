@@ -12,7 +12,7 @@ import { ToastProvider } from './components/shell/Toast';
 import TubularTopbar from './components/shell/TubularTopbar';
 import TubularTabNav from './components/shell/TubularTabNav';
 import DataEntryView from './views/DataEntryView';
-import FleetInventoryView from './views/FleetInventoryView';
+import TubularInventoryView from './views/TubularInventoryView';
 import ImportView from './views/ImportView';
 import MasterRegisterView from './views/MasterRegisterView';
 import ContractsView from './views/ContractsView';
@@ -52,7 +52,7 @@ function AccessGate() {
   return (
     <Routes>
       <Route index element={<TubularDashboardView />} />
-      <Route path="inventory" element={<FleetInventoryView />} />
+      <Route path="inventory" element={<TubularInventoryView />} />
       <Route path="entry" element={<DataEntryView />} />
       <Route path="master" element={<MasterRegisterView />} />
       <Route path="contracts" element={<ContractsView />} />

@@ -67,8 +67,9 @@ describe('visibleTabs gating', () => {
   it('retired tabs and old names are gone', () => {
     const labels = visibleTabs('admin', none).map((t) => t.label);
     for (const gone of ['Data Entry', 'AI Assistant', 'Manual', 'Transfers', 'Training',
-      'Fleet Inventory', 'Master Register']) {
+      'Master Register']) {
       expect(labels).not.toContain(gone);
     }
   });
+  // Note: old name was renamed to Tubular Inventory; verification removed.
 });

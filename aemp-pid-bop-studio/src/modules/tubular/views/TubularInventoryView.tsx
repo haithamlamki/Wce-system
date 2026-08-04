@@ -1,5 +1,5 @@
 // ============================================================================
-//  Fleet Inventory — pixel-faithful port of the prototype's #view-fleet:
+//  Tubular Inventory — pixel-faithful port of the prototype's #view-fleet:
 //  unit-bar (View mode, Unit select, Tubular Filter, row-count chip), the
 //  unit-card grid (fleet mode; a card click drills into that unit) and the
 //  12-column #tbl-fleet with classification cells and status badges.
@@ -34,7 +34,7 @@ const CAT_FILTERS: Array<{ value: 'all' | TubularCategory; label: string }> = [
   { value: 'pup_joint', label: 'Pup Joint' },
 ];
 
-export default function FleetInventoryView() {
+export default function TubularInventoryView() {
   const { units } = useTubular();
   const [records, setRecords] = useState<TubularRecordRow[]>([]);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -84,7 +84,7 @@ export default function FleetInventoryView() {
       <section className="view" id="view-fleet">
         <div className="empty-cert">
           <div className="ico">⊟</div>
-          <div className="title">Fleet Inventory</div>
+          <div className="title">Tubular Inventory</div>
           <div className="desc">{error || 'Loading…'}</div>
         </div>
       </section>
@@ -94,7 +94,7 @@ export default function FleetInventoryView() {
   return (
     <section className="view" id="view-fleet">
       <div className="section-head">
-        <div className="section-title">Fleet Inventory</div>
+        <div className="section-title">Tubular Inventory</div>
         <div className="section-sub">Browse units · drill into tubular details</div>
       </div>
 
