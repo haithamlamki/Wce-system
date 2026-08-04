@@ -4,11 +4,12 @@
 //  platform controls (Modules link, notifications, account) are rendered as
 //  native-styled elements so the design stays coherent.
 // ============================================================================
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
 import { getThemeMode, setThemeMode, subscribeTheme, type ThemeMode } from '../../../../lib/theme';
 import { useAuth } from '../../../../state/AuthContext';
 import { useTubular } from '../../state/TubularContext';
+import { hasPermission } from '../../lib/permissions';
 import { supabase } from '../../../../lib/supabase';
 import NotificationsBell from '../NotificationsBell';
 
@@ -20,9 +21,27 @@ const THEME_CHOICES: Array<{ mode: ThemeMode; label: string }> = [
 
 export default function TubularTopbar() {
   const { fullName, role, signOut, session } = useAuth();
-  const { units } = useTubular();
+  const { units, granted } = useTubular();
   const themeMode = useSyncExternalStore(subscribeTheme, getThemeMode, getThemeMode);
   const [lastSync, setLastSync] = useState('—');
+  const headerRef = useRef<HTMLElement>(null);
+
+  // Keep the tabnav's sticky offset in sync with the topbar's real height —
+  // the topbar's content (e.g. the status-col button) can grow it beyond the
+  // CSS fallback used before this effect runs.
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const root = el.closest('.tubular-app') as HTMLElement | null;
+    const target = root ?? document.documentElement;
+    const applyHeight = () => {
+      target.style.setProperty('--tubular-topbar-h', `${Math.round(el.getBoundingClientRect().height)}px`);
+    };
+    applyHeight();
+    const observer = new ResizeObserver(applyHeight);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,7 +61,7 @@ export default function TubularTopbar() {
   }, []);
 
   return (
-    <header className="topbar">
+    <header className="topbar" ref={headerRef}>
       <div className="brand">
         <div className="brand-mark">A</div>
         <div className="brand-text">
@@ -79,12 +98,17 @@ export default function TubularTopbar() {
           ))}
         </div>
         <NotificationsBell />
-        <div className="status-pill" title={session ? 'Connected to the cloud database' : 'Not signed in'}
-          role={session ? undefined : 'button'}
-          onClick={session ? () => void signOut() : undefined}
-          style={session ? { cursor: 'pointer' } : undefined}>
-          <span className="dot" />
-          <span className="txt">{session ? 'System Online' : 'Offline'}</span>
+        <div className="status-col">
+          <div className="status-pill" title={session ? 'Connected to the cloud database' : 'Not signed in'}
+            role={session ? undefined : 'button'}
+            onClick={session ? () => void signOut() : undefined}
+            style={session ? { cursor: 'pointer' } : undefined}>
+            <span className="dot" />
+            <span className="txt">{session ? 'System Online' : 'Offline'}</span>
+          </div>
+          {hasPermission(role, granted, 'data_entry') && (
+            <Link to="/tubular/entry" className="quick-entry" title="Open Data Entry">✎ Data Entry</Link>
+          )}
         </div>
       </div>
     </header>

@@ -121,7 +121,7 @@ export async function fetchUnitRecords(unitId: string): Promise<TubularRecordRow
   return (data ?? []).map(mapRecord);
 }
 
-/** All records visible to the caller (RLS-scoped) for Fleet Inventory. */
+/** All records visible to the caller (RLS-scoped) for Tubular Inventory. */
 export async function fetchVisibleRecords(): Promise<TubularRecordRow[]> {
   const { data, error } = await need()
     .from('tubular_records')

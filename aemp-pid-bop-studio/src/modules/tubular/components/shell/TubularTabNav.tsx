@@ -1,8 +1,7 @@
 // ============================================================================
 //  Tubular tab nav — port of the prototype's .tabnav: numbered .tab buttons
-//  with glyph icons. Routing via NavLink (same paths as before); the three
-//  extra platform tabs (Master/Transfers/Import) continue the numbering.
-//  Permission gating is unchanged (visibleTabs).
+//  with glyph icons. Routing via NavLink; 8 tabs numbered 01–08 (2026-08 UX
+//  refresh order). Permission gating is unchanged (visibleTabs).
 // ============================================================================
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../../../state/AuthContext';

@@ -1,13 +1,12 @@
 // ============================================================================
 //  Dashboard — pixel-faithful port of the prototype's #view-dashboard: 6 KPI
-//  cards, 3 live cards, activity feed, 4 Chart.js charts, attention table.
-//  All figures computed live from RLS-scoped records (fetchVisibleRecords +
-//  calc.ts); activity feed from real submissions & order events. The 5s tick
-//  drives the live clock; data refreshes every 60s.
+//  cards, 3 live cards, 5 Chart.js charts (incl. joints-per-rig pie), attention
+//  table. All figures computed live from RLS-scoped records (fetchVisibleRecords +
+//  calc.ts). The 5s tick drives the live clock; data refreshes every 60s.
 // ============================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Chart, BarController, BarElement, DoughnutController, ArcElement,
+  Chart, BarController, BarElement, DoughnutController, PieController, ArcElement,
   CategoryScale, LinearScale, Legend, Tooltip,
 } from 'chart.js';
 import { supabase } from '../../../lib/supabase';
@@ -18,7 +17,7 @@ import {
 } from '../lib/records';
 import { aggregate, fleetStatus, fleetUtilization, needsAttention } from '../lib/calc';
 
-Chart.register(BarController, BarElement, DoughnutController, ArcElement, CategoryScale, LinearScale, Legend, Tooltip);
+Chart.register(BarController, BarElement, DoughnutController, PieController, ArcElement, CategoryScale, LinearScale, Legend, Tooltip);
 
 const qtyOf = (r: TubularRecordRow) => ({
   onContract: r.onContract, premium: r.premium, class2: r.class2,
@@ -32,14 +31,14 @@ const ST_LABEL: Record<string, string> = {
   short: 'SHORT', surplus: 'SURPLUS', met: 'BALANCED', uncontracted: 'UNCONTR.', no_data: 'NO DATA',
 };
 
-interface FeedItem { at: string; text: string }
-
 const TOOLTIP_STYLE = {
   backgroundColor: '#0f141c', titleColor: '#f59e0b', bodyColor: '#e6e9ef',
   borderColor: '#232c3a', borderWidth: 1,
 };
 const GRID = '#1a212d';
 const TICK = '#6c7689';
+const PIE_COLORS = ['#d97706', '#3b82f6', '#10b981', '#f1f5f9', '#facc15', '#fb923c',
+  '#ef4444', '#a855f7', '#14b8a6', '#e879f9', '#94a3b8', '#eab308'];
 
 function shortLabel(desc: string): string {
   return desc.length > 26 ? `${desc.slice(0, 24)}…` : desc;
@@ -51,7 +50,6 @@ export default function TubularDashboardView() {
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [orders, setOrders] = useState<Array<{ status: string }>>([]);
   const [contractsAttn, setContractsAttn] = useState<{ total: number; attn: number }>({ total: 0, attn: 0 });
-  const [feed, setFeed] = useState<FeedItem[]>([]);
   const [rigFilter, setRigFilter] = useState('all');
   const [clock, setClock] = useState(() => new Date().toLocaleTimeString());
   const [loading, setLoading] = useState(true);
@@ -60,6 +58,7 @@ export default function TubularDashboardView() {
   const chMixRef = useRef<HTMLCanvasElement>(null);
   const chUnitRef = useRef<HTMLCanvasElement>(null);
   const chVarRef = useRef<HTMLCanvasElement>(null);
+  const chPieRef = useRef<HTMLCanvasElement>(null);
   const chartsRef = useRef<Chart[]>([]);
 
   const load = useCallback(async () => {
@@ -67,30 +66,20 @@ export default function TubularDashboardView() {
       const [cat, recs] = await Promise.all([fetchCatalog(), fetchVisibleRecords()]);
       setCatalog(cat); setRecords(recs);
       if (supabase) {
-        const [o, c, subs, events] = await Promise.all([
+        const [o, c] = await Promise.all([
           supabase.from('pipe_orders').select('status'),
           supabase.from('tubular_contracts').select('id, status, end_date'),
-          supabase.from('tubular_submissions').select('submitted_at, source, note, unit_id').order('submitted_at', { ascending: false }).limit(6),
-          supabase.from('pipe_order_events').select('occurred_at, to_status, order_id').order('occurred_at', { ascending: false }).limit(6),
         ]);
         setOrders((o.data ?? []) as Array<{ status: string }>);
         const cl = (c.data ?? []) as Array<{ status: string; end_date: string | null }>;
         const attn = cl.filter((x) => x.status === 'expired'
           || (x.status === 'active' && x.end_date && (new Date(x.end_date).getTime() - Date.now()) / 86400000 <= 30)).length;
         setContractsAttn({ total: cl.length, attn });
-        const unitName = (id: string) => units.find((u) => u.id === id)?.name ?? 'unit';
-        const items: FeedItem[] = [
-          ...((subs.data ?? []) as Array<{ submitted_at: string; source: string; note: string | null; unit_id: string }>)
-            .map((s) => ({ at: s.submitted_at, text: `${unitName(s.unit_id)} — ${s.source === 'import' ? 'workbook import' : s.source === 'movement' ? (s.note ?? 'movement') : 'data entry saved'}` })),
-          ...((events.data ?? []) as Array<{ occurred_at: string; to_status: string }>)
-            .map((e) => ({ at: e.occurred_at, text: `pipe order → ${e.to_status.replace('_', ' ')}` })),
-        ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 10);
-        setFeed(items);
       }
     } finally {
       setLoading(false);
     }
-  }, [units]);
+  }, []);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -225,6 +214,36 @@ export default function TubularDashboardView() {
       }));
     }
 
+    if (chPieRef.current) {
+      chartsRef.current.push(new Chart(chPieRef.current, {
+        type: 'pie',
+        data: {
+          labels: unitAgg.map((x) => x.unit!.name),
+          datasets: [{
+            data: unitAgg.map((x) => x.t.onBoard),
+            backgroundColor: unitAgg.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]),
+            borderColor: '#0f141c', borderWidth: 1.5,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { boxWidth: 10, padding: 6, font: { size: 9.5 } } },
+            tooltip: {
+              ...TOOLTIP_STYLE,
+              callbacks: {
+                label: (ctx) => {
+                  const total = (ctx.dataset.data as number[]).reduce((a, b) => a + b, 0);
+                  const v = ctx.parsed as number;
+                  return ` ${ctx.label}: ${v.toLocaleString()} joints (${total ? ((v / total) * 100).toFixed(1) : 0}%)`;
+                },
+              },
+            },
+          },
+        },
+      }));
+    }
+
     const variance = top12
       .map((x) => ({ label: shortLabel(x.item!.description), v: x.t.onBoard - x.t.onContract }))
       .sort((a, b) => a.v - b.v);
@@ -332,18 +351,10 @@ export default function TubularDashboardView() {
 
       <div className="panel" style={{ marginBottom: 24 }}>
         <div className="panel-head">
-          <h3>Live Activity Feed</h3>
-          <span className="badge">Pipe orders &amp; data updates</span>
+          <h3>Joints per Rig</h3>
+          <span className="badge">Total on-board joints by unit</span>
         </div>
-        <div id="dash-activity-feed">
-          {feed.length === 0 && <div style={{ color: 'var(--text-3)', fontSize: 11.5 }}>No recent activity.</div>}
-          {feed.map((f, i) => (
-            <div key={i} style={{ display: 'flex', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--line)', fontSize: 11.5 }}>
-              <span className="mono" style={{ color: 'var(--text-3)', flexShrink: 0 }}>{new Date(f.at).toLocaleString()}</span>
-              <span style={{ color: 'var(--text-2)' }}>{f.text}</span>
-            </div>
-          ))}
-        </div>
+        <div className="chart-wrap tall"><canvas id="ch-jointsperrig" ref={chPieRef} /></div>
       </div>
 
       <div className="grid-2-3">

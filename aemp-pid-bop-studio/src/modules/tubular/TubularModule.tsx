@@ -5,23 +5,20 @@
 //  WCE bundle is unaffected; the WCE appbar is hidden on /tubular.
 // ============================================================================
 import { lazy, Suspense } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import './tubular.css';
 import { TubularProvider, useTubular } from './state/TubularContext';
 import { ToastProvider } from './components/shell/Toast';
 import TubularTopbar from './components/shell/TubularTopbar';
 import TubularTabNav from './components/shell/TubularTabNav';
 import DataEntryView from './views/DataEntryView';
-import FleetInventoryView from './views/FleetInventoryView';
+import TubularInventoryView from './views/TubularInventoryView';
 import ImportView from './views/ImportView';
-import MasterRegisterView from './views/MasterRegisterView';
-import MovementsView from './views/MovementsView';
+import MasterSheetView from './views/MasterSheetView';
 import ContractsView from './views/ContractsView';
 import OrdersView from './views/OrdersView';
 import ReferenceView from './views/ReferenceView';
-import ManualView from './views/ManualView';
-import TrainingView from './views/TrainingView';
-import AssistantView from './views/AssistantView';
+import FloatingAssistant from './components/FloatingAssistant';
 import TubularDashboardView from './views/TubularDashboardView';
 
 // Leaflet is heavy and map-only — keep it out of the main tubular chunk.
@@ -55,10 +52,9 @@ function AccessGate() {
   return (
     <Routes>
       <Route index element={<TubularDashboardView />} />
-      <Route path="inventory" element={<FleetInventoryView />} />
+      <Route path="inventory" element={<TubularInventoryView />} />
       <Route path="entry" element={<DataEntryView />} />
-      <Route path="master" element={<MasterRegisterView />} />
-      <Route path="transfers" element={<MovementsView />} />
+      <Route path="master" element={<MasterSheetView />} />
       <Route path="contracts" element={<ContractsView />} />
       <Route path="orders" element={<OrdersView />} />
       <Route path="map" element={
@@ -67,9 +63,8 @@ function AccessGate() {
         </Suspense>
       } />
       <Route path="reference" element={<ReferenceView />} />
-      <Route path="training" element={<TrainingView />} />
-      <Route path="manual" element={<ManualView />} />
-      <Route path="assistant" element={<AssistantView />} />
+      <Route path="manual" element={<Navigate to="/tubular/reference" replace />} />
+      <Route path="assistant" element={<Navigate to="/tubular" replace />} />
       <Route path="import" element={<ImportView />} />
       <Route path="*" element={<EmptyState ico="?" title="Not Found" desc="This Tubular page does not exist." />} />
     </Routes>
@@ -86,6 +81,7 @@ export default function TubularModule() {
           <main>
             <AccessGate />
           </main>
+          <FloatingAssistant />
         </div>
       </ToastProvider>
     </TubularProvider>
