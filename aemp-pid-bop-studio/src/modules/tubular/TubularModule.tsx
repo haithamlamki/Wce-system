@@ -15,12 +15,10 @@ import DataEntryView from './views/DataEntryView';
 import FleetInventoryView from './views/FleetInventoryView';
 import ImportView from './views/ImportView';
 import MasterRegisterView from './views/MasterRegisterView';
-import MovementsView from './views/MovementsView';
 import ContractsView from './views/ContractsView';
 import OrdersView from './views/OrdersView';
 import ReferenceView from './views/ReferenceView';
 import ManualView from './views/ManualView';
-import TrainingView from './views/TrainingView';
 import AssistantView from './views/AssistantView';
 import TubularDashboardView from './views/TubularDashboardView';
 
@@ -58,7 +56,6 @@ function AccessGate() {
       <Route path="inventory" element={<FleetInventoryView />} />
       <Route path="entry" element={<DataEntryView />} />
       <Route path="master" element={<MasterRegisterView />} />
-      <Route path="transfers" element={<MovementsView />} />
       <Route path="contracts" element={<ContractsView />} />
       <Route path="orders" element={<OrdersView />} />
       <Route path="map" element={
@@ -67,7 +64,6 @@ function AccessGate() {
         </Suspense>
       } />
       <Route path="reference" element={<ReferenceView />} />
-      <Route path="training" element={<TrainingView />} />
       <Route path="manual" element={<ManualView />} />
       <Route path="assistant" element={<AssistantView />} />
       <Route path="import" element={<ImportView />} />
