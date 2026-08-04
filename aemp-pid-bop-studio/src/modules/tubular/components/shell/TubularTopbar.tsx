@@ -4,7 +4,7 @@
 //  platform controls (Modules link, notifications, account) are rendered as
 //  native-styled elements so the design stays coherent.
 // ============================================================================
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
 import { getThemeMode, setThemeMode, subscribeTheme, type ThemeMode } from '../../../../lib/theme';
 import { useAuth } from '../../../../state/AuthContext';
@@ -24,6 +24,24 @@ export default function TubularTopbar() {
   const { units, granted } = useTubular();
   const themeMode = useSyncExternalStore(subscribeTheme, getThemeMode, getThemeMode);
   const [lastSync, setLastSync] = useState('—');
+  const headerRef = useRef<HTMLElement>(null);
+
+  // Keep the tabnav's sticky offset in sync with the topbar's real height —
+  // the topbar's content (e.g. the status-col button) can grow it beyond the
+  // CSS fallback used before this effect runs.
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const root = el.closest('.tubular-app') as HTMLElement | null;
+    const target = root ?? document.documentElement;
+    const applyHeight = () => {
+      target.style.setProperty('--tubular-topbar-h', `${Math.round(el.getBoundingClientRect().height)}px`);
+    };
+    applyHeight();
+    const observer = new ResizeObserver(applyHeight);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,7 +61,7 @@ export default function TubularTopbar() {
   }, []);
 
   return (
-    <header className="topbar">
+    <header className="topbar" ref={headerRef}>
       <div className="brand">
         <div className="brand-mark">A</div>
         <div className="brand-text">

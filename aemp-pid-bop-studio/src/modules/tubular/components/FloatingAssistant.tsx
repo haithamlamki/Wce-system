@@ -34,7 +34,7 @@ export default function FloatingAssistant() {
     setLoaded(true);
     void Promise.all([fetchCatalog(), fetchVisibleRecords()])
       .then(([c, r]) => { setCatalog(c); setRecords(r); })
-      .catch(() => undefined);
+      .catch(() => setLoaded(false));
   }, [open, loaded]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chat, typing, open]);
