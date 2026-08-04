@@ -1,5 +1,5 @@
 // ============================================================================
-//  Reference — merged Reference + User Manual page (2026-08 UX refresh):
+//  Reference — merged Reference (2026-08 UX refresh):
 //  API RP 7G tables (classification, band marking, inspection zones, related
 //  standards) followed by the per-page system guide and the FAQ, with a
 //  jump-to select. Guide text reflects the current UX (floating assistant,
