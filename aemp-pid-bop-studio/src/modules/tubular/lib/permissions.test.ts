@@ -47,22 +47,28 @@ describe('visibleTabs gating', () => {
     expect(visibleTabs('field', none)).toEqual([]);
   });
 
-  it('unit viewer sees general tabs but not Data Entry or Master Register', () => {
+  it('unit viewer sees general tabs but not Master Sheet or Import', () => {
     const tabs = visibleTabs('field', new Set(['view'])).map((t) => t.label);
-    expect(tabs).toContain('Dashboard');
-    expect(tabs).toContain('Fleet Inventory');
-    expect(tabs).not.toContain('Data Entry');
-    expect(tabs).not.toContain('Master Register');
+    expect(tabs).toEqual(['Dashboard', 'Tubular Inventory', 'Contracts', 'Asset Map', 'Order Pipe', 'Reference']);
   });
 
-  it('data_entry grant adds the Data Entry tab', () => {
-    const tabs = visibleTabs('field', new Set(['view', 'data_entry'])).map((t) => t.label);
-    expect(tabs).toContain('Data Entry');
+  it('view_fleet grant adds the Master Sheet tab', () => {
+    const tabs = visibleTabs('field', new Set(['view', 'view_fleet'])).map((t) => t.label);
+    expect(tabs).toContain('Master Sheet');
   });
 
-  it('privileged users see every tab', () => {
-    const tabs = visibleTabs('manager', none);
-    expect(tabs.map((t) => t.label)).toContain('Master Register');
-    expect(tabs.length).toBeGreaterThanOrEqual(10);
+  it('privileged users see all 8 tabs in the agreed order', () => {
+    expect(visibleTabs('manager', none).map((t) => t.label)).toEqual([
+      'Dashboard', 'Tubular Inventory', 'Master Sheet', 'Contracts',
+      'Asset Map', 'Order Pipe', 'Reference', 'Import',
+    ]);
+  });
+
+  it('retired tabs and old names are gone', () => {
+    const labels = visibleTabs('admin', none).map((t) => t.label);
+    for (const gone of ['Data Entry', 'AI Assistant', 'Manual', 'Transfers', 'Training',
+      'Fleet Inventory', 'Master Register']) {
+      expect(labels).not.toContain(gone);
+    }
   });
 });
