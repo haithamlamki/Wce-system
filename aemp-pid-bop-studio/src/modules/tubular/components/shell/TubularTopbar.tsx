@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { getThemeMode, setThemeMode, subscribeTheme, type ThemeMode } from '../../../../lib/theme';
 import { useAuth } from '../../../../state/AuthContext';
 import { useTubular } from '../../state/TubularContext';
+import { hasPermission } from '../../lib/permissions';
 import { supabase } from '../../../../lib/supabase';
 import NotificationsBell from '../NotificationsBell';
 
@@ -20,7 +21,7 @@ const THEME_CHOICES: Array<{ mode: ThemeMode; label: string }> = [
 
 export default function TubularTopbar() {
   const { fullName, role, signOut, session } = useAuth();
-  const { units } = useTubular();
+  const { units, granted } = useTubular();
   const themeMode = useSyncExternalStore(subscribeTheme, getThemeMode, getThemeMode);
   const [lastSync, setLastSync] = useState('—');
 
@@ -79,12 +80,17 @@ export default function TubularTopbar() {
           ))}
         </div>
         <NotificationsBell />
-        <div className="status-pill" title={session ? 'Connected to the cloud database' : 'Not signed in'}
-          role={session ? undefined : 'button'}
-          onClick={session ? () => void signOut() : undefined}
-          style={session ? { cursor: 'pointer' } : undefined}>
-          <span className="dot" />
-          <span className="txt">{session ? 'System Online' : 'Offline'}</span>
+        <div className="status-col">
+          <div className="status-pill" title={session ? 'Connected to the cloud database' : 'Not signed in'}
+            role={session ? undefined : 'button'}
+            onClick={session ? () => void signOut() : undefined}
+            style={session ? { cursor: 'pointer' } : undefined}>
+            <span className="dot" />
+            <span className="txt">{session ? 'System Online' : 'Offline'}</span>
+          </div>
+          {hasPermission(role, granted, 'data_entry') && (
+            <Link to="/tubular/entry" className="quick-entry" title="Open Data Entry">✎ Data Entry</Link>
+          )}
         </div>
       </div>
     </header>
