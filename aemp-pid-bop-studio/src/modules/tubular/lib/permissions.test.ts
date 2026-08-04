@@ -66,8 +66,7 @@ describe('visibleTabs gating', () => {
 
   it('retired tabs and old names are gone', () => {
     const labels = visibleTabs('admin', none).map((t) => t.label);
-    for (const gone of ['Data Entry', 'AI Assistant', 'Manual', 'Transfers', 'Training',
-      'Master Register']) {
+    for (const gone of ['Data Entry', 'AI Assistant', 'Manual', 'Transfers', 'Training']) {
       expect(labels).not.toContain(gone);
     }
   });

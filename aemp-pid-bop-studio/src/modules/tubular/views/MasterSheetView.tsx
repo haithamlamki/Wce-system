@@ -1,5 +1,5 @@
 // ============================================================================
-//  Master Register — database-driven consolidated view across all visible
+//  Master Sheet — database-driven consolidated view across all visible
 //  units (one row per record, duplicates preserved), re-skinned in the
 //  prototype design language (unit-bar filters, tbl-wrap table, st badges).
 //  Logic unchanged: filters, search, sort, hardened CSV export gated on the
@@ -21,7 +21,7 @@ const ST_CLASS: Record<string, string> = {
   short: 'short', surplus: 'surplus', met: 'balanced', uncontracted: 'unctr', no_data: 'nodata',
 };
 
-export default function MasterRegisterView() {
+export default function MasterSheetView() {
   const { units, hasPerm } = useTubular();
   const [records, setRecords] = useState<TubularRecordRow[]>([]);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -104,7 +104,7 @@ export default function MasterRegisterView() {
   if (loading) {
     return (
       <section className="view">
-        <div className="empty-cert"><div className="ico">▥</div><div className="title">Master Register</div><div className="desc">Loading…</div></div>
+        <div className="empty-cert"><div className="ico">▥</div><div className="title">Master Sheet</div><div className="desc">Loading…</div></div>
       </section>
     );
   }
@@ -112,7 +112,7 @@ export default function MasterRegisterView() {
   return (
     <section className="view" id="view-master">
       <div className="section-head">
-        <div className="section-title">Master Register</div>
+        <div className="section-title">Master Sheet</div>
         <div className="section-sub">Consolidated row-level register across all authorized units</div>
       </div>
 

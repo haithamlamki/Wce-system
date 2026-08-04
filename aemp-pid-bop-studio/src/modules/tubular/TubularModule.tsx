@@ -14,7 +14,7 @@ import TubularTabNav from './components/shell/TubularTabNav';
 import DataEntryView from './views/DataEntryView';
 import TubularInventoryView from './views/TubularInventoryView';
 import ImportView from './views/ImportView';
-import MasterRegisterView from './views/MasterRegisterView';
+import MasterSheetView from './views/MasterSheetView';
 import ContractsView from './views/ContractsView';
 import OrdersView from './views/OrdersView';
 import ReferenceView from './views/ReferenceView';
@@ -54,7 +54,7 @@ function AccessGate() {
       <Route index element={<TubularDashboardView />} />
       <Route path="inventory" element={<TubularInventoryView />} />
       <Route path="entry" element={<DataEntryView />} />
-      <Route path="master" element={<MasterRegisterView />} />
+      <Route path="master" element={<MasterSheetView />} />
       <Route path="contracts" element={<ContractsView />} />
       <Route path="orders" element={<OrdersView />} />
       <Route path="map" element={
