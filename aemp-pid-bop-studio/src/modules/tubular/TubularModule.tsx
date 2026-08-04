@@ -5,7 +5,7 @@
 //  WCE bundle is unaffected; the WCE appbar is hidden on /tubular.
 // ============================================================================
 import { lazy, Suspense } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import './tubular.css';
 import { TubularProvider, useTubular } from './state/TubularContext';
 import { ToastProvider } from './components/shell/Toast';
@@ -18,7 +18,6 @@ import MasterRegisterView from './views/MasterRegisterView';
 import ContractsView from './views/ContractsView';
 import OrdersView from './views/OrdersView';
 import ReferenceView from './views/ReferenceView';
-import ManualView from './views/ManualView';
 import AssistantView from './views/AssistantView';
 import TubularDashboardView from './views/TubularDashboardView';
 
@@ -64,7 +63,7 @@ function AccessGate() {
         </Suspense>
       } />
       <Route path="reference" element={<ReferenceView />} />
-      <Route path="manual" element={<ManualView />} />
+      <Route path="manual" element={<Navigate to="/tubular/reference" replace />} />
       <Route path="assistant" element={<AssistantView />} />
       <Route path="import" element={<ImportView />} />
       <Route path="*" element={<EmptyState ico="?" title="Not Found" desc="This Tubular page does not exist." />} />
