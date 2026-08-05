@@ -9,6 +9,8 @@ import {
   Chart, BarController, BarElement, DoughnutController, PieController, ArcElement,
   CategoryScale, LinearScale, Legend, Tooltip,
 } from 'chart.js';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
+import type { Context as DatalabelsContext } from 'chartjs-plugin-datalabels';
 import { supabase } from '../../../lib/supabase';
 import { useTubular } from '../state/TubularContext';
 import {
@@ -38,8 +40,16 @@ const TOOLTIP_STYLE = {
 };
 const GRID = '#1a212d';
 const TICK = '#6c7689';
-const PIE_COLORS = ['#d97706', '#3b82f6', '#10b981', '#f1f5f9', '#facc15', '#fb923c',
+const PIE_COLORS = ['#d97706', '#3b82f6', '#10b981', '#818cf8', '#facc15', '#fb923c',
   '#ef4444', '#a855f7', '#14b8a6', '#e879f9', '#94a3b8', '#eab308'];
+
+/** Hide labels for slices/segments under 4% of their chart's total. */
+const sliceVisible = (ctx: DatalabelsContext): boolean => {
+  const data = ctx.dataset.data as number[];
+  const total = data.reduce((a, b) => a + (b || 0), 0);
+  return total > 0 && ((data[ctx.dataIndex] || 0) / total) >= 0.04;
+};
+const fmtNum = (v: number) => v.toLocaleString();
 
 function shortLabel(desc: string): string {
   return desc.length > 26 ? `${desc.slice(0, 24)}…` : desc;
@@ -143,7 +153,7 @@ export default function TubularDashboardView() {
         data: {
           labels: top12.map((x) => shortLabel(x.item!.description)),
           datasets: [
-            { label: 'Premium', data: top12.map((x) => x.t.premium), backgroundColor: '#f1f5f9' },
+            { label: 'Premium', data: top12.map((x) => x.t.premium), backgroundColor: '#60a5fa' },
             { label: 'Class 2', data: top12.map((x) => x.t.class2), backgroundColor: '#facc15' },
             { label: 'Class 3', data: top12.map((x) => x.t.class3), backgroundColor: '#fb923c' },
             { label: 'Scrap', data: top12.map((x) => x.t.scrap), backgroundColor: '#ef4444' },
@@ -154,12 +164,23 @@ export default function TubularDashboardView() {
           plugins: {
             legend: { position: 'bottom', labels: { boxWidth: 11, padding: 10, font: { size: 10 } } },
             tooltip: TOOLTIP_STYLE,
+            datalabels: {
+              color: '#10141b', font: { size: 9, weight: 600 },
+              formatter: fmtNum,
+              display: (ctx: DatalabelsContext) => {
+                const v = (ctx.dataset.data[ctx.dataIndex] as number) || 0;
+                const total = ctx.chart.data.datasets.reduce(
+                  (s, ds) => s + ((ds.data[ctx.dataIndex] as number) || 0), 0);
+                return total > 0 && v / total >= 0.04 ? 'auto' : false;
+              },
+            },
           },
           scales: {
             x: { stacked: true, grid: { color: GRID }, ticks: { color: TICK } },
             y: { stacked: true, grid: { display: false }, ticks: { color: '#a4adc0', font: { size: 9.5 } } },
           },
         },
+        plugins: [ChartDataLabels],
       }));
     }
 
@@ -170,7 +191,7 @@ export default function TubularDashboardView() {
           labels: ['Premium', 'Class 2', 'Class 3', 'Scrap', 'Needs Insp.'],
           datasets: [{
             data: [agg.premium, agg.class2, agg.class3, agg.scrap, agg.needsInspection],
-            backgroundColor: ['#f1f5f9', '#facc15', '#fb923c', '#ef4444', '#a855f7'],
+            backgroundColor: ['#60a5fa', '#facc15', '#fb923c', '#ef4444', '#a855f7'],
             borderColor: '#0f141c', borderWidth: 2,
           }],
         },
@@ -181,15 +202,25 @@ export default function TubularDashboardView() {
             tooltip: {
               ...TOOLTIP_STYLE,
               callbacks: {
-                label: (ctx) => {
+                label: (ctx: any) => {
                   const total = (ctx.dataset.data as number[]).reduce((a, b) => a + b, 0);
                   const v = ctx.parsed as number;
                   return ` ${ctx.label}: ${v.toLocaleString()} (${total ? ((v / total) * 100).toFixed(1) : 0}%)`;
                 },
               },
             },
+            datalabels: {
+              color: '#10141b', font: { size: 9.5, weight: 600 },
+              display: sliceVisible,
+              formatter: (v: number, ctx: DatalabelsContext) => {
+                const data = ctx.dataset.data as number[];
+                const total = data.reduce((a, b) => a + (b || 0), 0);
+                return `${fmtNum(v)} (${total ? ((v / total) * 100).toFixed(1) : 0}%)`;
+              },
+            },
           },
-        },
+        } as any,
+        plugins: [ChartDataLabels],
       }));
     }
 
@@ -215,12 +246,19 @@ export default function TubularDashboardView() {
           plugins: {
             legend: { display: false },
             tooltip: { ...TOOLTIP_STYLE, callbacks: { label: (ctx) => ` ${(ctx.parsed.y as number).toLocaleString()} joints` } },
+            datalabels: {
+              anchor: 'end', align: 'end', clamp: true,
+              color: '#a4adc0', font: { size: 8.5, weight: 600 },
+              display: 'auto',
+              formatter: fmtNum,
+            },
           },
           scales: {
             x: { grid: { display: false }, ticks: { color: '#a4adc0', font: { size: 10 }, minRotation: 45, maxRotation: 60 } },
             y: { beginAtZero: true, grid: { color: GRID }, ticks: { color: TICK } },
           },
         },
+        plugins: [ChartDataLabels],
       }));
     }
 
@@ -249,8 +287,14 @@ export default function TubularDashboardView() {
                 },
               },
             },
+            datalabels: {
+              color: '#10141b', font: { size: 9, weight: 600 },
+              display: sliceVisible,
+              formatter: fmtNum,
+            },
           },
         },
+        plugins: [ChartDataLabels],
       }));
     }
 
@@ -273,12 +317,19 @@ export default function TubularDashboardView() {
           plugins: {
             legend: { display: false },
             tooltip: { ...TOOLTIP_STYLE, callbacks: { label: (ctx) => { const v = ctx.parsed.x as number; return ` ${v > 0 ? '+' : ''}${v.toLocaleString()} joints`; } } },
+            datalabels: {
+              anchor: 'end', align: 'end', clamp: true,
+              color: '#a4adc0', font: { size: 8.5, weight: 600 },
+              display: 'auto',
+              formatter: (v: number) => `${v > 0 ? '+' : ''}${fmtNum(v)}`,
+            },
           },
           scales: {
             x: { grid: { color: GRID }, ticks: { color: TICK } },
             y: { grid: { display: false }, ticks: { color: '#a4adc0', font: { size: 9.5 } } },
           },
         },
+        plugins: [ChartDataLabels],
       }));
     }
 
