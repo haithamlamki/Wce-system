@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Chart, BarController, BarElement, DoughnutController, PieController, ArcElement,
   CategoryScale, LinearScale, Legend, Tooltip,
+  type ChartConfiguration,
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import type { Context as DatalabelsContext } from 'chartjs-plugin-datalabels';
@@ -185,7 +186,7 @@ export default function TubularDashboardView() {
     }
 
     if (chMixRef.current) {
-      chartsRef.current.push(new Chart(chMixRef.current, {
+      const doughnutConfig: ChartConfiguration<'doughnut'> = {
         type: 'doughnut',
         data: {
           labels: ['Premium', 'Class 2', 'Class 3', 'Scrap', 'Needs Insp.'],
@@ -202,7 +203,7 @@ export default function TubularDashboardView() {
             tooltip: {
               ...TOOLTIP_STYLE,
               callbacks: {
-                label: (ctx: any) => {
+                label: (ctx) => {
                   const total = (ctx.dataset.data as number[]).reduce((a, b) => a + b, 0);
                   const v = ctx.parsed as number;
                   return ` ${ctx.label}: ${v.toLocaleString()} (${total ? ((v / total) * 100).toFixed(1) : 0}%)`;
@@ -219,9 +220,10 @@ export default function TubularDashboardView() {
               },
             },
           },
-        } as any,
+        },
         plugins: [ChartDataLabels],
-      }));
+      };
+      chartsRef.current.push(new Chart(chMixRef.current, doughnutConfig));
     }
 
     const byUnit = new Map<string, TubularRecordRow[]>();
