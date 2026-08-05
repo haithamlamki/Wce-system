@@ -69,7 +69,7 @@ Replace `#f1f5f9` (near-white Premium) with **`#60a5fa`** (blue) in:
 
 - the Premium dataset of the type-breakdown chart,
 - the class-mix doughnut palette,
-- the `PIE_COLORS` entry.
+- the `PIE_COLORS` entry — here the replacement is indigo `#818cf8` (not `#60a5fa`), because `PIE_COLORS` already contains blue `#3b82f6` and the palette cycles across up to 29 units.
 
 Unchanged: the KPI card's white Premium band swatch and the Reference page's classification/band tables — those depict the physical API RP 7G white band marking, not chart data.
 
