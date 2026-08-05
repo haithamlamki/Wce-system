@@ -13,6 +13,7 @@ import {
   type CatalogItem, type TubularCategory, type TubularRecordRow,
 } from '../lib/records';
 import { aggregate, fleetStatus } from '../lib/calc';
+import { clientOf, clientsIn } from '../lib/clients';
 
 const qtyOf = (r: TubularRecordRow) => ({
   onContract: r.onContract, premium: r.premium, class2: r.class2,
@@ -39,6 +40,7 @@ export default function TubularInventoryView() {
   const [records, setRecords] = useState<TubularRecordRow[]>([]);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [mode, setMode] = useState<'fleet' | 'single'>('fleet');
+  const [clientFilter, setClientFilter] = useState('all');
   const [unitId, setUnitId] = useState('');
   const [tubFilter, setTubFilter] = useState<'all' | TubularCategory>('all');
   const [loading, setLoading] = useState(true);
@@ -55,10 +57,19 @@ export default function TubularInventoryView() {
     })();
   }, []);
 
-  useEffect(() => { if (!unitId && units.length) setUnitId(units[0].id); }, [units, unitId]);
-
   const catById = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
   const unitById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
+  const clientUnits = useMemo(
+    () => (clientFilter === 'all' ? units : units.filter((u) => clientOf(u.name) === clientFilter)),
+    [units, clientFilter],
+  );
+  const clientUnitIds = useMemo(() => new Set(clientUnits.map((u) => u.id)), [clientUnits]);
+
+  useEffect(() => {
+    if (clientUnits.length && (!unitId || !clientUnits.some((u) => u.id === unitId))) {
+      setUnitId(clientUnits[0].id);
+    }
+  }, [clientUnits, unitId]);
 
   const unitCards = useMemo(() => {
     const byUnit = new Map<string, TubularRecordRow[]>();
@@ -74,10 +85,11 @@ export default function TubularInventoryView() {
   const filtered = useMemo(() => records.filter((r) => {
     const item = catById.get(r.catalogItemId);
     if (!item) return false;
+    if (clientFilter !== 'all' && !clientUnitIds.has(r.unitId)) return false;
     if (mode === 'single' && r.unitId !== unitId) return false;
     if (tubFilter !== 'all' && item.category !== tubFilter) return false;
     return true;
-  }), [records, catById, mode, unitId, tubFilter]);
+  }), [records, catById, mode, unitId, tubFilter, clientFilter, clientUnitIds]);
 
   if (loading || error) {
     return (
@@ -99,6 +111,11 @@ export default function TubularInventoryView() {
       </div>
 
       <div className="unit-bar">
+        <span className="lbl">Client</span>
+        <select id="fleet-client" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
+          <option value="all">All Clients</option>
+          {clientsIn(units).map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
         <span className="lbl">View</span>
         <select id="fleet-mode" value={mode} onChange={(e) => setMode(e.target.value as 'fleet' | 'single')}>
           <option value="fleet">Fleet-Wide (all units)</option>
@@ -108,7 +125,7 @@ export default function TubularInventoryView() {
           <>
             <span className="lbl" id="fleet-unit-lbl">Unit</span>
             <select id="fleet-unit" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-              {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              {clientUnits.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </>
         )}
@@ -121,7 +138,9 @@ export default function TubularInventoryView() {
       </div>
 
       <div id="fleet-units-cards" className="unit-list">
-        {(mode === 'fleet' ? unitCards : unitCards.filter((x) => x.unit.id === unitId)).map(({ unit, t }) => (
+        {(mode === 'fleet'
+          ? unitCards.filter((x) => clientFilter === 'all' || clientUnitIds.has(x.unit.id))
+          : unitCards.filter((x) => x.unit.id === unitId)).map(({ unit, t }) => (
           <div key={unit.id} className={`unit-card${mode === 'single' && unit.id === unitId ? ' active' : ''}`}
             onClick={() => {
               if (mode === 'single' && unit.id === unitId) { setMode('fleet'); }
