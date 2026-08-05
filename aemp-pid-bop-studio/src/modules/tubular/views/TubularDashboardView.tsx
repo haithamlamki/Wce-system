@@ -16,6 +16,7 @@ import {
   type CatalogItem, type TubularRecordRow,
 } from '../lib/records';
 import { aggregate, fleetStatus, fleetUtilization, needsAttention } from '../lib/calc';
+import { clientOf, clientsIn } from '../lib/clients';
 
 Chart.register(BarController, BarElement, DoughnutController, PieController, ArcElement, CategoryScale, LinearScale, Legend, Tooltip);
 
@@ -51,6 +52,7 @@ export default function TubularDashboardView() {
   const [orders, setOrders] = useState<Array<{ status: string }>>([]);
   const [contractsAttn, setContractsAttn] = useState<{ total: number; attn: number }>({ total: 0, attn: 0 });
   const [rigFilter, setRigFilter] = useState('all');
+  const [clientFilter, setClientFilter] = useState('all');
   const [clock, setClock] = useState(() => new Date().toLocaleTimeString());
   const [loading, setLoading] = useState(true);
 
@@ -91,9 +93,17 @@ export default function TubularDashboardView() {
   const catById = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
   const unitById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
 
+  const clientUnits = useMemo(
+    () => (clientFilter === 'all' ? units : units.filter((u) => clientOf(u.name) === clientFilter)),
+    [units, clientFilter],
+  );
+  const clientUnitIds = useMemo(() => new Set(clientUnits.map((u) => u.id)), [clientUnits]);
+
   const scoped = useMemo(
-    () => (rigFilter === 'all' ? records : records.filter((r) => r.unitId === rigFilter)),
-    [records, rigFilter],
+    () => records.filter((r) =>
+      (clientFilter === 'all' || clientUnitIds.has(r.unitId))
+      && (rigFilter === 'all' || r.unitId === rigFilter)),
+    [records, clientFilter, clientUnitIds, rigFilter],
   );
 
   const agg = useMemo(() => aggregate(scoped.map(qtyOf)), [scoped]);
@@ -278,6 +288,14 @@ export default function TubularDashboardView() {
     };
   }, [scoped, agg, catById, unitById, loading]);
 
+  const onClientChange = (v: string) => {
+    setClientFilter(v);
+    if (v !== 'all' && rigFilter !== 'all'
+      && !units.some((u) => u.id === rigFilter && clientOf(u.name) === v)) {
+      setRigFilter('all');
+    }
+  };
+
   return (
     <section className="view" id="view-dashboard">
       <div className="section-head">
@@ -288,10 +306,15 @@ export default function TubularDashboardView() {
       </div>
 
       <div className="unit-bar">
+        <span className="lbl">Client</span>
+        <select id="dash-client-filter" value={clientFilter} onChange={(e) => onClientChange(e.target.value)}>
+          <option value="all">All Clients</option>
+          {clientsIn(units).map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
         <span className="lbl">Filter</span>
         <select id="dash-rig-filter" value={rigFilter} onChange={(e) => setRigFilter(e.target.value)}>
           <option value="all">All Units</option>
-          {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          {clientUnits.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
         <span className="meta-chip" id="dash-live-clock">Live · {clock}</span>
         <span className="spacer" />
@@ -301,8 +324,8 @@ export default function TubularDashboardView() {
       <div className="kpi-grid">
         <div className="kpi">
           <div className="lbl">Total Units</div>
-          <div className="val" id="k-units">{units.length}</div>
-          <div className="delta" id="k-units-sub">{unitsWithData} active · {units.length - unitsWithData} empty</div>
+          <div className="val" id="k-units">{clientUnits.length}</div>
+          <div className="delta" id="k-units-sub">{unitsWithData} active · {clientUnits.length - unitsWithData} empty</div>
         </div>
         <div className="kpi">
           <div className="lbl">On Contract</div>
