@@ -6,7 +6,7 @@
 //  admin/manager we skip the grant fetch and load every active unit instead.
 //  The DB remains the authorization boundary — this context only drives UI.
 // ============================================================================
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../state/AuthContext';
 import {
@@ -50,8 +50,10 @@ export function TubularProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [granted, setGranted] = useState<ReadonlySet<string>>(new Set());
   const [units, setUnits] = useState<TubularUnit[]>([]);
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     if (!supabase || !session) {
       setGranted(new Set());
       setUnits([]);
@@ -68,6 +70,7 @@ export function TubularProvider({ children }: { children: ReactNode }) {
           .order('unit_type')
           .order('name');
         if (error) throw error;
+        if (seq !== loadSeq.current) return;
         setGranted(new Set());
         setUnits(sortUnits((data ?? []).map((u) => ({
           id: u.id as string,
@@ -85,6 +88,7 @@ export function TubularProvider({ children }: { children: ReactNode }) {
         ]);
         if (permsRes.error) throw permsRes.error;
         if (unitsRes.error) throw unitsRes.error;
+        if (seq !== loadSeq.current) return;
         setGranted(new Set((permsRes.data ?? []).map((r) => r.permission as string)));
         setUnits(sortUnits(((unitsRes.data ?? []) as unknown as Array<{ units: { id: string; name: string; unit_type: string; active: boolean } | null }>)
           .map((r) => r.units)
@@ -98,11 +102,12 @@ export function TubularProvider({ children }: { children: ReactNode }) {
       }
     } catch (e) {
       console.error('Failed to load tubular access:', e);
+      if (seq !== loadSeq.current) return;
       // fail closed: no grants, no units
       setGranted(new Set());
       setUnits([]);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [session, role]);
 
