@@ -14,6 +14,7 @@ import {
 } from '../lib/records';
 import { FLEET_STATUS_LABEL, fleetStatus, serviceable } from '../lib/calc';
 import { downloadCsv } from '../lib/exportCsv';
+import { clientOf, clientsIn } from '../lib/clients';
 
 type SortKey = 'unit' | 'description' | 'onContract' | 'serviceable' | 'delta' | 'updatedAt';
 
@@ -27,6 +28,7 @@ export default function MasterSheetView() {
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [unitFilter, setUnitFilter] = useState('all');
+  const [clientFilter, setClientFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'rig' | 'hoist'>('all');
   const [catFilter, setCatFilter] = useState<'all' | TubularCategory>('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -45,11 +47,17 @@ export default function MasterSheetView() {
   const catById = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
   const unitById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
 
+  const clientUnits = useMemo(
+    () => (clientFilter === 'all' ? units : units.filter((u) => clientOf(u.name) === clientFilter)),
+    [units, clientFilter],
+  );
+
   const rows = useMemo(() => {
     const filtered = records.filter((r) => {
       const item = catById.get(r.catalogItemId);
       const unit = unitById.get(r.unitId);
       if (!item || !unit) return false;
+      if (clientFilter !== 'all' && clientOf(unit.name) !== clientFilter) return false;
       if (unitFilter !== 'all' && r.unitId !== unitFilter) return false;
       if (typeFilter !== 'all' && unit.unitType !== typeFilter) return false;
       if (catFilter !== 'all' && item.category !== catFilter) return false;
@@ -76,11 +84,19 @@ export default function MasterSheetView() {
       else cmp = a.updatedAt.localeCompare(b.updatedAt);
       return cmp * sort.dir || ua.localeCompare(ub, undefined, { numeric: true });
     });
-  }, [records, catById, unitById, unitFilter, typeFilter, catFilter, statusFilter, search, sort]);
+  }, [records, catById, unitById, clientFilter, unitFilter, typeFilter, catFilter, statusFilter, search, sort]);
 
   const onSort = (key: SortKey) =>
     setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : 1 }));
   const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === 1 ? ' ▲' : ' ▼') : '');
+
+  const onClientChange = (v: string) => {
+    setClientFilter(v);
+    if (v !== 'all' && unitFilter !== 'all'
+      && clientOf(unitById.get(unitFilter)?.name ?? '') !== v) {
+      setUnitFilter('all');
+    }
+  };
 
   const exportCsv = () => {
     downloadCsv(
@@ -117,10 +133,15 @@ export default function MasterSheetView() {
       </div>
 
       <div className="unit-bar">
+        <span className="lbl">Client</span>
+        <select id="master-client" value={clientFilter} onChange={(e) => onClientChange(e.target.value)}>
+          <option value="all">All Clients</option>
+          {clientsIn(units).map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
         <span className="lbl">Unit</span>
         <select value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)}>
           <option value="all">All units</option>
-          {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          {clientUnits.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}>
           <option value="all">Rigs + Hoists</option><option value="rig">Rigs</option><option value="hoist">Hoists</option>
