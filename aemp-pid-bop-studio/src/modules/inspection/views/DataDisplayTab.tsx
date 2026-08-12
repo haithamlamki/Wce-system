@@ -11,6 +11,7 @@ import { downloadCsv, recordsToCsv } from '../lib/exportCsv';
 import { APPROVE_STATUS_LABELS, WORKING_STATUS_LABELS, frequencyLabel,
   type InspCategory, type InspectionRecord } from '../types';
 import SpecsPopover from '../components/SpecsPopover';
+import FilesDrawer from '../components/FilesDrawer';
 import { RagChip } from './RegisterView';
 import { EmptyState } from '../InspectionModule';
 
@@ -28,6 +29,7 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
   const [bulkMajor, setBulkMajor] = useState('');
   const [bulkInter, setBulkInter] = useState('');
   const [busy, setBusy] = useState(false);
+  const [filesFor, setFilesFor] = useState<InspectionRecord | null>(null);
   const today = new Date().toISOString().slice(0, 10);
 
   const catTypes = useMemo(() => types.filter((t) => t.category === category), [types, category]);
@@ -142,6 +144,7 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
           <thead>
             <tr>
               <th><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
+              <th>Files</th>
               <th>Unit</th><th>Equipment</th><th>Part</th><th>Component</th><th>OEM</th>
               <th>Working Status</th><th>Serial Number</th><th>Part Number</th>
               <th>Inspection Company</th>
@@ -150,7 +153,7 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
               <th>Year</th><th>Remarks</th><th>Specs</th><th>Approve Status</th><th>RAG</th>
             </tr>
             <tr>
-              <th />
+              <th /><th />
               {(['unit','equipment','part','component','oem','status','serial','partNumber','inspectionCompany'] as const).map((k) => (
                 <th key={k}><input placeholder="Search…" value={search[k] ?? ''}
                   onChange={(e) => { setSearch((s) => ({ ...s, [k]: e.target.value })); setPage(1); }} /></th>
@@ -166,6 +169,8 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
               <tr key={r.id}>
                 <td><input type="checkbox" checked={selected.has(r.id)}
                   onChange={() => setSelected((s) => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
+                <td><button className="insp-btn" style={{ padding: '2px 8px' }} title="Documentation files"
+                  onClick={() => setFilesFor(r)}>📎</button></td>
                 <td>{r.unitName}</td><td>{r.typeName}</td><td>{r.partName ?? ''}</td>
                 <td>{r.componentName ?? ''}</td><td>{r.oem}</td>
                 <td>{WORKING_STATUS_LABELS[r.workingStatus]}</td>
@@ -181,7 +186,7 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
               </tr>
             ))}
             {pageRows.length === 0 && (
-              <tr><td colSpan={21} style={{ textAlign: 'center', color: 'var(--dim)' }}>No records for this filter</td></tr>
+              <tr><td colSpan={22} style={{ textAlign: 'center', color: 'var(--dim)' }}>No records for this filter</td></tr>
             )}
           </tbody>
         </table>
@@ -197,6 +202,7 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
           {[10, 25, 50, 100, 250, 500].map((n) => <option key={n} value={n}>{n} / page</option>)}
         </select>
       </div>
+      {filesFor && <FilesDrawer record={filesFor} onClose={() => setFilesFor(null)} />}
     </div>
   );
 }
