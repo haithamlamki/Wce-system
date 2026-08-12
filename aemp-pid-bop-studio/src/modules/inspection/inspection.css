@@ -1,0 +1,55 @@
+/* Inspection module — own shell inside the shared theme system. */
+.insp-app { display: flex; flex-direction: column; min-height: 100%; background: var(--sunk); color: var(--ink); }
+.insp-topbar { display: flex; align-items: center; gap: 14px; padding: 10px 18px; background: var(--panel); border-bottom: 1px solid var(--line2); }
+.insp-brand { display: flex; align-items: center; gap: 10px; }
+.insp-brand img { height: 30px; }
+.insp-brand h1 { font-size: 15px; margin: 0; }
+.insp-sub { font-size: 11px; color: var(--dim); }
+.insp-topbar-spacer { flex: 1; }
+.insp-home-link { font-size: 12.5px; color: var(--ink); text-decoration: none; border: 1px solid var(--line2); padding: 6px 10px; border-radius: 7px; }
+.insp-tabnav { display: flex; gap: 4px; padding: 0 18px; background: var(--panel); border-bottom: 2px solid var(--line2); overflow-x: auto; }
+.insp-tabnav a { padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--dim); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap; }
+.insp-tabnav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+.insp-main { padding: 18px; flex: 1; }
+.insp-card { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; padding: 14px; }
+.insp-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.insp-btn { border: 1px solid var(--line2); background: var(--panel); color: var(--ink); padding: 7px 11px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.insp-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.insp-btn:disabled { opacity: .45; cursor: not-allowed; }
+.insp-table-wrap { overflow-x: auto; border: 1px solid var(--line2); border-radius: 8px; }
+.insp-table { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 1200px; }
+.insp-table th, .insp-table td { border-bottom: 1px solid var(--line2); padding: 7px 9px; text-align: left; white-space: nowrap; }
+.insp-table thead th { background: var(--sunk); position: sticky; top: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.insp-table thead input { width: 110px; font-size: 11px; padding: 3px 5px; border: 1px solid var(--line2); border-radius: 5px; background: var(--panel); color: var(--ink); }
+.insp-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--sunk) 45%, transparent); }
+.insp-rag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.insp-rag.overdue { background: color-mix(in srgb, #d33 20%, transparent); color: #d33; }
+.insp-rag.due_soon { background: color-mix(in srgb, #d90 20%, transparent); color: #b70; }
+.insp-rag.compliant { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.insp-rag.unknown { background: var(--sunk); color: var(--dim); }
+.insp-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.insp-field label { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; }
+.insp-field input, .insp-field select, .insp-field textarea { border: 1px solid var(--line2); border-radius: 6px; padding: 7px 9px; background: var(--panel); color: var(--ink); font-size: 12.5px; }
+.insp-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.insp-subtabs { display: flex; gap: 2px; margin-bottom: 12px; border-bottom: 1px solid var(--line2); }
+.insp-subtabs button { border: 0; background: none; padding: 8px 14px; font-size: 12.5px; font-weight: 600; color: var(--dim); cursor: pointer; border-bottom: 2px solid transparent; }
+.insp-subtabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.insp-cat-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+.insp-cat-tabs button { border: 1px solid var(--line2); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 6px 13px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.insp-cat-tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.insp-tree { min-width: 210px; border-right: 1px solid var(--line2); padding-right: 10px; font-size: 12.5px; }
+.insp-tree button { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--ink); padding: 5px 7px; border-radius: 6px; cursor: pointer; }
+.insp-tree button.active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.insp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.insp-kpi { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; padding: 14px; }
+.insp-kpi .num { font-size: 26px; font-weight: 800; }
+.insp-kpi .lbl { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+.insp-empty { text-align: center; color: var(--dim); padding: 48px 0; }
+.insp-empty .ico { font-size: 34px; }
+.insp-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 92vw); background: var(--panel); border-left: 1px solid var(--line2); box-shadow: -6px 0 24px rgba(0,0,0,.18); z-index: 60; padding: 16px; overflow-y: auto; }
+.insp-dropzone { border: 2px dashed var(--line2); border-radius: 10px; padding: 22px; text-align: center; color: var(--dim); }
+.insp-dropzone.drag { border-color: var(--accent); color: var(--accent); }
+.insp-bell { position: relative; border: 1px solid var(--line2); background: var(--panel); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-size: 14px; }
+.insp-bell .badge { position: absolute; top: -6px; right: -6px; background: #d33; color: #fff; font-size: 10px; font-weight: 800; border-radius: 999px; padding: 1px 5px; }
+.insp-bell-panel { position: absolute; right: 0; top: 40px; width: 340px; max-height: 420px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.2); z-index: 70; }
+.insp-bell-panel .item { padding: 9px 12px; border-bottom: 1px solid var(--line2); font-size: 12px; }

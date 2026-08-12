@@ -22,6 +22,9 @@ const TubularModule = lazy(() => import('./modules/tubular/TubularModule'));
 // the wrapper is tiny but lazy-loading keeps module boundaries uniform.
 const RigStringModule = lazy(() => import('./modules/rigstring/RigStringModule'));
 
+// Equipment Inspection renders its own shell (topbar + tabnav) like Tubular.
+const InspectionModule = lazy(() => import('./modules/inspection/InspectionModule'));
+
 type ThemeMode = 'auto' | 'light' | 'dark';
 
 const TABS = [
@@ -108,10 +111,11 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
   // remains; WCE deep links (/full, /bop, …) are unchanged.
   const inTubular = pathname.startsWith('/tubular');
   const inRigString = pathname.startsWith('/rig-string');
-  const inWce = !inTubular && !inRigString && pathname !== '/home';
+  const inInspection = pathname.startsWith('/inspection');
+  const inWce = !inTubular && !inRigString && !inInspection && pathname !== '/home';
   return (
     <>
-      {!inTubular && (
+      {!inTubular && !inInspection && (
       <header className="appbar">
         <div className="brand">
           <img className="logo" src="/brand/abraj-mark.png" alt="Abraj" />
@@ -158,6 +162,14 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
             element={
               <Suspense fallback={<div className="placeholder">Loading Rig String Builder…</div>}>
                 <RigStringModule />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/inspection/*"
+            element={
+              <Suspense fallback={<div className="placeholder">Loading Equipment Inspection…</div>}>
+                <InspectionModule />
               </Suspense>
             }
           />
