@@ -7,6 +7,7 @@ import { CATEGORY_LABELS, CATEGORY_ORDER, type InspCategory } from '../types';
 import { useInspection } from '../state/InspectionContext';
 import { EmptyState } from '../InspectionModule';
 import DataDisplayTab from './DataDisplayTab';
+import DataEntryForm from './DataEntryForm';
 
 type SubTab = 'display' | 'upload' | 'entry';
 
@@ -41,7 +42,7 @@ export default function RecordsView() {
 
       {sub === 'display' && <DataDisplayTab category={category} />}
       {sub === 'upload' && <EmptyState ico="⇪" title="Data Upload" desc="Lands in Task 11." />}
-      {sub === 'entry' && <EmptyState ico="✎" title="Data Entry" desc="Lands in Task 10." />}
+      {sub === 'entry' && <DataEntryForm category={category} onSaved={() => setSub('display')} />}
     </div>
   );
 }
