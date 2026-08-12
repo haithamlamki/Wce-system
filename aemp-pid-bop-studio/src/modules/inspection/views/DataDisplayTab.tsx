@@ -168,24 +168,28 @@ export default function DataDisplayTab({ category, onEdit }: {
           <thead>
             <tr>
               <th><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
-              <th>Actions</th>
-              <th>Unit</th><th>Equipment</th><th>Part</th><th>Component</th><th>OEM</th>
-              <th>Working Status</th><th>Serial Number</th><th>Part Number</th>
+              <th>Files</th>
+              <th>Company</th><th>Unit</th><th>Equipment</th><th>Equipment Part</th>
+              <th>Equipment Part Component</th><th>Component Description</th><th>OEM</th>
+              <th>Status</th><th>Serial Number</th><th>Part Number</th>
               <th>Inspection Company</th>
               <th>Interm. Date</th><th>Interm. Due</th><th>Interm. Freq</th>
               <th>Major Date</th><th>Major Due</th><th>Major Freq</th>
-              <th>Year</th><th>Remarks</th><th>Specs</th><th>Approve Status</th><th>RAG</th>
+              <th>Manufacture Year</th><th>Remarks</th><th>Specs</th><th>Approve Status</th>
+              <th>RAG</th><th>Actions</th>
             </tr>
             <tr>
               <th /><th />
-              {(['unit','equipment','part','component','oem','status','serial','partNumber','inspectionCompany'] as const).map((k) => (
+              {(['company','unit','equipment','part','component','description','oem','status',
+                'serial','partNumber','inspectionCompany','intermediateDate','intermediateDue',
+                'intermediateFreq','majorDate','majorDue','majorFreq','year','remarks'] as const).map((k) => (
                 <th key={k}><input placeholder="Search…" value={search[k] ?? ''}
                   onChange={(e) => { setSearch((s) => ({ ...s, [k]: e.target.value })); setPage(1); }} /></th>
               ))}
-              <th /><th /><th /><th /><th /><th /><th /><th /><th />
+              <th />
               <th><input placeholder="Search…" value={search.approveStatus ?? ''}
                 onChange={(e) => { setSearch((s) => ({ ...s, approveStatus: e.target.value })); setPage(1); }} /></th>
-              <th />
+              <th /><th />
             </tr>
           </thead>
           <tbody>
@@ -194,21 +198,14 @@ export default function DataDisplayTab({ category, onEdit }: {
                 <td><input type="checkbox" checked={selected.has(r.id)}
                   onChange={() => setSelected((s) => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
                 <td style={{ display: 'flex', gap: 3 }}>
-                  <button className="insp-btn" style={{ padding: '2px 7px' }} title="Documentation files"
+                  <button className="insp-btn" style={{ padding: '2px 7px' }} title="View Inspection Files"
                     onClick={() => setFilesFor(r)}>📎</button>
-                  {onEdit && (
-                    <button className="insp-btn" style={{ padding: '2px 7px' }} title="Edit record"
-                      onClick={() => onEdit(r)}>✎</button>
-                  )}
-                  {can('insp_data_entry') && (
-                    <button className="insp-btn" style={{ padding: '2px 7px' }} title="Delete record"
-                      disabled={busy} onClick={() => doDelete(r)}>🗑</button>
-                  )}
-                  <button className="insp-btn" style={{ padding: '2px 7px' }} title="History of changes"
+                  <button className="insp-btn" style={{ padding: '2px 7px' }} title="View Logs"
                     onClick={() => setLogsFor(r)}>🗒</button>
                 </td>
+                <td>{r.companyName ?? '—'}</td>
                 <td>{r.unitName}</td><td>{r.typeName}</td><td>{r.partName ?? ''}</td>
-                <td>{r.componentName ?? ''}</td><td>{r.oem}</td>
+                <td>{r.componentName ?? ''}</td><td>{r.componentDescription}</td><td>{r.oem}</td>
                 <td>{WORKING_STATUS_LABELS[r.workingStatus]}</td>
                 <td>{r.serialNumber}</td><td>{r.partNumber}</td><td>{r.inspectionCompany}</td>
                 <td>{r.intermediateDate ?? ''}</td><td>{r.intermediateDueDate ?? ''}</td>
@@ -219,10 +216,22 @@ export default function DataDisplayTab({ category, onEdit }: {
                 <td><SpecsPopover record={r} /></td>
                 <td>{APPROVE_STATUS_LABELS[r.approveStatus]}</td>
                 <td><RagChip status={recordCompliance(r, today)} /></td>
+                <td style={{ display: 'flex', gap: 3 }}>
+                  {onEdit && (
+                    <button className="insp-btn" style={{ padding: '2px 7px' }} title="Edit record"
+                      onClick={() => onEdit(r)}>✎</button>
+                  )}
+                  {can('insp_data_entry') && (
+                    <button className="insp-btn" style={{ padding: '2px 7px' }} title="Delete record"
+                      disabled={busy} onClick={() => doDelete(r)}>🗑</button>
+                  )}
+                  <button className="insp-btn" style={{ padding: '2px 7px' }} title="Files"
+                    onClick={() => setFilesFor(r)}>🗂</button>
+                </td>
               </tr>
             ))}
             {pageRows.length === 0 && (
-              <tr><td colSpan={22} style={{ textAlign: 'center', color: 'var(--dim)' }}>No records for this filter</td></tr>
+              <tr><td colSpan={25} style={{ textAlign: 'center', color: 'var(--dim)' }}>No records for this filter</td></tr>
             )}
           </tbody>
         </table>

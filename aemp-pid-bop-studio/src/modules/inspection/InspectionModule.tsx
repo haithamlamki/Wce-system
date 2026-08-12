@@ -14,6 +14,7 @@ import MetricsView from './views/MetricsView';
 import LibraryView from './views/LibraryView';
 import ApprovalsView from './views/ApprovalsView';
 import UsersView from './views/UsersView';
+import PasswordResetView from './views/PasswordResetView';
 
 export function EmptyState({ ico, title, desc }: { ico: string; title: string; desc: string }) {
   return (
@@ -46,6 +47,7 @@ function AccessGate() {
       <Route path="library" element={<LibraryView />} />
       <Route path="approvals" element={<ApprovalsView />} />
       <Route path="users" element={<UsersView />} />
+      <Route path="password" element={<PasswordResetView />} />
       <Route path="*" element={<EmptyState ico="?" title="Not Found" desc="This Inspection page does not exist." />} />
     </Routes>
   );

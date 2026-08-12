@@ -3,23 +3,32 @@
 //  search (the source system's under-header search boxes), RAG compliance
 //  bucket filter, and simple pagination.
 // ============================================================================
-import type { InspectionRecord } from '../types';
+import { APPROVE_STATUS_LABELS, CATEGORY_LABELS, WORKING_STATUS_LABELS,
+  frequencyLabel, type InspectionRecord } from '../types';
 import { recordCompliance, type ComplianceStatus } from './compliance';
 
 export const SEARCHABLE_COLUMNS: Record<string, (r: InspectionRecord) => string> = {
   company: (r) => r.companyName ?? '',
   unit: (r) => r.unitName,
-  category: (r) => r.category,
+  category: (r) => CATEGORY_LABELS[r.category],
   equipment: (r) => r.typeName,
   part: (r) => r.partName ?? '',
   component: (r) => r.componentName ?? '',
   description: (r) => r.componentDescription,
   oem: (r) => r.oem,
-  status: (r) => r.workingStatus,
+  status: (r) => WORKING_STATUS_LABELS[r.workingStatus],
   serial: (r) => r.serialNumber,
   partNumber: (r) => r.partNumber,
   inspectionCompany: (r) => r.inspectionCompany,
-  approveStatus: (r) => r.approveStatus,
+  approveStatus: (r) => APPROVE_STATUS_LABELS[r.approveStatus],
+  intermediateDate: (r) => r.intermediateDate ?? '',
+  intermediateDue: (r) => r.intermediateDueDate ?? '',
+  intermediateFreq: (r) => r.intermediateFreqMonths ? frequencyLabel(r.intermediateFreqMonths) : '',
+  majorDate: (r) => r.majorDate ?? '',
+  majorDue: (r) => r.majorDueDate ?? '',
+  majorFreq: (r) => r.majorFreqMonths ? frequencyLabel(r.majorFreqMonths) : '',
+  year: (r) => r.manufactureYear?.toString() ?? '',
+  remarks: (r) => r.remarks,
 };
 
 export function applyColumnSearch(
