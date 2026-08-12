@@ -84,13 +84,23 @@ export async function fetchRecords(opts: {
   category?: InspCategory; typeId?: string; unitId?: string;
 } = {}): Promise<InspectionRecord[]> {
   const sb = need();
-  let q = sb.from('insp_records_expanded').select('*');
-  if (opts.category) q = q.eq('category', opts.category);
-  if (opts.typeId) q = q.eq('type_id', opts.typeId);
-  if (opts.unitId) q = q.eq('unit_id', opts.unitId);
-  const { data, error } = await q.order('created_at', { ascending: false }).limit(10000);
-  if (error) throw new Error(error.message);
-  return (data ?? []).map(mapRow);
+  // Paginate: PostgREST caps every response at 1000 rows server-side, so a
+  // plain .limit(10000) silently truncates once real data volumes arrive.
+  const PAGE = 1000;
+  const out: InspectionRecord[] = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = sb.from('insp_records_expanded').select('*');
+    if (opts.category) q = q.eq('category', opts.category);
+    if (opts.typeId) q = q.eq('type_id', opts.typeId);
+    if (opts.unitId) q = q.eq('unit_id', opts.unitId);
+    const { data, error } = await q
+      .order('created_at', { ascending: false }).order('id')
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    out.push(...(data ?? []).map(mapRow));
+    if ((data ?? []).length < PAGE) break;
+  }
+  return out;
 }
 
 export interface RecordDraft {
