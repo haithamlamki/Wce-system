@@ -24,6 +24,28 @@ describe('applyColumnSearch', () => {
     expect(applyColumnSearch(rows, { unit: 'rig', oem: 'haul' })).toHaveLength(1);
     expect(applyColumnSearch(rows, {})).toHaveLength(2);
   });
+
+  it('searches dates, frequencies, year and remarks (reference per-column boxes)', () => {
+    const all = [
+      rec({ intermediateDate: '2025-08-14', majorDate: '2021-01-31', remarks: 'recertified' }),
+      rec({ intermediateDate: '2026-01-01', majorDate: null, majorFreqMonths: null, remarks: '' }),
+    ];
+    expect(applyColumnSearch(all, { intermediateDate: '2025-08' })).toHaveLength(1);
+    expect(applyColumnSearch(all, { intermediateDue: '2026-08-14' })).toHaveLength(2);
+    expect(applyColumnSearch(all, { majorDate: '2021' })).toHaveLength(1);
+    expect(applyColumnSearch(all, { majorDue: '2026-01-31' })).toHaveLength(2);
+    expect(applyColumnSearch(all, { intermediateFreq: '1 year' })).toHaveLength(2);
+    expect(applyColumnSearch(all, { majorFreq: '5 year' })).toHaveLength(1);
+    expect(applyColumnSearch(all, { year: '2011' })).toHaveLength(2);
+    expect(applyColumnSearch(all, { remarks: 'recert' })).toHaveLength(1);
+  });
+
+  it('searches working/approve status by their display labels', () => {
+    const all = [rec({ workingStatus: 'in_use', approveStatus: 'pending_approval' }),
+      rec({ workingStatus: 'defected', approveStatus: 'approved' })];
+    expect(applyColumnSearch(all, { status: 'in use' })).toHaveLength(1);
+    expect(applyColumnSearch(all, { approveStatus: 'pending' })).toHaveLength(1);
+  });
 });
 
 describe('filterByCompliance', () => {

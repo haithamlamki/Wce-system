@@ -17,35 +17,64 @@ export interface UserAccount {
   id: string;
   email: string;
   fullName: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  jobRoles: string[];            // reference "Roles" chips, e.g. Drilling Superintendent
   role: 'admin' | 'manager' | 'field' | string;
   active: boolean;
   accessExpiry: string | null;   // ISO date or null = permanent
 }
 
+/** One unit's access grant: categories === null means Full Access (all systems). */
+export interface UnitAccess { unitId: string; categories: string[] | null }
+
 export async function listUsers(): Promise<UserAccount[]> {
   const { data, error } = await need().from('profiles')
-    .select('id,email,full_name,role,active,access_expiry').order('full_name');
+    .select('id,email,full_name,first_name,last_name,phone,job_roles,role,active,access_expiry')
+    .order('full_name');
   if (error) throw new Error(error.message);
   return (data ?? []).map((p) => ({
     id: p.id, email: p.email ?? '', fullName: p.full_name ?? '',
+    firstName: p.first_name ?? '', lastName: p.last_name ?? '',
+    phone: p.phone ?? '', jobRoles: p.job_roles ?? [],
     role: p.role ?? 'field', active: p.active ?? true,
     accessExpiry: p.access_expiry ?? null,
   }));
 }
 
-/** All module permissions + unit assignments for one user (admin read). */
-export async function listUserGrants(userId: string): Promise<{ permissions: string[]; unitIds: string[] }> {
+/** All module permissions + unit access matrix for one user (admin read). */
+export async function listUserGrants(userId: string):
+  Promise<{ permissions: string[]; unitAccess: UnitAccess[] }> {
   const sb = need();
   const [perms, units] = await Promise.all([
     sb.from('user_module_permissions').select('permission').eq('user_id', userId),
-    sb.from('user_unit_assignments').select('unit_id').eq('user_id', userId),
+    sb.from('user_unit_assignments').select('unit_id,insp_categories').eq('user_id', userId),
   ]);
   if (perms.error) throw new Error(perms.error.message);
   if (units.error) throw new Error(units.error.message);
   return {
     permissions: (perms.data ?? []).map((r) => r.permission as string),
-    unitIds: (units.data ?? []).map((r) => r.unit_id as string),
+    unitAccess: (units.data ?? []).map((r) => ({
+      unitId: r.unit_id as string,
+      categories: (r as { insp_categories?: string[] | null }).insp_categories ?? null,
+    })),
   };
+}
+
+/** Replaces the user's whole unit × system access matrix (audited RPC, 0033). */
+export async function saveUserUnitAccess(userId: string, access: UnitAccess[]): Promise<void> {
+  const { error } = await need().rpc('set_user_unit_access', {
+    p_user: userId,
+    p_access: access.map((a) => ({ unit_id: a.unitId, categories: a.categories })),
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Self-service password change (reference Security Management → Password Reset). */
+export async function changeOwnPassword(newPassword: string): Promise<void> {
+  const { error } = await need().auth.updateUser({ password: newPassword });
+  if (error) throw new Error(error.message);
 }
 
 /** Replaces the user's insp_* grants, preserving other modules' permissions. */
@@ -62,6 +91,7 @@ export async function saveUserUnits(userId: string, unitIds: string[]): Promise<
 
 export async function updateUserProfile(id: string, patch: {
   role?: string; active?: boolean; access_expiry?: string | null; full_name?: string;
+  first_name?: string; last_name?: string; phone?: string; job_roles?: string[];
 }): Promise<void> {
   const { error } = await need().from('profiles').update(patch).eq('id', id);
   if (error) throw new Error(error.message);

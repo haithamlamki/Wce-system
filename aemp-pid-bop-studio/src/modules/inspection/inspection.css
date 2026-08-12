@@ -53,3 +53,12 @@
 .insp-bell .badge { position: absolute; top: -6px; right: -6px; background: #d33; color: #fff; font-size: 10px; font-weight: 800; border-radius: 999px; padding: 1px 5px; }
 .insp-bell-panel { position: absolute; right: 0; top: 40px; width: 340px; max-height: 420px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.2); z-index: 70; }
 .insp-bell-panel .item { padding: 9px 12px; border-bottom: 1px solid var(--line2); font-size: 12px; }
+/* Dashboard grouped headers + RAG date cells (reference parity) */
+.insp-th-group { border-bottom: 2px solid var(--line2); background: var(--panel) !important; }
+.insp-group-toggle { border: 0; background: none; color: var(--ink); font-size: 10.5px; font-weight: 800; letter-spacing: .06em; cursor: pointer; padding: 2px 4px; }
+.insp-doc-th { writing-mode: vertical-rl; transform: rotate(180deg); max-height: 120px; font-size: 10px !important; padding: 6px 3px !important; }
+.insp-cell-rag.overdue { background: color-mix(in srgb, #d33 32%, transparent); }
+.insp-cell-rag.due_soon { background: color-mix(in srgb, #e6c34a 45%, transparent); }
+.insp-cell-rag.compliant { background: color-mix(in srgb, var(--green) 30%, transparent); }
+/* Configure Access matrix (Security Management, reference User Edit page) */
+.insp-access-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; max-height: 420px; overflow-y: auto; padding: 2px; }

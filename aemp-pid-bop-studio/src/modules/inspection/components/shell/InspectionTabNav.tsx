@@ -12,9 +12,12 @@ const TABS = [
 
 export default function InspectionTabNav() {
   const { role } = useAuth();
-  const tabs = isPrivileged(role)
-    ? [...TABS, { to: '/inspection/users', label: 'Security Management', end: false }]
-    : TABS;
+  const tabs = [
+    ...(isPrivileged(role)
+      ? [...TABS, { to: '/inspection/users', label: 'Security Management', end: false }]
+      : TABS),
+    { to: '/inspection/password', label: 'Password Reset', end: false },
+  ];
   return (
     <nav className="insp-tabnav">
       {tabs.map((t) => (

@@ -29,6 +29,27 @@ export async function listFiles(recordId: string): Promise<InspFile[]> {
   return (data ?? []).map(mapFile);
 }
 
+/**
+ * Latest file of each kind for a set of records (one query) — feeds the
+ * dashboard's DOCUMENTATION column group. Map key: recordId.
+ */
+export async function listFileKindsFor(
+  recordIds: string[],
+): Promise<Map<string, Partial<Record<FileKind, InspFile>>>> {
+  const out = new Map<string, Partial<Record<FileKind, InspFile>>>();
+  if (recordIds.length === 0) return out;
+  const { data, error } = await need().from('insp_files')
+    .select('*').in('record_id', recordIds).order('created_at');
+  if (error) throw new Error(error.message);
+  for (const row of data ?? []) {
+    const f = mapFile(row as Record<string, unknown>);
+    const entry = out.get(f.recordId) ?? {};
+    entry[f.kind] = f;                       // later rows win → latest per kind
+    out.set(f.recordId, entry);
+  }
+  return out;
+}
+
 /** All files that carry an expiry date — the certificate-expiry alert feed. */
 export async function listExpiringFiles(): Promise<InspFile[]> {
   const { data, error } = await need().from('insp_files')
