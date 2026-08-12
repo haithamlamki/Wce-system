@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { useAuth } from '../state/AuthContext';
 import { canAccessModule, isPrivileged } from '../modules/tubular/lib/permissions';
+import { canAccessModule as canAccessInspection } from '../modules/inspection/lib/permissions';
 
 const card: React.CSSProperties = {
   display: 'block', textDecoration: 'none', color: 'var(--ink)',
@@ -59,6 +60,7 @@ export default function HomeView() {
   }, [session, role]);
 
   const tubularOk = canAccessModule(role, granted);
+  const inspectionOk = canAccessInspection(role, granted);
   const offline = !isSupabaseConfigured || !session;
 
   return (
@@ -87,6 +89,14 @@ export default function HomeView() {
             sub="Rig & Hoist tubular monitoring: data entry, fleet inventory, contracts, pipe orders and logistics."
             note={offline ? 'Requires cloud sign-in' : (!loaded ? 'Checking access…' : tubularOk ? 'Module 2 · Tubular' : 'No access — ask an administrator')}
             disabled={offline || (loaded && !tubularOk)}
+          />
+          <ModuleCard
+            to="/inspection"
+            icon="🛠"
+            title="Equipment Inspection"
+            sub="Equipment Master Pro: inspection register, approvals, metrics, certificates and library."
+            note={offline ? 'Requires cloud sign-in' : (!loaded ? 'Checking access…' : inspectionOk ? 'Module · Inspection' : 'No access — ask an administrator')}
+            disabled={offline || (loaded && !inspectionOk)}
           />
           <ModuleCard
             to="/rig-string"
