@@ -11,6 +11,7 @@ import RegisterView from './views/RegisterView';
 import RecordsView from './views/RecordsView';
 import CatalogView from './views/CatalogView';
 import MetricsView from './views/MetricsView';
+import LibraryView from './views/LibraryView';
 
 export function EmptyState({ ico, title, desc }: { ico: string; title: string; desc: string }) {
   return (
@@ -40,7 +41,7 @@ function AccessGate() {
       <Route path="records" element={<RecordsView />} />
       <Route path="catalog" element={<CatalogView />} />
       <Route path="metrics" element={<MetricsView />} />
-      <Route path="library" element={<EmptyState ico="🗀" title="Library" desc="Lands in Task 16." />} />
+      <Route path="library" element={<LibraryView />} />
       <Route path="*" element={<EmptyState ico="?" title="Not Found" desc="This Inspection page does not exist." />} />
     </Routes>
   );
