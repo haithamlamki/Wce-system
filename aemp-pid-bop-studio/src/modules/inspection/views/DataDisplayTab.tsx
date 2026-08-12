@@ -4,7 +4,7 @@
 // ============================================================================
 import { useEffect, useMemo, useState } from 'react';
 import { useInspection } from '../state/InspectionContext';
-import { bulkUpdateDates, fetchRecords, setApproval } from '../lib/records';
+import { bulkUpdateDates, deleteRecord, fetchRecords, setApproval } from '../lib/records';
 import { applyColumnSearch, paginate } from '../lib/filters';
 import { recordCompliance } from '../lib/compliance';
 import { downloadCsv, recordsToCsv } from '../lib/exportCsv';
@@ -12,11 +12,15 @@ import { APPROVE_STATUS_LABELS, WORKING_STATUS_LABELS, frequencyLabel,
   type InspCategory, type InspectionRecord } from '../types';
 import SpecsPopover from '../components/SpecsPopover';
 import FilesDrawer from '../components/FilesDrawer';
+import LogsDrawer from '../components/LogsDrawer';
+import UnitTree, { type TreeSel } from '../components/UnitTree';
 import { RagChip } from './RegisterView';
 import { EmptyState } from '../InspectionModule';
 
-export default function DataDisplayTab({ category }: { category: InspCategory }) {
-  const { can, types, parts } = useInspection();
+export default function DataDisplayTab({ category, onEdit }: {
+  category: InspCategory; onEdit?: (r: InspectionRecord) => void;
+}) {
+  const { can, types, parts, units } = useInspection();
   const [rows, setRows] = useState<InspectionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -30,6 +34,9 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
   const [bulkInter, setBulkInter] = useState('');
   const [busy, setBusy] = useState(false);
   const [filesFor, setFilesFor] = useState<InspectionRecord | null>(null);
+  const [logsFor, setLogsFor] = useState<InspectionRecord | null>(null);
+  const [tree, setTree] = useState(false);
+  const [treeSel, setTreeSel] = useState<TreeSel>({});
   const today = new Date().toISOString().slice(0, 10);
 
   const catTypes = useMemo(() => types.filter((t) => t.category === category), [types, category]);
@@ -47,10 +54,12 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
 
   const filtered = useMemo(() => {
     let out = rows;
+    if (treeSel.company) out = out.filter((r) => (r.companyName ?? 'Unassigned') === treeSel.company);
+    if (treeSel.unit) out = out.filter((r) => r.unitName === treeSel.unit);
     if (typeId) out = out.filter((r) => r.typeId === typeId);
     if (partSel.size) out = out.filter((r) => r.partId !== null && partSel.has(r.partId));
     return applyColumnSearch(out, search);
-  }, [rows, typeId, partSel, search]);
+  }, [rows, treeSel, typeId, partSel, search]);
 
   const { pageRows, total, pages } = paginate(filtered, page, perPage);
   const allChecked = pageRows.length > 0 && pageRows.every((r) => selected.has(r.id));
@@ -71,6 +80,14 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
       alert(`Updated ${n} record(s).`);
       setSelected(new Set()); reload();
     } catch (e) { alert((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const doDelete = async (r: InspectionRecord) => {
+    if (!confirm(`Delete the record for "${r.serialNumber || r.typeName}" on ${r.unitName}? This cannot be undone.`)) return;
+    setBusy(true);
+    try { await deleteRecord(r.id); reload(); }
+    catch (e) { alert((e as Error).message); }
     finally { setBusy(false); }
   };
 
@@ -102,6 +119,10 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
           <button className="insp-btn" disabled={busy || selected.size === 0} onClick={() => doApproval(true)}>✓ Approve</button>
           <button className="insp-btn" disabled={busy || selected.size === 0} onClick={() => doApproval(false)}>✗ Reject</button>
         </>)}
+        <button className="insp-btn" onClick={() => setTree((v) => !v)}>🗀 Folder Structure</button>
+        <button className="insp-btn" onClick={() => { setSearch({}); setTreeSel({}); setSelected(new Set()); setPage(1); }}>
+          ⊗ Clear Selection
+        </button>
       </div>
 
       <div className="insp-toolbar insp-card">
@@ -139,12 +160,15 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
         </div>
       )}
 
-      <div className="insp-table-wrap">
+      <div style={{ display: 'flex', gap: 12 }}>
+      {tree && <UnitTree rows={rows} units={units} sel={treeSel}
+        onSelect={(s) => { setTreeSel(s); setPage(1); }} />}
+      <div className="insp-table-wrap" style={{ flex: 1 }}>
         <table className="insp-table">
           <thead>
             <tr>
               <th><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
-              <th>Files</th>
+              <th>Actions</th>
               <th>Unit</th><th>Equipment</th><th>Part</th><th>Component</th><th>OEM</th>
               <th>Working Status</th><th>Serial Number</th><th>Part Number</th>
               <th>Inspection Company</th>
@@ -169,8 +193,20 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
               <tr key={r.id}>
                 <td><input type="checkbox" checked={selected.has(r.id)}
                   onChange={() => setSelected((s) => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
-                <td><button className="insp-btn" style={{ padding: '2px 8px' }} title="Documentation files"
-                  onClick={() => setFilesFor(r)}>📎</button></td>
+                <td style={{ display: 'flex', gap: 3 }}>
+                  <button className="insp-btn" style={{ padding: '2px 7px' }} title="Documentation files"
+                    onClick={() => setFilesFor(r)}>📎</button>
+                  {onEdit && (
+                    <button className="insp-btn" style={{ padding: '2px 7px' }} title="Edit record"
+                      onClick={() => onEdit(r)}>✎</button>
+                  )}
+                  {can('insp_data_entry') && (
+                    <button className="insp-btn" style={{ padding: '2px 7px' }} title="Delete record"
+                      disabled={busy} onClick={() => doDelete(r)}>🗑</button>
+                  )}
+                  <button className="insp-btn" style={{ padding: '2px 7px' }} title="History of changes"
+                    onClick={() => setLogsFor(r)}>🗒</button>
+                </td>
                 <td>{r.unitName}</td><td>{r.typeName}</td><td>{r.partName ?? ''}</td>
                 <td>{r.componentName ?? ''}</td><td>{r.oem}</td>
                 <td>{WORKING_STATUS_LABELS[r.workingStatus]}</td>
@@ -191,6 +227,7 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
           </tbody>
         </table>
       </div>
+      </div>
 
       <div className="insp-toolbar" style={{ marginTop: 10 }}>
         <button className="insp-btn" disabled={page <= 1} onClick={() => setPage(1)}>First</button>
@@ -203,6 +240,7 @@ export default function DataDisplayTab({ category }: { category: InspCategory })
         </select>
       </div>
       {filesFor && <FilesDrawer record={filesFor} onClose={() => setFilesFor(null)} />}
+      {logsFor && <LogsDrawer record={logsFor} onClose={() => setLogsFor(null)} />}
     </div>
   );
 }

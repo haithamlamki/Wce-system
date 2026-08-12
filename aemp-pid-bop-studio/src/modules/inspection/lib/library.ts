@@ -29,6 +29,16 @@ export async function listLibrary(prefix: string): Promise<LibraryEntry[]> {
     }));
 }
 
+/** Storage folders are prefixes; a placeholder object makes one visible (guide §5.13). */
+export async function createLibraryFolder(prefix: string, name: string): Promise<void> {
+  const clean = name.trim().replace(/[\\/]+/g, '-');
+  if (!clean) throw new Error('Folder name is required.');
+  const path = `${prefix ? `${prefix}/` : ''}${clean}/.emptyFolderPlaceholder`;
+  const { error } = await need().storage.from(BUCKET)
+    .upload(path, new Blob([''], { type: 'text/plain' }), { upsert: true });
+  if (error) throw new Error(error.message);
+}
+
 export async function uploadLibraryFile(prefix: string, file: File): Promise<void> {
   const path = prefix ? `${prefix}/${file.name}` : file.name;
   const { error } = await need().storage.from(BUCKET).upload(path, file, { upsert: true });

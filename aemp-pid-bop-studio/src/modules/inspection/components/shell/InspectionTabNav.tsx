@@ -1,4 +1,6 @@
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../../../../state/AuthContext';
+import { isPrivileged } from '../../lib/permissions';
 
 const TABS = [
   { to: '/inspection', label: 'Dashboard', end: true },
@@ -9,9 +11,13 @@ const TABS = [
 ];
 
 export default function InspectionTabNav() {
+  const { role } = useAuth();
+  const tabs = isPrivileged(role)
+    ? [...TABS, { to: '/inspection/users', label: 'Security Management', end: false }]
+    : TABS;
   return (
     <nav className="insp-tabnav">
-      {TABS.map((t) => (
+      {tabs.map((t) => (
         <NavLink key={t.to} to={t.to} end={t.end}
           className={({ isActive }) => (isActive ? 'active' : '')}>
           {t.label}
