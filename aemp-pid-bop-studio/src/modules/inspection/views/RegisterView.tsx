@@ -12,6 +12,7 @@ import { downloadCsv, recordsToCsv } from '../lib/exportCsv';
 import { APPROVE_STATUS_LABELS, CATEGORY_LABELS, WORKING_STATUS_LABELS,
   type InspectionRecord } from '../types';
 import SpecsPopover from '../components/SpecsPopover';
+import UnitTree, { type TreeSel } from '../components/UnitTree';
 import { EmptyState } from '../InspectionModule';
 
 export function RagChip({ status }: { status: ComplianceStatus }) {
@@ -32,7 +33,7 @@ const ADV_COLS: [string, string][] = [
 ];
 
 export default function RegisterView() {
-  const { canAccess } = useInspection();
+  const { canAccess, units } = useInspection();
   const [rows, setRows] = useState<InspectionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -40,7 +41,7 @@ export default function RegisterView() {
   const [rag, setRag] = useState<ComplianceStatus | 'all'>('all');
   const [advanced, setAdvanced] = useState(false);
   const [tree, setTree] = useState(false);
-  const [treeSel, setTreeSel] = useState<{ company?: string; unit?: string }>({});
+  const [treeSel, setTreeSel] = useState<TreeSel>({});
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(25);
   const today = new Date().toISOString().slice(0, 10);
@@ -52,11 +53,6 @@ export default function RegisterView() {
       .catch((e) => { if (alive) { setErr((e as Error).message); setLoading(false); } });
     return () => { alive = false; };
   }, [canAccess]);
-
-  const companies = useMemo(
-    () => [...new Set(rows.map((r) => r.companyName ?? 'Unassigned'))].sort(), [rows]);
-  const unitsOf = (co: string) =>
-    [...new Set(rows.filter((r) => (r.companyName ?? 'Unassigned') === co).map((r) => r.unitName))].sort();
 
   const filtered = useMemo(() => {
     let out = rows;
@@ -113,23 +109,8 @@ export default function RegisterView() {
       </div>
 
       <div style={{ display: 'flex', gap: 12 }}>
-        {tree && (
-          <aside className="insp-tree">
-            <button className={!treeSel.company ? 'active' : ''}
-              onClick={() => { setTreeSel({}); setPage(1); }}>All companies</button>
-            {companies.map((co) => (
-              <div key={co}>
-                <button className={treeSel.company === co && !treeSel.unit ? 'active' : ''}
-                  onClick={() => { setTreeSel({ company: co }); setPage(1); }}>▸ {co}</button>
-                {treeSel.company === co && unitsOf(co).map((u) => (
-                  <button key={u} style={{ paddingLeft: 22 }}
-                    className={treeSel.unit === u ? 'active' : ''}
-                    onClick={() => { setTreeSel({ company: co, unit: u }); setPage(1); }}>{u}</button>
-                ))}
-              </div>
-            ))}
-          </aside>
-        )}
+        {tree && <UnitTree rows={rows} units={units} sel={treeSel}
+          onSelect={(s) => { setTreeSel(s); setPage(1); }} />}
 
         <div className="insp-table-wrap" style={{ flex: 1 }}>
           <table className="insp-table">

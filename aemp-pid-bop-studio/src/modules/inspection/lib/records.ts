@@ -71,16 +71,13 @@ export async function fetchCatalog() {
   };
 }
 
-/** Approver choices = privileged profiles; display name falls back gracefully. */
+/** Approver choices via SECURITY DEFINER RPC — works for non-privileged
+ *  submitters too (profiles RLS only exposes their own row). */
 export async function fetchApprovers(): Promise<{ id: string; name: string }[]> {
   const sb = need();
-  const { data, error } = await sb.from('profiles').select('*').in('role', ['admin', 'manager']);
+  const { data, error } = await sb.rpc('insp_approver_choices');
   if (error) throw new Error(error.message);
-  type P = Record<string, unknown>;
-  return (data ?? []).map((p: P) => ({
-    id: String(p.id ?? p.user_id),
-    name: String(p.full_name ?? p.display_name ?? p.name ?? p.email ?? p.id),
-  })).sort((a, b) => a.name.localeCompare(b.name));
+  return (data ?? []) as { id: string; name: string }[];
 }
 
 export async function fetchRecords(opts: {
@@ -108,17 +105,54 @@ export interface RecordDraft {
 
 export type ImportRow = RecordDraft;
 
+/** Maps the 0032 unique-index violation to the source system's wording. */
+function friendly(error: { code?: string; message: string }, draft?: Partial<RecordDraft>): Error {
+  if (error.code === '23505' && error.message.includes('insp_records_unit_serial_key')) {
+    return new Error(`A record with Serial Number "${draft?.serial_number ?? ''}" already exists for this Unit.`);
+  }
+  return new Error(error.message);
+}
+
 export async function insertRecord(draft: RecordDraft): Promise<string> {
   const sb = need();
   const { data, error } = await sb.from('insp_records').insert(draft).select('id').single();
-  if (error) throw new Error(error.message);
+  if (error) throw friendly(error, draft);
   return data.id;
 }
 
 export async function updateRecord(id: string, patch: Partial<RecordDraft>): Promise<void> {
   const sb = need();
   const { error } = await sb.from('insp_records').update(patch).eq('id', id);
+  if (error) throw friendly(error, patch);
+}
+
+export async function deleteRecord(id: string): Promise<void> {
+  const sb = need();
+  const { error } = await sb.from('insp_records').delete().eq('id', id);
   if (error) throw new Error(error.message);
+}
+
+export interface InspRecordLog {
+  id: number;
+  action: 'created' | 'updated' | 'deleted';
+  actor: string | null;
+  changes: Record<string, [unknown, unknown]>;
+  createdAt: string;
+}
+
+/** Field-level history for one record (0032 trigger), newest first. */
+export async function fetchRecordLogs(recordId: string): Promise<InspRecordLog[]> {
+  const sb = need();
+  const { data, error } = await sb.from('insp_record_logs')
+    .select('*').eq('record_id', recordId).order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => ({
+    id: r.id as number,
+    action: r.action as InspRecordLog['action'],
+    actor: (r.actor as string) ?? null,
+    changes: (r.changes as Record<string, [unknown, unknown]>) ?? {},
+    createdAt: String(r.created_at),
+  }));
 }
 
 export async function bulkUpdateDates(ids: string[], major: string | null, intermediate: string | null): Promise<number> {

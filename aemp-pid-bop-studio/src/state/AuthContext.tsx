@@ -53,9 +53,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (uid: string, fallbackName: string) => {
     if (!supabase) return;
     const myToken = raceGuard.start();
-    const { data, error } = await supabase.from('profiles').select('role, full_name, rig').eq('id', uid).single();
-    if (error) console.error('Failed to load profile:', error);
+    let { data, error } = await supabase.from('profiles')
+      .select('role, full_name, rig, active, access_expiry').eq('id', uid).single();
+    if (error) {
+      // Pre-0032 backends have no active/access_expiry columns — retry without them.
+      ({ data, error } = await supabase.from('profiles').select('role, full_name, rig').eq('id', uid).single());
+      if (error) console.error('Failed to load profile:', error);
+    }
     if (!raceGuard.isCurrent(myToken)) return; // superseded by a newer load or a sign-out — discard
+    // Account validity gate (0032): deactivated or expired accounts are signed
+    // out immediately, matching the source system's login-screen block.
+    const p = data as (typeof data & { active?: boolean; access_expiry?: string | null }) | null;
+    const expired = p?.access_expiry ? p.access_expiry < new Date().toISOString().slice(0, 10) : false;
+    if (p && (p.active === false || expired)) {
+      await supabase.auth.signOut();
+      alert(p.active === false
+        ? 'This account has been deactivated. Contact your administrator.'
+        : 'This account\'s access period has expired. Contact your administrator.');
+      return;
+    }
     setRole((data?.role as Role) ?? 'field');
     setFullName(data?.full_name || fallbackName);
     setRig(data?.rig ?? null);

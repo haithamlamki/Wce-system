@@ -12,6 +12,8 @@ import RecordsView from './views/RecordsView';
 import CatalogView from './views/CatalogView';
 import MetricsView from './views/MetricsView';
 import LibraryView from './views/LibraryView';
+import ApprovalsView from './views/ApprovalsView';
+import UsersView from './views/UsersView';
 
 export function EmptyState({ ico, title, desc }: { ico: string; title: string; desc: string }) {
   return (
@@ -42,6 +44,8 @@ function AccessGate() {
       <Route path="catalog" element={<CatalogView />} />
       <Route path="metrics" element={<MetricsView />} />
       <Route path="library" element={<LibraryView />} />
+      <Route path="approvals" element={<ApprovalsView />} />
+      <Route path="users" element={<UsersView />} />
       <Route path="*" element={<EmptyState ico="?" title="Not Found" desc="This Inspection page does not exist." />} />
     </Routes>
   );

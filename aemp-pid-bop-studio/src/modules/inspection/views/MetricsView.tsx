@@ -7,6 +7,7 @@ import { Chart, registerables } from 'chart.js';
 import { useInspection } from '../state/InspectionContext';
 import { fetchRecords } from '../lib/records';
 import { complianceStatus, daysUntil, recordCompliance } from '../lib/compliance';
+import { urgencyOf } from '../lib/logsFormat';
 import { CATEGORY_LABELS, WORKING_STATUS_LABELS, type InspectionRecord } from '../types';
 import { EmptyState } from '../InspectionModule';
 
@@ -130,10 +131,21 @@ export default function MetricsView() {
       </div>
 
       <div className="insp-kpis">
-        <div className="insp-kpi"><div className="num">{kpis.total}</div><div className="lbl">Total Inspections</div></div>
-        <div className="insp-kpi"><div className="num" style={{ color: 'var(--green)' }}>{kpis.approved}</div><div className="lbl">Approved</div></div>
-        <div className="insp-kpi"><div className="num" style={{ color: '#b70' }}>{kpis.pending}</div><div className="lbl">Pending Approval</div></div>
-        <div className="insp-kpi"><div className="num" style={{ color: '#d33' }}>{kpis.overdue}</div><div className="lbl">Overdue Inspections</div></div>
+        {([
+          ['Total Inspections', kpis.total, 'var(--accent)'],
+          ['Approved', kpis.approved, 'var(--green)'],
+          ['Pending Approval', kpis.pending, '#b70'],
+          ['Overdue Inspections', kpis.overdue, '#d33'],
+        ] as [string, number, string][]).map(([lbl, num, color]) => (
+          <div className="insp-kpi" key={lbl}>
+            <div className="num" style={{ color }}>{num}</div>
+            <div className="lbl">{lbl}</div>
+            <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: 'var(--sunk)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', borderRadius: 999, background: color,
+                width: `${kpis.total ? Math.round((num / kpis.total) * 100) : 0}%` }} />
+            </div>
+          </div>
+        ))}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 12 }}>
@@ -158,7 +170,11 @@ export default function MetricsView() {
                 <tr key={`${u.r.id}-${u.type}-${i}`}>
                   <td>{u.r.serialNumber || '—'}</td><td>{u.r.typeName}</td><td>{u.r.unitName}</td>
                   <td>{u.type}</td><td>{u.due}</td>
-                  <td style={{ color: u.days < 0 ? '#d33' : 'inherit', fontWeight: 700 }}>{u.days} days</td>
+                  <td>
+                    <span className={`insp-rag ${{ red: 'overdue', amber: 'due_soon', green: 'compliant' }[urgencyOf(u.days)]}`}>
+                      {u.days} days
+                    </span>
+                  </td>
                 </tr>
               ))}
               {upcoming.length === 0 && (

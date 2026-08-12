@@ -5,24 +5,38 @@
 // ============================================================================
 import { useMemo, useState } from 'react';
 import { useInspection } from '../state/InspectionContext';
-import { insertRecord, type RecordDraft } from '../lib/records';
+import { insertRecord, updateRecord, type RecordDraft } from '../lib/records';
 import { computeDueDate } from '../lib/compliance';
 import { INTERMEDIATE_FREQUENCIES, MAJOR_FREQUENCIES, WORKING_STATUS_LABELS,
-  frequencyLabel, type InspCategory, type WorkingStatus } from '../types';
+  frequencyLabel, type InspCategory, type InspectionRecord, type WorkingStatus } from '../types';
 
-export default function DataEntryForm({ category, onSaved }: {
-  category: InspCategory; onSaved: () => void;
+export default function DataEntryForm({ category, onSaved, editing = null }: {
+  category: InspCategory; onSaved: () => void; editing?: InspectionRecord | null;
 }) {
   const { types, parts, components, units, companies, approvers } = useInspection();
   const catTypes = useMemo(() => types.filter((t) => t.category === category), [types, category]);
 
   const [f, setF] = useState({
-    approverId: '', typeId: '', partId: '', componentId: '', componentDescription: '',
-    unitId: '', companyId: '', oem: '', inspectionCompany: '', serialNumber: '',
-    partNumber: '', workingStatus: 'in_use' as WorkingStatus, manufactureYear: '',
-    intermediateDate: '', intermediateFreq: '', majorDate: '', majorFreq: '', remarks: '',
+    approverId: editing?.approverId ?? '',
+    typeId: editing?.typeId ?? '',
+    partId: editing?.partId ?? '',
+    componentId: editing?.componentId ?? '',
+    componentDescription: editing?.componentDescription ?? '',
+    unitId: editing?.unitId ?? '',
+    companyId: editing?.companyId ?? '',
+    oem: editing?.oem ?? '',
+    inspectionCompany: editing?.inspectionCompany ?? '',
+    serialNumber: editing?.serialNumber ?? '',
+    partNumber: editing?.partNumber ?? '',
+    workingStatus: (editing?.workingStatus ?? 'in_use') as WorkingStatus,
+    manufactureYear: editing?.manufactureYear?.toString() ?? '',
+    intermediateDate: editing?.intermediateDate ?? '',
+    intermediateFreq: editing?.intermediateFreqMonths?.toString() ?? '',
+    majorDate: editing?.majorDate ?? '',
+    majorFreq: editing?.majorFreqMonths?.toString() ?? '',
+    remarks: editing?.remarks ?? '',
   });
-  const [specs, setSpecs] = useState<Record<string, string>>({});
+  const [specs, setSpecs] = useState<Record<string, string>>(editing?.specs ?? {});
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) =>
     setF((s) => ({ ...s, [k]: e.target.value }));
@@ -51,8 +65,13 @@ export default function DataEntryForm({ category, onSaved }: {
     };
     setBusy(true);
     try {
-      await insertRecord(draft);
-      alert('Record saved (Pending Approval).');
+      if (editing) {
+        await updateRecord(editing.id, draft);
+        alert('Record updated.');
+      } else {
+        await insertRecord(draft);
+        alert('Record saved (Pending Approval).');
+      }
       onSaved();
     } catch (e) { alert((e as Error).message); }
     finally { setBusy(false); }
@@ -60,7 +79,7 @@ export default function DataEntryForm({ category, onSaved }: {
 
   return (
     <div className="insp-card">
-      <h3 style={{ marginTop: 0 }}>New Inspection Record</h3>
+      <h3 style={{ marginTop: 0 }}>{editing ? 'Edit Record' : 'New Inspection Record'}</h3>
       <div style={{ color: 'var(--dim)', fontSize: 12, marginBottom: 12 }}>
         Fill in the fields below and choose an approver, then save.
       </div>
@@ -134,7 +153,9 @@ export default function DataEntryForm({ category, onSaved }: {
           <textarea rows={2} value={f.remarks} onChange={set('remarks')} /></div>
       </div>
       <div className="insp-toolbar" style={{ marginTop: 14 }}>
-        <button className="insp-btn primary" disabled={busy} onClick={save}>💾 Save Record</button>
+        <button className="insp-btn primary" disabled={busy} onClick={save}>
+          {editing ? '💾 Save Changes' : '💾 Save Record'}
+        </button>
       </div>
     </div>
   );

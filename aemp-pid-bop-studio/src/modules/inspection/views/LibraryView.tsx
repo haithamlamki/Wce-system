@@ -4,7 +4,7 @@
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
 import { useInspection } from '../state/InspectionContext';
-import { deleteLibraryFile, libraryUrl, listLibrary, uploadLibraryFile,
+import { createLibraryFolder, deleteLibraryFile, libraryUrl, listLibrary, uploadLibraryFile,
   type LibraryEntry } from '../lib/library';
 import { EmptyState } from '../InspectionModule';
 
@@ -36,6 +36,16 @@ export default function LibraryView() {
       <div className="insp-toolbar">
         <h2 style={{ margin: 0, fontSize: 18 }}>Library</h2>
         <div style={{ flex: 1 }} />
+        {editable && (
+          <button className="insp-btn" disabled={busy} onClick={async () => {
+            const name = prompt('New folder name');
+            if (!name?.trim()) return;
+            setBusy(true);
+            try { await createLibraryFolder(prefix, name); reload(); }
+            catch (e) { alert((e as Error).message); }
+            finally { setBusy(false); }
+          }}>🗀 New Folder</button>
+        )}
         {editable && (
           <label className="insp-btn primary" style={{ cursor: 'pointer' }}>
             ⇪ Upload file
@@ -83,6 +93,12 @@ export default function LibraryView() {
                 try { window.open(await libraryUrl(path), '_blank'); }
                 catch (e) { alert((e as Error).message); }
               }}>👁 Preview</button>
+              <button className="insp-btn" title="Download" onClick={async () => {
+                try {
+                  const a = document.createElement('a');
+                  a.href = await libraryUrl(path); a.download = f.name; a.click();
+                } catch (e) { alert((e as Error).message); }
+              }}>⭳</button>
               {editable && (
                 <button className="insp-btn" onClick={() => {
                   if (confirm(`Delete ${f.name}?`)) deleteLibraryFile(path).then(reload).catch((e) => alert((e as Error).message));
