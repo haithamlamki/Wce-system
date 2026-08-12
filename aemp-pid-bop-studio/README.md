@@ -19,6 +19,14 @@ npm run typecheck  # tsc --noEmit
 npm run build      # production bundle
 ```
 
+## Modules
+
+### Equipment Inspection (`/inspection`)
+Replica of Abraj Equipment Master Pro (einspection) as a native module: inspection
+register with computed RAG compliance, per-system records with Excel upload + entry,
+equipment-components catalog, metrics dashboard, per-record certificates with expiry
+alerts, and a document library. DB objects are prefixed `insp_*` (migrations 0029–0031).
+
 ## Backend (Supabase)
 
 Cloud persistence + the AEMP-equivalent equipment register run on Supabase
