@@ -9,6 +9,7 @@ import InspectionTopbar from './components/shell/InspectionTopbar';
 import InspectionTabNav from './components/shell/InspectionTabNav';
 import RegisterView from './views/RegisterView';
 import RecordsView from './views/RecordsView';
+import CatalogView from './views/CatalogView';
 
 export function EmptyState({ ico, title, desc }: { ico: string; title: string; desc: string }) {
   return (
@@ -36,7 +37,7 @@ function AccessGate() {
     <Routes>
       <Route index element={<RegisterView />} />
       <Route path="records" element={<RecordsView />} />
-      <Route path="catalog" element={<EmptyState ico="⚙" title="Equipment Components" desc="Lands in Task 12." />} />
+      <Route path="catalog" element={<CatalogView />} />
       <Route path="metrics" element={<EmptyState ico="📈" title="Inspection Metrics" desc="Lands in Task 13." />} />
       <Route path="library" element={<EmptyState ico="🗀" title="Library" desc="Lands in Task 16." />} />
       <Route path="*" element={<EmptyState ico="?" title="Not Found" desc="This Inspection page does not exist." />} />
