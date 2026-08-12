@@ -5,9 +5,9 @@
 import { useState } from 'react';
 import { CATEGORY_LABELS, CATEGORY_ORDER, type InspCategory } from '../types';
 import { useInspection } from '../state/InspectionContext';
-import { EmptyState } from '../InspectionModule';
 import DataDisplayTab from './DataDisplayTab';
 import DataEntryForm from './DataEntryForm';
+import DataUploadView from './DataUploadView';
 
 type SubTab = 'display' | 'upload' | 'entry';
 
@@ -41,7 +41,7 @@ export default function RecordsView() {
       </div>
 
       {sub === 'display' && <DataDisplayTab category={category} />}
-      {sub === 'upload' && <EmptyState ico="⇪" title="Data Upload" desc="Lands in Task 11." />}
+      {sub === 'upload' && <DataUploadView category={category} onDone={() => setSub('display')} />}
       {sub === 'entry' && <DataEntryForm category={category} onSaved={() => setSub('display')} />}
     </div>
   );
