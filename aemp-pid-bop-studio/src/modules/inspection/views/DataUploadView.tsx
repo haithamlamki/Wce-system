@@ -3,18 +3,23 @@
 //  validate client-side (workbookImport) then bulk-insert via RPC.
 // ============================================================================
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { useInspection } from '../state/InspectionContext';
 import { buildTemplateWorkbook } from '../lib/template';
 import { parseWorkbook } from '../lib/workbookImport';
 import { importReferenceExport, isReferenceExport } from '../lib/referenceImport';
 import { importRecords } from '../lib/records';
-import { CATEGORY_LABELS, type InspCategory } from '../types';
+import { PageHeader } from '../components/ui';
+import { CATEGORY_LABELS, CATEGORY_ORDER, type InspCategory } from '../types';
 
-export default function DataUploadView({ category, onDone }: {
-  category: InspCategory; onDone: () => void;
-}) {
+export default function DataUploadView() {
   const { types, parts, components, units, companies, approvers, refreshCatalog } = useInspection();
+  const navigate = useNavigate();
+  const onDone = () => navigate('/inspection/records');
+  // The template is per-category; a full reference export is detected and
+  // imported across every category regardless of this choice.
+  const [category, setCategory] = useState<InspCategory>('well_control');
   const [approverId, setApproverId] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -56,34 +61,71 @@ export default function DataUploadView({ category, onDone }: {
   };
 
   return (
-    <div className="insp-card">
-      <div className="insp-toolbar" style={{ background: 'color-mix(in srgb, var(--green) 8%, transparent)', borderRadius: 8, padding: 10 }}>
-        <span style={{ fontSize: 12.5 }}>
-          ⓘ Not sure of the format? Download the sample template for {CATEGORY_LABELS[category]}, fill it in, then upload it here.
-        </span>
-        <div style={{ flex: 1 }} />
-        <button className="insp-btn" onClick={downloadTemplate}>⭳ Download Template</button>
-      </div>
-      <div className="insp-form-grid" style={{ marginTop: 12 }}>
-        <div className="insp-field"><label>Approve User *</label>
-          <select value={approverId} onChange={(e) => setApproverId(e.target.value)}>
-            <option value="">Select approver…</option>
-            {approvers.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select></div>
-        <div className="insp-field"><label>Select file to upload</label>
-          <input type="file" accept=".xlsx,.xls"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></div>
-      </div>
-      <div className="insp-toolbar" style={{ marginTop: 12 }}>
-        <button className="insp-btn primary" disabled={busy} onClick={upload}>⇪ Upload</button>
-        {status && <span data-testid="upload-status" style={{ fontSize: 12.5, color: 'var(--green)' }}>{status}</span>}
-      </div>
-      {errors.length > 0 && (
-        <div style={{ marginTop: 12, color: '#d33', fontSize: 12.5 }}>
-          <b>Fix these and re-upload (nothing was imported):</b>
-          <ul>{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+    <>
+      <PageHeader
+        title="Upload records"
+        subtitle="Bulk-import inspection records from a workbook."
+        actions={(
+          <button type="button" className="insp-btn"
+            onClick={() => navigate('/inspection/records')}>Back</button>
+        )}
+      />
+      <div className="insp-card">
+        <div className="insp-toolbar">
+          <span style={{ fontSize: 12.5 }}>
+            Not sure of the format? Download the sample template for {CATEGORY_LABELS[category]},
+            fill it in, then upload it here.
+          </span>
+          <div className="grow">
+            <button type="button" className="insp-btn" onClick={downloadTemplate}>
+              Download Template
+            </button>
+          </div>
         </div>
-      )}
-    </div>
+
+        <div className="insp-form-grid" style={{ marginTop: 12 }}>
+          <div className="insp-field">
+            <label htmlFor="up-category">Category</label>
+            <select id="up-category" className="insp-select" value={category}
+              onChange={(e) => setCategory(e.target.value as InspCategory)}>
+              {CATEGORY_ORDER.map((c) => (
+                <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
+          </div>
+          <div className="insp-field">
+            <label htmlFor="up-approver">Approve User<span className="req"> *</span></label>
+            <select id="up-approver" className="insp-select" value={approverId}
+              onChange={(e) => setApproverId(e.target.value)}>
+              <option value="">Select an approver…</option>
+              {approvers.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <div className="insp-field">
+            <label htmlFor="up-file">Select file to upload</label>
+            <input id="up-file" className="insp-input" type="file" accept=".xlsx,.xls"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </div>
+        </div>
+
+        <div className="insp-toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
+          <button type="button" className="insp-btn primary" disabled={busy} onClick={upload}>
+            Upload
+          </button>
+          {status && (
+            <span data-testid="upload-status" style={{ fontSize: 12.5, color: 'var(--i-success)' }}>
+              {status}
+            </span>
+          )}
+        </div>
+
+        {errors.length > 0 && (
+          <div style={{ marginTop: 12, color: 'var(--i-danger)', fontSize: 12.5 }} role="alert">
+            <b>Fix these and re-upload (nothing was imported):</b>
+            <ul>{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

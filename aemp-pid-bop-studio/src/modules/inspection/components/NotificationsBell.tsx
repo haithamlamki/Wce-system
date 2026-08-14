@@ -4,9 +4,11 @@
 // ============================================================================
 import { useEffect, useRef, useState } from 'react';
 import { buildAlerts, type AlertItem } from '../lib/compliance';
-import { fetchRecords } from '../lib/records';
+import { DASHBOARD_COLUMNS, fetchRecords } from '../lib/records';
 import { listExpiringFiles } from '../lib/files';
 import { useInspection } from '../state/InspectionContext';
+import { formatDate } from '../lib/format';
+import Icon from './Icon';
 
 const REFRESH_MS = 5 * 60_000;
 
@@ -22,7 +24,11 @@ export default function NotificationsBell() {
     const load = async () => {
       try {
         const today = new Date().toISOString().slice(0, 10);
-        const [records, files] = await Promise.all([fetchRecords(), listExpiringFiles()]);
+        // Narrow column set: the bell refreshes on an interval and only needs
+        // serial + due dates, not the jsonb specs payload.
+        const [records, files] = await Promise.all([
+          fetchRecords({ columns: DASHBOARD_COLUMNS }), listExpiringFiles(),
+        ]);
         if (alive) setAlerts(buildAlerts(records, files, today));
       } catch { /* bell is best-effort; views surface real errors */ }
     };
@@ -43,11 +49,14 @@ export default function NotificationsBell() {
   const overdue = alerts.filter((a) => a.severity === 'overdue').length;
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative' }}>
-      <button className="insp-bell" onClick={() => setOpen((v) => !v)}
-        title="Compliance alerts" aria-label={`${alerts.length} compliance alerts`}>
-        🔔
-        {alerts.length > 0 && <span className="badge">{alerts.length > 99 ? '99+' : alerts.length}</span>}
+    <div ref={wrapRef} className="insp-rel">
+      <button type="button" className="insp-iconbtn" onClick={() => setOpen((v) => !v)}
+        title="Compliance alerts" aria-label={`${alerts.length} compliance alerts`}
+        aria-expanded={open}>
+        <Icon name="bell" />
+        {alerts.length > 0 && (
+          <span className="insp-badge-dot">{alerts.length > 99 ? '99+' : alerts.length}</span>
+        )}
       </button>
       {open && (
         <div className="insp-bell-panel">
@@ -56,12 +65,12 @@ export default function NotificationsBell() {
           </div>
           {alerts.slice(0, 60).map((a) => (
             <div className="item" key={a.id}>
-              <span className={`insp-rag ${a.severity}`}>
+              <span className={`insp-badge ${a.severity === 'overdue' ? 'danger' : 'warning'}`}>
                 {a.severity === 'overdue' ? 'Overdue' : 'Due Soon'}
               </span>{' '}
               {a.label}
-              <div style={{ color: 'var(--dim)', fontSize: 11 }}>
-                {a.kind === 'certificate' ? 'Expires' : 'Due'} {a.dueDate} ({a.daysUntil} days)
+              <div style={{ color: 'var(--i-muted)', fontSize: 11 }}>
+                {a.kind === 'certificate' ? 'Expires' : 'Due'} {formatDate(a.dueDate)} ({a.daysUntil} days)
               </div>
             </div>
           ))}

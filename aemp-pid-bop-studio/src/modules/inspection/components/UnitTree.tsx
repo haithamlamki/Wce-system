@@ -40,7 +40,7 @@ export default function UnitTree({ rows, units, sel, onSelect }: {
             onClick={() => onSelect({ company: co })}>▸ {co}</button>
           {sel.company === co && groupsOf(co).map(([kind, names]) => (
             <div key={kind}>
-              <div style={{ padding: '3px 7px 1px 16px', fontSize: 10.5, color: 'var(--dim)',
+              <div style={{ padding: '3px 7px 1px 16px', fontSize: 10.5, color: 'var(--i-muted)',
                 textTransform: 'uppercase', letterSpacing: '.05em' }}>{kind}</div>
               {names.map((u) => (
                 <button key={u} style={{ paddingLeft: 28 }}

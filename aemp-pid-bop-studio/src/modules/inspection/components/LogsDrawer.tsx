@@ -34,8 +34,8 @@ export default function LogsDrawer({ record, onClose }: {
       </div>
 
       {err && <div style={{ color: '#d33', fontSize: 12 }}>{err}</div>}
-      {logs === null && !err && <div style={{ color: 'var(--dim)', fontSize: 12.5 }}>Loading history…</div>}
-      {logs?.length === 0 && <div style={{ color: 'var(--dim)', fontSize: 12.5 }}>No changes recorded yet.</div>}
+      {logs === null && !err && <div style={{ color: 'var(--i-muted)', fontSize: 12.5 }}>Loading history…</div>}
+      {logs?.length === 0 && <div style={{ color: 'var(--i-muted)', fontSize: 12.5 }}>No changes recorded yet.</div>}
 
       {logs?.map((l) => (
         <div key={l.id} className="insp-card" style={{ marginBottom: 8, padding: 10 }}>
@@ -44,7 +44,7 @@ export default function LogsDrawer({ record, onClose }: {
               {ACTION_LABELS[l.action]}
             </span>
             <b>{nameOf(l.actor)}</b>
-            <span style={{ color: 'var(--dim)', fontSize: 11.5 }}>
+            <span style={{ color: 'var(--i-muted)', fontSize: 11.5 }}>
               {new Date(l.createdAt).toLocaleString()}
             </span>
             <div style={{ flex: 1 }} />
@@ -56,9 +56,9 @@ export default function LogsDrawer({ record, onClose }: {
           {openId === l.id && (
             <div style={{ marginTop: 8, fontSize: 12 }}>
               {formatChanges(l.changes).map((c) => (
-                <div key={c.field} style={{ padding: '3px 0', borderBottom: '1px solid var(--line2)' }}>
-                  <span style={{ color: 'var(--dim)' }}>{c.field}:</span>{' '}
-                  {c.from} <span style={{ color: 'var(--accent)' }}>→</span> <b>{c.to}</b>
+                <div key={c.field} style={{ padding: '3px 0', borderBottom: '1px solid var(--i-border)' }}>
+                  <span style={{ color: 'var(--i-muted)' }}>{c.field}:</span>{' '}
+                  {c.from} <span style={{ color: 'var(--i-brand)' }}>→</span> <b>{c.to}</b>
                 </div>
               ))}
             </div>

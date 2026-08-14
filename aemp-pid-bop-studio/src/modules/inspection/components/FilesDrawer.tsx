@@ -83,7 +83,7 @@ export default function FilesDrawer({ record, onClose }: {
             <span style={{ fontSize: 16 }}>📄</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.fileName}</div>
-              <div style={{ fontSize: 11, color: 'var(--dim)' }}>
+              <div style={{ fontSize: 11, color: 'var(--i-muted)' }}>
                 {FILE_KIND_LABELS[f.kind]} · {fmtSize(f.fileSize)}
                 {f.expiryDate && <> · expires {f.expiryDate}</>}
               </div>
@@ -99,7 +99,7 @@ export default function FilesDrawer({ record, onClose }: {
             )}
           </div>
         ))}
-        {files.length === 0 && <div style={{ color: 'var(--dim)', fontSize: 12.5, textAlign: 'center', padding: 16 }}>No files yet.</div>}
+        {files.length === 0 && <div style={{ color: 'var(--i-muted)', fontSize: 12.5, textAlign: 'center', padding: 16 }}>No files yet.</div>}
       </div>
     </div>
   );

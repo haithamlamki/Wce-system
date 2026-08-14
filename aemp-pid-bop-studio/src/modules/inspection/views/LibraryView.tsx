@@ -1,15 +1,28 @@
 // ============================================================================
-//  Library — file explorer (folders via prefixes) with preview/download,
-//  plus upload/delete for insp_manage_files holders.
+//  Library — replicates the reference `/library` page: a two-pane explorer with
+//  a "Library" folder tree beside a "Files" list showing name, size and date.
+//  Upload / new folder / delete stay gated on insp_manage_files, and files are
+//  always opened through a signed URL.
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
 import { useInspection } from '../state/InspectionContext';
-import { createLibraryFolder, deleteLibraryFile, libraryUrl, listLibrary, uploadLibraryFile,
-  type LibraryEntry } from '../lib/library';
-import { EmptyState } from '../InspectionModule';
+import {
+  createLibraryFolder, deleteLibraryFile, libraryUrl, listLibrary, uploadLibraryFile,
+} from '../lib/library';
+import type { LibraryEntry } from '../lib/library';
+import { formatBytes } from '../lib/format';
+import { Card, EmptyState, LoadingState, PageHeader } from '../components/ui';
+import Icon from '../components/Icon';
 
-function fmtSize(b: number): string {
-  return b > 1_048_576 ? `${(b / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** The Library pane dates read `Aug 13, 2026` in the reference. */
+function fileDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return '—';
+  return `${MONTHS[m - 1]} ${d}, ${y}`;
 }
 
 export default function LibraryView() {
@@ -17,11 +30,16 @@ export default function LibraryView() {
   const editable = can('insp_manage_files');
   const [prefix, setPrefix] = useState('');
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const reload = useCallback(() => {
-    listLibrary(prefix).then(setEntries).catch((e) => setErr((e as Error).message));
+    setLoading(true);
+    listLibrary(prefix)
+      .then((e) => { setEntries(e); setErr(null); })
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setLoading(false));
   }, [prefix]);
   useEffect(reload, [reload]);
 
@@ -29,90 +47,133 @@ export default function LibraryView() {
   const files = entries.filter((e) => !e.isFolder);
   const folders = entries.filter((e) => e.isFolder);
 
-  if (err) return <EmptyState ico="⚠" title="Error" desc={err} />;
+  const open = async (path: string, download?: string) => {
+    try {
+      const url = await libraryUrl(path);
+      if (download) {
+        const a = document.createElement('a');
+        a.href = url; a.download = download; a.click();
+      } else {
+        window.open(url, '_blank', 'noopener');
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
 
   return (
-    <div>
-      <div className="insp-toolbar">
-        <h2 style={{ margin: 0, fontSize: 18 }}>Library</h2>
-        <div style={{ flex: 1 }} />
-        {editable && (
-          <button className="insp-btn" disabled={busy} onClick={async () => {
-            const name = prompt('New folder name');
-            if (!name?.trim()) return;
-            setBusy(true);
-            try { await createLibraryFolder(prefix, name); reload(); }
-            catch (e) { alert((e as Error).message); }
-            finally { setBusy(false); }
-          }}>🗀 New Folder</button>
-        )}
-        {editable && (
-          <label className="insp-btn primary" style={{ cursor: 'pointer' }}>
-            ⇪ Upload file
-            <input type="file" style={{ display: 'none' }} disabled={busy}
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                setBusy(true);
-                try { await uploadLibraryFile(prefix, f); reload(); }
-                catch (ex) { alert((ex as Error).message); }
-                finally { setBusy(false); }
-              }} />
-          </label>
-        )}
-      </div>
+    <>
+      <PageHeader
+        title="Library"
+        subtitle="Browse, upload and manage shared documents."
+        actions={editable ? (
+          <>
+            <button type="button" className="insp-btn" disabled={busy} onClick={async () => {
+              const name = window.prompt('New folder name');
+              if (!name?.trim()) return;
+              setBusy(true);
+              try { await createLibraryFolder(prefix, name); reload(); }
+              catch (e) { setErr((e as Error).message); }
+              finally { setBusy(false); }
+            }}>
+              <Icon name="library" /> New folder
+            </button>
+            <label className="insp-btn primary" style={{ cursor: 'pointer' }}>
+              <Icon name="upload" /> Upload file
+              <input type="file" style={{ display: 'none' }} disabled={busy}
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  setBusy(true);
+                  try { await uploadLibraryFile(prefix, f); reload(); }
+                  catch (ex) { setErr((ex as Error).message); }
+                  finally { setBusy(false); }
+                }} />
+            </label>
+          </>
+        ) : undefined}
+      />
 
-      <div className="insp-card">
-        <div style={{ fontSize: 12.5, marginBottom: 10 }}>
-          <button className="insp-btn" style={{ padding: '2px 8px' }} onClick={() => setPrefix('')}>🗀 Library</button>
-          {crumbs.map((c, i) => (
-            <span key={i}> / <button className="insp-btn" style={{ padding: '2px 8px' }}
-              onClick={() => setPrefix(crumbs.slice(0, i + 1).join('/'))}>{c}</button></span>
-          ))}
+      {err && (
+        <div className="insp-card" style={{ marginBottom: 12, fontSize: 12.5, color: 'var(--i-danger)' }} role="alert">
+          {err}
         </div>
+      )}
 
-        {folders.map((f) => (
-          <div key={f.name} className="insp-card" style={{ marginBottom: 6, padding: 9, display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: 16 }}>📁</span>
-            <button style={{ border: 0, background: 'none', color: 'var(--accent)', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}
-              onClick={() => setPrefix(prefix ? `${prefix}/${f.name}` : f.name)}>{f.name}</button>
+      <div className="insp-split">
+        <Card title="Library">
+          <div className="insp-tree">
+            <button type="button" className={prefix === '' ? 'active' : ''}
+              onClick={() => setPrefix('')}>
+              <Icon name="library" /> Library
+            </button>
+            {crumbs.map((c, i) => (
+              <button key={crumbs.slice(0, i + 1).join('/')} type="button"
+                className={i === crumbs.length - 1 ? 'active' : ''}
+                style={{ paddingLeft: 12 + (i + 1) * 12 }}
+                onClick={() => setPrefix(crumbs.slice(0, i + 1).join('/'))}>
+                <Icon name="library" /> {c}
+              </button>
+            ))}
+            {folders.map((f) => (
+              <button key={f.name} type="button"
+                style={{ paddingLeft: 12 + (crumbs.length + 1) * 12 }}
+                onClick={() => setPrefix(prefix ? `${prefix}/${f.name}` : f.name)}>
+                <Icon name="library" /> {f.name}
+              </button>
+            ))}
           </div>
-        ))}
+        </Card>
 
-        <div style={{ fontSize: 11, color: 'var(--dim)', margin: '8px 0 4px' }}>FILES ({files.length})</div>
-        {files.map((f) => {
-          const path = prefix ? `${prefix}/${f.name}` : f.name;
-          return (
-            <div key={f.name} className="insp-card" style={{ marginBottom: 6, padding: 9, display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 16 }}>📄</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{f.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--dim)' }}>{fmtSize(f.size)} · {f.updatedAt}</div>
-              </div>
-              <button className="insp-btn" onClick={async () => {
-                try { window.open(await libraryUrl(path), '_blank'); }
-                catch (e) { alert((e as Error).message); }
-              }}>👁 Preview</button>
-              <button className="insp-btn" title="Download" onClick={async () => {
-                try {
-                  const a = document.createElement('a');
-                  a.href = await libraryUrl(path); a.download = f.name; a.click();
-                } catch (e) { alert((e as Error).message); }
-              }}>⭳</button>
-              {editable && (
-                <button className="insp-btn" onClick={() => {
-                  if (confirm(`Delete ${f.name}?`)) deleteLibraryFile(path).then(reload).catch((e) => alert((e as Error).message));
-                }}>🗑</button>
-              )}
+        <Card title="Files">
+          {loading && <LoadingState label="Loading files…" />}
+          {!loading && files.length === 0 && (
+            <EmptyState
+              ico="🗀" title="This folder is empty"
+              desc={editable
+                ? 'Upload the user guide and inspection manuals here.'
+                : 'No documents have been published to this folder.'}
+            />
+          )}
+          {!loading && files.length > 0 && (
+            <div className="insp-table-wrap" style={{ border: 0 }}>
+              <table className="insp-table">
+                <tbody>
+                  {files.map((f) => {
+                    const path = prefix ? `${prefix}/${f.name}` : f.name;
+                    return (
+                      <tr key={f.name}>
+                        <td style={{ width: 28 }}><Icon name="documents" /></td>
+                        <td style={{ width: '100%' }}>{f.name}</td>
+                        <td className="num">{formatBytes(f.size)}</td>
+                        <td>{fileDate(f.updatedAt)}</td>
+                        <td>
+                          <div className="rowacts">
+                            <button type="button" className="insp-btn sm"
+                              onClick={() => open(path)}>Preview</button>
+                            <button type="button" className="insp-iconbtn sm" title="Download"
+                              aria-label={`Download ${f.name}`}
+                              onClick={() => open(path, f.name)}><Icon name="download" /></button>
+                            {editable && (
+                              <button type="button" className="insp-iconbtn sm danger" title="Delete"
+                                aria-label={`Delete ${f.name}`}
+                                onClick={() => {
+                                  if (!window.confirm(`Delete ${f.name}?`)) return;
+                                  deleteLibraryFile(path).then(reload)
+                                    .catch((e) => setErr((e as Error).message));
+                                }}><Icon name="delete" /></button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          );
-        })}
-        {files.length === 0 && folders.length === 0 && (
-          <div style={{ color: 'var(--dim)', fontSize: 12.5, textAlign: 'center', padding: 24 }}>
-            This folder is empty{editable ? ' — upload the user guide and inspection manuals here.' : '.'}
-          </div>
-        )}
+          )}
+        </Card>
       </div>
-    </div>
+    </>
   );
 }

@@ -77,6 +77,8 @@ export interface InspectionRecord {
   category: InspCategory; typeName: string; specFields: string[];
   partName: string | null; componentName: string | null;
   unitName: string; companyName: string | null;
+  /** Audit columns carried by insp_records_expanded (`select r.*`). */
+  createdAt?: string | null; createdBy?: string | null;
 }
 
 export type FileKind =
