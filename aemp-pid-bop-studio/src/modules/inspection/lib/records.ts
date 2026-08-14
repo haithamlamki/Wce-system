@@ -42,6 +42,8 @@ export function mapRow(row: Record<string, unknown>): InspectionRecord {
     unitName: s('unit_name'), companyName: (row.company_name as string) ?? null,
     createdAt: (row.created_at as string) ?? null,
     createdBy: (row.created_by as string) ?? null,
+    approvedAt: (row.approved_at as string) ?? null,
+    approvedBy: (row.approved_by as string) ?? null,
   };
 }
 
@@ -92,7 +94,8 @@ export const DASHBOARD_COLUMNS = [
   'serial_number', 'oem', 'working_status', 'manufacture_year',
   'intermediate_date', 'intermediate_freq_months', 'intermediate_due_date',
   'major_date', 'major_freq_months', 'major_due_date',
-  'approve_status', 'approver_id', 'created_at', 'created_by',
+  'approve_status', 'approver_id', 'approved_at', 'approved_by',
+  'created_at', 'created_by',
 ].join(',');
 
 export async function fetchRecords(opts: {
