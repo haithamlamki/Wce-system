@@ -200,8 +200,16 @@ describe('buildRecordPatch — the write surface', () => {
   });
 
   it('writes nothing the user did not tick', () => {
-    const patch = buildRecordPatch(cert, new Set<CertField>(['oem']), 'major');
-    expect(Object.keys(patch)).toEqual(['oem']);
+    // Ticks one field and expects exactly that field. Uses the serial rather
+    // than the OEM: this template prints no manufacturer, and the value that
+    // used to appear here was the items table's column header ("Make" →
+    // "Size Result") being read as a manufacturer.
+    const patch = buildRecordPatch(cert, new Set<CertField>(['serialNumber']), 'major');
+    expect(Object.keys(patch)).toEqual(['serial_number']);
+  });
+
+  it('offers no manufacturer for a template that does not print one', () => {
+    expect(valueOf(cert, 'oem')).toBeNull();
   });
 
   it('produces an empty patch when nothing is selected', () => {
