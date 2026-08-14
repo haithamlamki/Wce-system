@@ -330,6 +330,51 @@ Remarks, with band colspans **7 / 2 / 1 / 1**.
 - **Icons**: every sidebar, toolbar, topbar and row-action glyph is the Lucide icon the
   reference uses; zero unicode icon spans remain.
 
+## 8e. Certificate PDF extraction — **enhancement beyond reference parity**
+
+> **This is not a reference feature.** The reference application has no equivalent, and
+> nothing here was copied from it. It is an addition requested separately, recorded in this
+> document only because it lives inside the same module. It is deliberately excluded from
+> every parity claim above.
+
+Uploading (or opening) a certificate PDF on a record offers to read its fields and prefill
+the record.
+
+**How it works**
+- Text is extracted **in the browser** with pdf.js. The file is never sent anywhere to be read.
+- **No AI service and no API key** are involved for PDFs that carry a text layer — extraction
+  is label-based, deterministic and auditable.
+- pdf.js is **lazy-loaded** as its own build chunk (~1.26 MB) and is fetched only when someone
+  actually reads a certificate, so normal page loads are unaffected.
+
+**What the reviewer sees** — for every field: the extracted value, a confidence level, the
+record's current value for comparison, and the **exact source line** the value was read from.
+
+**Safety invariants** (all enforced in code, and unit-tested in `certificateExtract.test.ts`)
+- Nothing is written until the user ticks fields and presses **Apply**; there is no silent save.
+- Applying requires the **`insp_data_entry`** permission; without it the controls are disabled
+  and the RLS policy rejects the write regardless.
+- **Approval status is never touched** — extraction cannot move a record through, or around,
+  the approval queue.
+- **Due dates are never written.** The certificate's stated expiry is shown for validation
+  only; the trigger from migration **0030** remains the sole authority for calculated
+  `*_due_date` values. The write surface is the `CertificatePatch` type, which has no member
+  for a due date or an approval field, so widening it is the only way to break this.
+- The user chooses whether the certificate updates the **Major or Intermediate** schedule;
+  it is never guessed.
+
+**Document handling**
+- A **multi-page PDF is treated as one certificate per page** — the 13-page sample yields 13
+  separate certificates, each with its own report number and serial.
+- The certificate whose **serial matches the open record is auto-selected** from that set.
+- If the certificate's serial **does not match** the record, a warning is shown before applying.
+- **Scans and photographs are detected and rejected cleanly**: when no page carries a text
+  layer the panel says so and asks for the digital PDF, rather than emitting guesses.
+
+**Known limitation.** Label patterns are tuned to the Bureau Veritas MPI report (3 of the 4
+sample documents). Other issuers will need their labels added. There is **no OCR**, so scanned
+or photographed certificates cannot be read at all by this path.
+
 ## 9. Not inspected on the reference
 
 After the third pass, only these remain uninspected:

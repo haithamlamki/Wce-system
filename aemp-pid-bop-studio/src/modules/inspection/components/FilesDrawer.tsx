@@ -7,13 +7,15 @@ import { deleteFile, getSignedUrl, listFiles, uploadFile } from '../lib/files';
 import { useInspection } from '../state/InspectionContext';
 import { CERTIFICATE_KINDS, FILE_KIND_LABELS, type FileKind, type InspFile,
   type InspectionRecord } from '../types';
+import CertificateExtractPanel from './CertificateExtractPanel';
+import Icon from './Icon';
 
 function fmtSize(b: number): string {
   return b > 1_048_576 ? `${(b / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
 }
 
-export default function FilesDrawer({ record, onClose }: {
-  record: InspectionRecord; onClose: () => void;
+export default function FilesDrawer({ record, onClose, onRecordChanged }: {
+  record: InspectionRecord; onClose: () => void; onRecordChanged?: () => void;
 }) {
   const { can } = useInspection();
   const editable = can('insp_manage_files');
@@ -23,6 +25,10 @@ export default function FilesDrawer({ record, onClose }: {
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // The PDF the user asked to read. Extraction is opt-in per file so uploading
+  // never triggers surprise parsing.
+  const [readFile, setReadFile] = useState<File | null>(null);
+  const [lastPdfs, setLastPdfs] = useState<File[]>([]);
   const isCert = CERTIFICATE_KINDS.includes(kind);
 
   const reload = useCallback(() => {
@@ -33,9 +39,11 @@ export default function FilesDrawer({ record, onClose }: {
   const doUpload = async (list: FileList | File[]) => {
     setBusy(true); setErr(null);
     try {
-      for (const f of Array.from(list)) {
+      const chosen = Array.from(list);
+      for (const f of chosen) {
         await uploadFile(record.id, kind, f, isCert && expiry ? expiry : null);
       }
+      setLastPdfs(chosen.filter((f) => /\.pdf$/i.test(f.name)));
       reload();
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
@@ -75,7 +83,38 @@ export default function FilesDrawer({ record, onClose }: {
           </div>
         </>
       )}
-      {err && <div style={{ color: '#d33', fontSize: 12, marginTop: 8 }}>{err}</div>}
+      {err && <div style={{ color: 'var(--i-danger)', fontSize: 12, marginTop: 8 }}>{err}</div>}
+
+      {lastPdfs.length > 0 && !readFile && (
+        <div className="insp-card" style={{ marginTop: 10, fontSize: 12.5 }}>
+          <div style={{ marginBottom: 8 }}>
+            Read the certificate to fill this record&apos;s fields? The file is parsed in your
+            browser and nothing is saved until you confirm.
+          </div>
+          <div className="insp-toolbar" style={{ marginBottom: 0 }}>
+            {lastPdfs.map((f) => (
+              <button key={f.name} type="button" className="insp-btn sm"
+                onClick={() => setReadFile(f)}>
+                <Icon name="documents" /> Read {f.name}
+              </button>
+            ))}
+            <div className="grow">
+              <button type="button" className="insp-btn sm" onClick={() => setLastPdfs([])}>
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {readFile && (
+        <CertificateExtractPanel
+          record={record}
+          file={readFile}
+          onClose={() => { setReadFile(null); setLastPdfs([]); }}
+          onApplied={() => onRecordChanged?.()}
+        />
+      )}
 
       <div style={{ marginTop: 12 }}>
         {files.map((f) => (
@@ -92,6 +131,17 @@ export default function FilesDrawer({ record, onClose }: {
               try { window.open(await getSignedUrl(f.storagePath), '_blank'); }
               catch (e) { alert((e as Error).message); }
             }}>Open</button>
+            {/\.pdf$/i.test(f.fileName) && (
+              <button className="insp-btn" title="Read fields from this certificate"
+                onClick={async () => {
+                  setErr(null);
+                  try {
+                    const url = await getSignedUrl(f.storagePath);
+                    const blob = await fetch(url).then((r) => r.blob());
+                    setReadFile(new File([blob], f.fileName, { type: 'application/pdf' }));
+                  } catch (e) { setErr((e as Error).message); }
+                }}>Read</button>
+            )}
             {editable && (
               <button className="insp-btn" onClick={() => {
                 if (confirm(`Delete ${f.fileName}?`)) deleteFile(f).then(reload).catch((e) => alert((e as Error).message));

@@ -363,7 +363,9 @@ export default function RecordsView() {
         )}
       />
 
-      {filesFor && <FilesDrawer record={filesFor} onClose={() => setFilesFor(null)} />}
+      {filesFor && (
+        <FilesDrawer record={filesFor} onClose={() => setFilesFor(null)} onRecordChanged={reload} />
+      )}
       {logsFor && <LogsDrawer record={logsFor} onClose={() => setLogsFor(null)} />}
     </>
   );
