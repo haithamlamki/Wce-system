@@ -1,80 +1,134 @@
 // ============================================================================
-//  Notification bell — overdue / due-soon inspections and expiring
-//  certificates, computed client-side from RLS-scoped data (Task 5 lib).
+//  Compliance alert bell.
+//
+//  Previously this fetched EVERY inspection record every 5 minutes and derived
+//  alerts in JavaScript — roughly 1.8 MB and 7 round trips, repeated forever in
+//  the background on every page. It now calls insp_notification_summary
+//  (migration 0036), which returns counts plus only the alerts actually shown.
+//
+//  Polling also pauses while the tab is hidden and refreshes on return, so a
+//  backgrounded tab costs nothing.
 // ============================================================================
-import { useEffect, useRef, useState } from 'react';
-import { buildAlerts, type AlertItem } from '../lib/compliance';
-import { DASHBOARD_COLUMNS, fetchRecords } from '../lib/records';
-import { listExpiringFiles } from '../lib/files';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { fetchNotificationSummary } from '../lib/records';
 import { useInspection } from '../state/InspectionContext';
 import { formatDate } from '../lib/format';
 import Icon from './Icon';
 
 const REFRESH_MS = 5 * 60_000;
 
+interface AlertRow {
+  id: string; serial: string; equipment: string;
+  kind: 'intermediate' | 'major'; dueDate: string; days: number;
+}
+interface CertRow { id: string; fileName: string; dueDate: string; days: number }
+
+interface Summary {
+  overdue: number; dueSoon: number;
+  certOverdue: number; certDueSoon: number;
+  items: AlertRow[]; certItems: CertRow[];
+}
+
+const EMPTY: Summary = {
+  overdue: 0, dueSoon: 0, certOverdue: 0, certDueSoon: 0, items: [], certItems: [],
+};
+
 export default function NotificationsBell() {
   const { canAccess } = useInspection();
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [summary, setSummary] = useState<Summary>(EMPTY);
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!canAccess) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const today = new Date().toISOString().slice(0, 10);
-        // Narrow column set: the bell refreshes on an interval and only needs
-        // serial + due dates, not the jsonb specs payload.
-        const [records, files] = await Promise.all([
-          fetchRecords({ columns: DASHBOARD_COLUMNS }), listExpiringFiles(),
-        ]);
-        if (alive) setAlerts(buildAlerts(records, files, today));
-      } catch { /* bell is best-effort; views surface real errors */ }
-    };
-    load();
-    const t = setInterval(load, REFRESH_MS);
-    return () => { alive = false; clearInterval(t); };
+    try {
+      const raw = await fetchNotificationSummary();
+      setSummary({ ...EMPTY, ...(raw as unknown as Summary) });
+      setErr(null);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
   }, [canAccess]);
 
   useEffect(() => {
+    if (!canAccess) return undefined;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer === null) timer = setInterval(() => { void load(); }, REFRESH_MS);
+    };
+    const stop = () => { if (timer !== null) { clearInterval(timer); timer = null; } };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else { void load(); start(); }
+    };
+
+    void load();
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [canAccess, load]);
+
+  useEffect(() => {
+    if (!open) return undefined;
     const close = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
 
   if (!canAccess) return null;
-  const overdue = alerts.filter((a) => a.severity === 'overdue').length;
+
+  const total = summary.overdue + summary.dueSoon + summary.certOverdue + summary.certDueSoon;
 
   return (
     <div ref={wrapRef} className="insp-rel">
       <button type="button" className="insp-iconbtn" onClick={() => setOpen((v) => !v)}
-        title="Compliance alerts" aria-label={`${alerts.length} compliance alerts`}
-        aria-expanded={open}>
+        title="Compliance alerts" aria-expanded={open}
+        aria-label={`${total} compliance alerts`}>
         <Icon name="bell" />
-        {alerts.length > 0 && (
-          <span className="insp-badge-dot">{alerts.length > 99 ? '99+' : alerts.length}</span>
+        {total > 0 && (
+          <span className="insp-badge-dot">{total > 99 ? '99+' : total}</span>
         )}
       </button>
+
       {open && (
         <div className="insp-bell-panel">
           <div className="item" style={{ fontWeight: 700 }}>
-            Compliance alerts — {overdue} overdue, {alerts.length - overdue} due soon
+            Compliance alerts — {summary.overdue} overdue, {summary.dueSoon} due soon
           </div>
-          {alerts.slice(0, 60).map((a) => (
-            <div className="item" key={a.id}>
-              <span className={`insp-badge ${a.severity === 'overdue' ? 'danger' : 'warning'}`}>
-                {a.severity === 'overdue' ? 'Overdue' : 'Due Soon'}
+          {err && <div className="item" style={{ color: 'var(--i-danger)' }}>{err}</div>}
+          {total === 0 && !err && <div className="item">Nothing due in the next 30 days.</div>}
+
+          {summary.items.map((a) => (
+            <div className="item" key={`${a.id}-${a.kind}`}>
+              <span className={`insp-badge ${a.days < 0 ? 'danger' : 'warning'}`}>
+                {a.days < 0 ? 'Overdue' : 'Due Soon'}
               </span>{' '}
-              {a.label}
+              {a.serial || a.equipment} — {a.kind === 'major' ? 'Major' : 'Intermediate'}
               <div style={{ color: 'var(--i-muted)', fontSize: 11 }}>
-                {a.kind === 'certificate' ? 'Expires' : 'Due'} {formatDate(a.dueDate)} ({a.daysUntil} days)
+                Due {formatDate(a.dueDate)} ({a.days} days)
               </div>
             </div>
           ))}
-          {alerts.length === 0 && <div className="item">All clear — nothing overdue or due soon. ✅</div>}
+
+          {summary.certItems.map((c) => (
+            <div className="item" key={c.id}>
+              <span className={`insp-badge ${c.days < 0 ? 'danger' : 'warning'}`}>
+                {c.days < 0 ? 'Expired' : 'Expiring'}
+              </span>{' '}
+              {c.fileName}
+              <div style={{ color: 'var(--i-muted)', fontSize: 11 }}>
+                Expires {formatDate(c.dueDate)} ({c.days} days)
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

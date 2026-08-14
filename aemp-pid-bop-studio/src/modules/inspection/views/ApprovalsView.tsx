@@ -8,10 +8,11 @@
 //  (insp_set_approval, guarded by insp_approve) remains the real authorization
 //  boundary — the checks below only drive the UI.
 // ============================================================================
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../state/AuthContext';
 import { useInspection } from '../state/InspectionContext';
-import { fetchRecords, setApproval } from '../lib/records';
+import { fetchRecordsPage, setApproval } from '../lib/records';
+import type { ListQuery } from '../lib/records';
 import { listExpiringFiles } from '../lib/files';
 import { buildAlerts } from '../lib/compliance';
 import { isPrivileged } from '../lib/permissions';
@@ -34,19 +35,26 @@ export default function ApprovalsView() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const reload = () => {
+  // The queue is filtered BY THE DATABASE: approve_status and, for
+  // non-privileged approvers, the approver scoping too. The page never sees
+  // records outside its queue, so nothing is filtered in JavaScript.
+  const [query, setQuery] = useState<ListQuery>({ page: 1, perPage: 10 });
+  const [total, setTotal] = useState(0);
+
+  const reload = useCallback(() => {
     setLoading(true);
-    fetchRecords()
-      .then((r) => { setRows(r); setErr(null); })
+    fetchRecordsPage({
+      ...query,
+      approveStatus: 'pending_approval',
+      approverId: isPrivileged(role) ? undefined : session?.user.id,
+    })
+      .then((p) => { setRows(p.rows); setTotal(p.total); setErr(null); })
       .catch((e) => setErr((e as Error).message))
       .finally(() => setLoading(false));
-  };
-  useEffect(reload, []);
+  }, [query, role, session]);
+  useEffect(reload, [reload]);
 
-  const pending = useMemo(() => rows.filter((r) => (
-    r.approveStatus === 'pending_approval'
-    && (isPrivileged(role) || r.approverId === session?.user.id)
-  )), [rows, role, session]);
+  const pending = rows;
 
   // Creator ids are uuids; resolve to a name only when the person also appears
   // in the approver directory, otherwise show an em dash rather than guessing.
@@ -140,7 +148,22 @@ export default function ApprovalsView() {
         rows={pending}
         columns={columns}
         rowKey={(r) => r.id}
-        loading={loading}
+        server={{
+          total,
+          page: query.page,
+          perPage: query.perPage,
+          loading,
+          onChange: (n) => setQuery((q) => ({
+            ...q,
+            page: n.page,
+            perPage: n.perPage,
+            search: n.search,
+            sortBy: n.sortBy ?? undefined,
+            // Only override the default ordering once a column is actually sorted.
+            sortAsc: n.sortBy ? n.sortAsc : undefined,
+            columnFilters: n.columnFilters,
+          })),
+        }}
         error={err}
         selectable
         selected={selected}

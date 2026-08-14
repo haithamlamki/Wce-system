@@ -7,10 +7,11 @@
 //  Bulk date updates and approvals go through the SECURITY DEFINER RPCs; the
 //  permission checks here only drive the UI, the DB remains the boundary.
 // ============================================================================
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useInspection } from '../state/InspectionContext';
-import { bulkUpdateDates, deleteRecord, fetchRecords } from '../lib/records';
+import { bulkUpdateDates, deleteRecord, fetchRecords, fetchRecordsPage } from '../lib/records';
+import type { ListQuery } from '../lib/records';
 import { complianceStatus } from '../lib/compliance';
 import { downloadCsv, recordsToCsv } from '../lib/exportCsv';
 import { formatDate } from '../lib/format';
@@ -58,14 +59,27 @@ export default function RecordsView() {
   const [logsFor, setLogsFor] = useState<InspectionRecord | null>(null);
   const today = new Date().toISOString().slice(0, 10);
 
-  const reload = () => {
+  // Pagination, search, sorting, filtering and the total count are all done by
+  // the database; only the visible page is transferred.
+  const [table, setTable] = useState<Omit<ListQuery, 'category' | 'unitId' | 'typeId' | 'partId'>>(
+    { page: 1, perPage: 10 },
+  );
+  const [total, setTotal] = useState(0);
+
+  const reload = useCallback(() => {
     setLoading(true);
-    fetchRecords()
-      .then((r) => { setRows(r); setErr(null); })
+    fetchRecordsPage({
+      ...table,
+      category: category || undefined,
+      unitId: unitId || undefined,
+      typeId: typeId || undefined,
+      partId: partId || undefined,
+    })
+      .then((p) => { setRows(p.rows); setTotal(p.total); setErr(null); })
       .catch((e) => setErr((e as Error).message))
       .finally(() => setLoading(false));
-  };
-  useEffect(reload, []);
+  }, [table, category, unitId, typeId, partId]);
+  useEffect(reload, [reload]);
 
   // Only ids present in the approver directory resolve to a name; others stay
   // blank rather than showing a raw uuid.
@@ -83,12 +97,23 @@ export default function RecordsView() {
     [parts, typeId],
   );
 
-  const filtered = useMemo(() => rows.filter((r) => (
-    (!category || r.category === category)
-    && (!unitId || r.unitId === unitId)
-    && (!typeId || r.typeId === typeId)
-    && (!partId || r.partId === partId)
-  )), [rows, category, unitId, typeId, partId]);
+  // Export is the one place a FULL dataset fetch is still correct — it is an
+  // explicit user action, not a page load.
+  const exportAll = async () => {
+    setBusy(true);
+    try {
+      const all = await fetchRecords({
+        category: category || undefined,
+        typeId: typeId || undefined,
+        unitId: unitId || undefined,
+      });
+      downloadCsv(recordsToCsv(all), "inspection-records.csv");
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const applyBulkDates = async () => {
     if (!bulkMajor && !bulkInter) {
@@ -250,7 +275,7 @@ export default function RecordsView() {
           <>
             {can('insp_export') && (
               <button type="button" className="insp-btn"
-                onClick={() => downloadCsv(recordsToCsv(filtered), 'inspection-records.csv')}>
+                onClick={exportAll} disabled={busy}>
                 <Icon name="export" /> Export
               </button>
             )}
@@ -319,10 +344,25 @@ export default function RecordsView() {
       )}
 
       <DataTable
-        rows={filtered}
+        rows={rows}
         columns={columns}
         rowKey={(r) => r.id}
-        loading={loading}
+        server={{
+          total,
+          page: table.page,
+          perPage: table.perPage,
+          loading,
+          onChange: (n) => setTable((t) => ({
+            ...t,
+            page: n.page,
+            perPage: n.perPage,
+            search: n.search,
+            sortBy: n.sortBy ?? undefined,
+            // Only override the default ordering once a column is actually sorted.
+            sortAsc: n.sortBy ? n.sortAsc : undefined,
+            columnFilters: n.columnFilters,
+          })),
+        }}
         error={err}
         selectable
         selected={selected}

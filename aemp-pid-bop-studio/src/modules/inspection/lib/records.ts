@@ -98,6 +98,137 @@ export const DASHBOARD_COLUMNS = [
   'created_at', 'created_by',
 ].join(',');
 
+/**
+ * Columns the record TABLE renders — a projection, not `select *`.
+ *
+ * `specs` and `spec_fields` ARE included: they cost ~101 kB across all 6,426
+ * rows but only ~160 bytes for a page of ten, and the Specifications columns
+ * need them. What made them expensive was fetching every row, not the columns
+ * themselves. `component_description` and `reject_reason` stay out — they are
+ * detail-only and fetchRecordById supplies them.
+ */
+export const LIST_COLUMNS = [
+  'specs', 'spec_fields',
+  'id', 'unit_id', 'unit_name', 'company_name', 'category', 'type_id', 'type_name',
+  'part_id', 'part_name', 'component_id', 'component_name',
+  'serial_number', 'part_number', 'oem', 'inspection_company',
+  'working_status', 'manufacture_year', 'remarks',
+  'intermediate_date', 'intermediate_freq_months', 'intermediate_due_date',
+  'major_date', 'major_freq_months', 'major_due_date',
+  'approve_status', 'approver_id', 'approved_at', 'approved_by',
+  'created_at', 'created_by',
+].join(',');
+
+export interface ListQuery {
+  page: number;              // 1-based
+  perPage: number;
+  category?: InspCategory | '';
+  unitId?: string;
+  typeId?: string;
+  partId?: string;
+  workingStatus?: WorkingStatus | '';
+  approveStatus?: InspectionRecord['approveStatus'] | '';
+  /** Scopes the approval queue to one approver (non-privileged users). */
+  approverId?: string | null;
+  /** Free-text across serial, equipment, part and component. */
+  search?: string;
+  sortBy?: string;
+  sortAsc?: boolean;
+  /** Per-column filters, keyed by list column name. */
+  columnFilters?: Record<string, string>;
+}
+
+export interface Page<T> { rows: T[]; total: number }
+
+/** Escapes PostgREST `or=` reserved characters in a user-supplied term. */
+function safeTerm(s: string): string {
+  return s.replace(/[(),*"\\]/g, ' ').trim();
+}
+
+/**
+ * ONE page of records, filtered, sorted and counted BY THE DATABASE.
+ *
+ * RLS still applies: this reads insp_records_expanded (security_invoker), so a
+ * user can only page through rows they are already permitted to read, and the
+ * count reflects only those rows.
+ */
+export async function fetchRecordsPage(q: ListQuery): Promise<Page<InspectionRecord>> {
+  const sb = need();
+  let query = sb
+    .from('insp_records_expanded')
+    .select(LIST_COLUMNS, { count: 'exact' });
+
+  if (q.category) query = query.eq('category', q.category);
+  if (q.unitId) query = query.eq('unit_id', q.unitId);
+  if (q.typeId) query = query.eq('type_id', q.typeId);
+  if (q.partId) query = query.eq('part_id', q.partId);
+  if (q.workingStatus) query = query.eq('working_status', q.workingStatus);
+  if (q.approveStatus) query = query.eq('approve_status', q.approveStatus);
+  if (q.approverId) query = query.eq('approver_id', q.approverId);
+
+  const term = safeTerm(q.search ?? '');
+  if (term) {
+    query = query.or(
+      `serial_number.ilike.*${term}*,type_name.ilike.*${term}*,`
+      + `part_name.ilike.*${term}*,component_name.ilike.*${term}*,unit_name.ilike.*${term}*`,
+    );
+  }
+
+  for (const [col, raw] of Object.entries(q.columnFilters ?? {})) {
+    const v = safeTerm(raw);
+    if (v) query = query.ilike(col, `%${v}%`);
+  }
+
+  const sortBy = q.sortBy ?? 'created_at';
+  query = query.order(sortBy, { ascending: q.sortAsc ?? false }).order('id');
+
+  const from = (q.page - 1) * q.perPage;
+  const { data, error, count } = await query.range(from, from + q.perPage - 1);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as unknown as Record<string, unknown>[];
+  return { rows: rows.map(mapRow), total: count ?? 0 };
+}
+
+/** The approval queue: filtered in the database, never in the browser. */
+export async function fetchApprovalQueue(
+  q: Omit<ListQuery, 'approveStatus'> & { approverId?: string | null },
+): Promise<Page<InspectionRecord>> {
+  const base = await fetchRecordsPage({ ...q, approveStatus: 'pending_approval' });
+  return base;
+}
+
+/** One complete record, including the heavy fields the list omits. */
+export async function fetchRecordById(id: string): Promise<InspectionRecord | null> {
+  const sb = need();
+  const { data, error } = await sb
+    .from('insp_records_expanded').select('*').eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapRow(data as unknown as Record<string, unknown>) : null;
+}
+
+/** Dashboard metrics, aggregated by Postgres (see migration 0036). */
+export async function fetchDashboard(): Promise<Record<string, unknown>> {
+  const sb = need();
+  const { data, error } = await sb.rpc('insp_dashboard');
+  if (error) throw new Error(error.message);
+  return (data ?? {}) as Record<string, unknown>;
+}
+
+/** Notification counts plus only the alerts the bell displays (migration 0036). */
+export async function fetchNotificationSummary(): Promise<Record<string, unknown>> {
+  const sb = need();
+  const { data, error } = await sb.rpc('insp_notification_summary');
+  if (error) throw new Error(error.message);
+  return (data ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * EVERY record the caller may read, paged through 1000 at a time.
+ *
+ * This is the EXPORT path and must not be used for page loading — it is what
+ * made the dashboard, record list and approval queue each transfer ~1.8 MB.
+ * Use fetchRecordsPage / fetchDashboard / fetchNotificationSummary instead.
+ */
 export async function fetchRecords(opts: {
   category?: InspCategory; typeId?: string; unitId?: string; columns?: string;
 } = {}): Promise<InspectionRecord[]> {

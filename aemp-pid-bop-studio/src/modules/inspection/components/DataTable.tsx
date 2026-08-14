@@ -40,8 +40,29 @@ export interface FilterDef {
   onChange: (v: string) => void;
 }
 
+/**
+ * Supplied when the DATABASE performs search, filtering, sorting and paging.
+ * `rows` then contains only the current page, and `total` is the filtered count
+ * from the server — the component stops doing any of that work itself.
+ */
+export interface ServerMode {
+  total: number;
+  page: number;
+  perPage: number;
+  loading?: boolean;
+  onChange: (next: {
+    page: number;
+    perPage: number;
+    search: string;
+    sortBy: string | null;
+    sortAsc: boolean;
+    columnFilters: Record<string, string>;
+  }) => void;
+}
+
 interface Props<T> {
   rows: T[];
+  server?: ServerMode;
   columns: Column<T>[];
   rowKey: (row: T) => string;
   loading?: boolean;
@@ -63,7 +84,7 @@ interface Props<T> {
 const PAGE_SIZES = [10, 25, 50, 100, 250, 500];
 
 export default function DataTable<T>({
-  rows, columns, rowKey, loading, error, searchPlaceholder = 'Search…',
+  rows, server, columns, rowKey, loading, error, searchPlaceholder = 'Search…',
   filters, selectable, selected, onSelectedChange, rowActions,
   emptyTitle = 'Nothing to show', emptyDesc = 'No records match the current filters.',
   aboveTable, initialPageSize = 10,
@@ -134,7 +155,11 @@ export default function DataTable<T>({
     return out;
   }, [columns]);
 
+  const isServerMode = !!server;
+
   const searched = useMemo(() => {
+    // In server mode the database has already applied search and filters.
+    if (isServerMode) return rows;
     const needle = q.trim().toLowerCase();
     const active = Object.entries(colFilters)
       .map(([k, v]) => [k, v.trim().toLowerCase()] as const)
@@ -151,9 +176,11 @@ export default function DataTable<T>({
         return v != null && String(v).toLowerCase().includes(term);
       });
     });
-  }, [rows, q, colFilters, columns]);
+  }, [rows, q, colFilters, columns, isServerMode]);
 
   const sorted = useMemo(() => {
+    // Server mode: the database already ordered these rows.
+    if (isServerMode) return searched;
     if (!sort) return searched;
     const col = columns.find((c) => c.key === sort.key);
     if (!col?.value) return searched;
@@ -167,13 +194,32 @@ export default function DataTable<T>({
       if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * mul;
       return String(av).localeCompare(String(bv), undefined, { numeric: true }) * mul;
     });
-  }, [searched, sort, columns]);
+  }, [searched, sort, columns, isServerMode]);
 
-  const pageCount = Math.max(1, Math.ceil(sorted.length / perPage));
-  const current = Math.min(page, pageCount);
-  const pageRows = sorted.slice((current - 1) * perPage, current * perPage);
+  const totalRows = server ? server.total : sorted.length;
+  const effPerPage = server ? server.perPage : perPage;
+  const pageCount = Math.max(1, Math.ceil(totalRows / effPerPage));
+  const current = server ? server.page : Math.min(page, pageCount);
+  const pageRows = server ? sorted : sorted.slice((current - 1) * perPage, current * perPage);
+  const busy = loading || server?.loading;
 
-  useEffect(() => { setPage(1); }, [q, perPage, rows]);
+  useEffect(() => { if (!isServerMode) setPage(1); }, [q, perPage, rows, isServerMode]);
+
+  // Server mode: report control changes upward, debouncing typed input so a
+  // search does not fire a query per keystroke.
+  const onChangeRef = useRef(server?.onChange);
+  onChangeRef.current = server?.onChange;
+
+  useEffect(() => {
+    if (!isServerMode) return undefined;
+    const t = setTimeout(() => {
+      onChangeRef.current?.({
+        page, perPage, search: q, sortBy: sort?.key ?? null,
+        sortAsc: sort?.dir !== 'desc', columnFilters: colFilters,
+      });
+    }, 250);
+    return () => clearTimeout(t);
+  }, [isServerMode, page, perPage, q, sort, colFilters]);
 
   const toggleSort = (c: Column<T>) => {
     if (!c.value || c.sortable === false) return;
@@ -414,22 +460,22 @@ export default function DataTable<T>({
             )}
           </thead>
           <tbody>
-            {loading && (
+            {busy && (
               <tr><td colSpan={colSpan}>
                 <div className="insp-empty"><span className="insp-spinner" /><div className="d">Loading…</div></div>
               </td></tr>
             )}
-            {!loading && error && (
+            {!busy && error && (
               <tr><td colSpan={colSpan}>
                 <div className="insp-empty"><div className="ico">⚠</div><div className="t">Could not load</div><div className="d">{error}</div></div>
               </td></tr>
             )}
-            {!loading && !error && pageRows.length === 0 && (
+            {!busy && !error && pageRows.length === 0 && (
               <tr><td colSpan={colSpan}>
                 <div className="insp-empty"><div className="ico">☰</div><div className="t">{emptyTitle}</div><div className="d">{emptyDesc}</div></div>
               </td></tr>
             )}
-            {!loading && !error && pageRows.map((r) => {
+            {!busy && !error && pageRows.map((r) => {
               const id = rowKey(r);
               return (
                 <tr key={id}>
@@ -454,12 +500,12 @@ export default function DataTable<T>({
 
       <div className="insp-tablefoot">
         <label>
-          <select className="insp-select" value={perPage} aria-label="Rows per page"
-            onChange={(e) => setPerPage(Number(e.target.value))}>
+          <select className="insp-select" value={effPerPage} aria-label="Rows per page"
+            onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}>
             {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
-        <span>{sorted.length} record{sorted.length === 1 ? '' : 's'}</span>
+        <span>{totalRows} record{totalRows === 1 ? '' : 's'}</span>
         <div className="pages">
           <button type="button" className="insp-pagebtn" disabled={current <= 1}
             onClick={() => setPage(current - 1)} aria-label="Previous page">‹</button>
