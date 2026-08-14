@@ -382,9 +382,60 @@ record's current value for comparison, and the **exact source line** the value w
 - **Scans and photographs are detected and rejected cleanly**: when no page carries a text
   layer the panel says so and asks for the digital PDF, rather than emitting guesses.
 
-**Known limitation.** Label patterns are tuned to the Bureau Veritas MPI report (3 of the 4
-sample documents). Other issuers will need their labels added. There is **no OCR**, so scanned
-or photographed certificates cannot be read at all by this path.
+**Known limitation.** There is **no OCR**, so scanned or photographed certificates cannot be
+read at all by this path; the panel detects that case and says so rather than guessing.
+
+### 8e.1 Issuer-aware architecture (2026-08-15)
+
+The single parser was split into layers so that supporting another inspection company is a new
+file rather than another copy of the parser:
+
+```
+PDF text  →  page/line normalisation  →  issuer detection
+          →  issuer labels + layout passes  →  generic normalisation
+          →  confidence + evidence  →  human review  →  (reference matching, outside)
+```
+
+`lib/certificate/`: `model.ts` (canonical types), `normalize.ts` (dates, years, cleaning),
+`document.ts` (pages, lines, the shared label engine), `issuers/` (one file per issuer plus
+scored detection), `extract.ts` (sequencing), `patch.ts` (the write surface).
+`lib/certificateExtract.ts` is now a re-export facade, so callers and the original tests were
+untouched — which is what demonstrates the behaviour was preserved.
+
+**Detection is scored, not first-match.** A strong signal (house name, its domain, its
+report-number scheme) counts 3; a weak one (a template heading many houses share) counts 1. A
+document is claimed at 3 or more, so a single weak token never decides an issuer.
+
+**Issuers implemented, from documents actually inspected:**
+
+| Issuer | Evidence | Layout | Fields extracted | Not available |
+|---|---|---|---|---|
+| `bureau-veritas` | name, `bureauveritas.com`, `BV.OMA.*` scheme, `BV/IVS/...`, `OMA.IVS.Form 17`, MPI heading | MPI report; two label/value pairs per header line; wrapped values; INSPECTED ITEMS table | certificate no, inspection date, expiry, customer, rig/unit, inspection type, serial, equipment description, inspection company | OEM, part number, manufacture year, pressures — the template prints none |
+| `gai-tronics` | name, `gai-tronics.com`, "Certificate of Conformance" | colon-delimited, values often on the next line | certificate no (job no), customer | **no inspection date, no expiry** — a conformance statement is not an inspection, so no schedule is offered |
+| `unknown` | — | generic labels only | whatever issuer-independent labels match | anything issuer-specific; confidence capped at medium |
+
+**Two defects the refactor exposed and fixed.** The generic `make` label was matching the items
+table's *column-header* row, so `oem` came out as "Size Result" at high confidence — on a field
+the reviewer can write back. Issuers can now declare `skipLines` for header rows. Separately,
+a value that wraps onto the next line was only paired when the line held exactly one label, so
+the 13-certificate file yielded no inspection date at all; only the **last** label on a line can
+wrap (an earlier one is bounded by the next label), so that pairing is now made, at
+`label-proximity` confidence.
+
+**Confidence semantics.** Derived from evidence class, not from "a regex matched":
+`exact-label` and `structured-table` → high; `label-proximity` → medium; `generic-fallback` and
+`ambiguous` → low. The unknown issuer caps everything at medium. Every candidate carries its raw
+text, source line, page, rule and issuer.
+
+**Ambiguous dates.** `03/04/2026` is undecidable — both parts could be a month. It is still read
+day-first, as these houses write, but flagged `ambiguous`, dropped to low confidence, and shown
+with the raw text for the reviewer to judge. A named month, or a numeric date where one part
+exceeds 12, is not flagged.
+
+**Safety unchanged.** The certificate's stated expiry is extracted, displayed, and compared with
+what the database will derive — and never written. `CertificatePatch` still has no member for
+any `*_due_date` or for `approve_status`, so migration 0030's trigger remains the only authority
+on due dates. Apply still requires `insp_data_entry` and an explicit human selection.
 
 ## 9. Not inspected on the reference
 

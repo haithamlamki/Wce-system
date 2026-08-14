@@ -158,6 +158,11 @@ export default function CertificateExtractPanel({ record, file, onClose, onAppli
     );
   }
 
+  // The expiry the certificate prints, compared with what the database will
+  // derive. A difference is shown to the reviewer and never acted on.
+  const statedExpiry = valueOf(current, 'nextDueDate');
+  const expiryDiffers = !!statedExpiry && !!expectedDue && statedExpiry !== expectedDue;
+
   const serialOnCert = valueOf(current, 'serialNumber');
   const mismatch = serialOnCert && record.serialNumber
     && serialOnCert.toLowerCase() !== record.serialNumber.toLowerCase();
@@ -193,6 +198,39 @@ export default function CertificateExtractPanel({ record, file, onClose, onAppli
           </select>
         </div>
       )}
+
+      {/*
+        Which house issued the paper, and how sure we are. Keyed off the stable
+        issuer id, never off the display string. An unrecognised issuer is
+        stated plainly: its values were read with generic rules only, so the
+        reviewer knows to check every one of them.
+      */}
+      <div className="insp-card" role="status"
+        style={{
+          marginBottom: 10,
+          fontSize: 12.5,
+          borderColor: current.issuer.recognised ? undefined : 'var(--i-warning)',
+        }}>
+        <Icon name={current.issuer.recognised ? 'kpi-compliance' : 'kpi-overdue'} />{' '}
+        {current.issuer.recognised ? (
+          <>
+            Issuer recognised: <b>{current.issuer.displayName}</b>{' '}
+            <Badge tone={current.issuer.confidence === 'high' ? 'success' : 'warning'}>
+              {current.issuer.confidence} confidence
+            </Badge>
+          </>
+        ) : (
+          <>
+            <b>Unrecognised issuer.</b> Only issuer-independent rules were applied, so every
+            value below is a suggestion — check each one against the certificate before applying.
+          </>
+        )}
+        {current.issuer.evidence.length > 0 && (
+          <div style={{ color: 'var(--i-muted)', fontSize: 11, marginTop: 4 }}>
+            {current.issuer.evidence.join(' · ')}
+          </div>
+        )}
+      </div>
 
       {mismatch && (
         <div className="insp-card" role="alert"
@@ -230,6 +268,14 @@ export default function CertificateExtractPanel({ record, file, onClose, onAppli
                     <Badge tone={c.confidence === 'high' ? 'success' : 'warning'}>
                       {c.confidence}
                     </Badge>
+                    {c.ambiguous && (
+                      // The text supports more than one reading, so the raw
+                      // form is shown for the reviewer to decide against.
+                      <div style={{ color: 'var(--i-warning)', fontSize: 11, marginTop: 2 }}>
+                        Ambiguous date — the certificate reads “{c.raw}”. Confirm the order
+                        before applying.
+                      </div>
+                    )}
                   </td>
                   <td style={{ color: 'var(--i-muted)' }}>{currentValues[field] || '—'}</td>
                   <td style={{ maxWidth: 260, whiteSpace: 'normal', fontSize: 11.5, color: 'var(--i-muted)' }}>
@@ -260,9 +306,20 @@ export default function CertificateExtractPanel({ record, file, onClose, onAppli
           : <>No standard frequency matched the certificate dates, so frequency is left unchanged.{' '}</>}
         {expectedDue && (
           <>
-            The database will recalculate the due date to <b>{formatDate(expectedDue)}</b>
-            {valueOf(current, 'nextDueDate')
-              && <> (the certificate states {formatDate(valueOf(current, 'nextDueDate'))})</>}.
+            The database will recalculate the due date to <b>{formatDate(expectedDue)}</b>.{' '}
+            {statedExpiry && (
+              expiryDiffers ? (
+                // Surfaced, never reconciled: the certificate's expiry is
+                // evidence, and 0030's trigger owns the authoritative date.
+                <span style={{ color: 'var(--i-warning)' }}>
+                  The certificate states a different expiry,{' '}
+                  <b>{formatDate(statedExpiry)}</b> — check the inspection date and frequency
+                  before applying. The stated expiry is never written.
+                </span>
+              ) : (
+                <>This matches the expiry stated on the certificate.</>
+              )
+            )}
           </>
         )}
       </div>
