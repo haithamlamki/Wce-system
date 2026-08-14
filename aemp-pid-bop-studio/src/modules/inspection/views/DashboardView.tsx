@@ -218,6 +218,21 @@ export default function DashboardView() {
     const pending = records.filter((r) => r.approveStatus === 'pending_approval').length;
     const approved = records.filter((r) => r.approveStatus === 'approved').length;
 
+    // Approval turnaround, from migration 0034's approved_at. Approvals made
+    // before 0034 have no timestamp and are excluded rather than guessed at, so
+    // these two figures describe recorded approvals only.
+    const timed = records.filter((r) => r.approvedAt && r.createdAt);
+    const avgApprovalDays = timed.length
+      ? (timed.reduce((sum, r) => sum
+        + (Date.parse(r.approvedAt as string) - Date.parse(r.createdAt as string)), 0)
+        / timed.length / 86_400_000)
+      : null;
+    const thirtyDaysAgo = Date.now() - 30 * 86_400_000;
+    const approvedLast30 = records.filter(
+      (r) => r.approvedAt && Date.parse(r.approvedAt) >= thirtyDaysAgo,
+    ).length;
+    const hasApprovalTiming = timed.length > 0;
+
     const quality = [
       { label: 'Due date', value: records.filter((r) => !r.intermediateDueDate && !r.majorDueDate).length },
       { label: 'Serial', value: records.filter((r) => !r.serialNumber.trim()).length },
@@ -235,6 +250,7 @@ export default function DashboardView() {
       aging, forecast, rigCompliance, byRig, byCat, byStatus, kind, freqRows,
       ageBuckets, avgAge: ageN ? (ageSum / ageN).toFixed(1) : '0', oemRows, oemCount: oem.size,
       trend, pending, approved, quality, complete,
+      avgApprovalDays, approvedLast30, hasApprovalTiming,
     };
   }, [records, today]);
 
@@ -264,8 +280,9 @@ export default function DashboardView() {
         <Kpi label="Due next 30" value={String(m.dueSoon)} tone="warning" ico="kpi-due" />
         <Kpi label="Coverage" value={`${m.coverage}%`} ico="kpi-coverage"
           caption={`${m.obligations} obligations`} />
-        {/* insp_records has no approved_at timestamp, so turnaround is unavailable. */}
-        <Kpi label="Avg approval" value="—" caption="days" ico="kpi-approval" />
+        <Kpi label="Avg approval" ico="kpi-approval"
+          value={m.avgApprovalDays === null ? '—' : m.avgApprovalDays.toFixed(1)}
+          caption={m.hasApprovalTiming ? 'days' : 'days · not yet recorded'} />
       </div>
 
       <SectionTitle>Compliance &amp; Risk</SectionTitle>
@@ -353,9 +370,9 @@ export default function DashboardView() {
         <Card title="Approval Health">
           <div className="insp-kpis" style={{ marginBottom: 10 }}>
             <Kpi label="Pending" value={String(m.pending)} />
-            {/* Needs an approved_at column to compute; not present in insp_records. */}
-            <Kpi label="Avg approval" value="—" caption="days" />
-            <Kpi label="Approved 30d" value="—" />
+            <Kpi label="Avg approval" caption="days"
+              value={m.avgApprovalDays === null ? '—' : m.avgApprovalDays.toFixed(1)} />
+            <Kpi label="Approved 30d" value={m.hasApprovalTiming ? String(m.approvedLast30) : '—'} />
           </div>
           <Chart type="bar" height={180}
             labels={['Approved', 'Pending Approval']}

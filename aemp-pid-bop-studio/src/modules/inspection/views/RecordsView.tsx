@@ -217,9 +217,14 @@ export default function RecordsView() {
       key: 'requestedFor', header: 'Approval Requested For', group: 'Approval Workflow',
       defaultHidden: true, value: (r) => (r.approverId ? approverNames.get(r.approverId) ?? null : null),
     },
-    // "Approved By" / "Approved Date" exist in the reference's Columns menu but
-    // insp_records has no approver-completion columns, so they are not offered
-    // here rather than shown permanently empty. Backend gap, not a UI gap.
+    {
+      key: 'approvedBy', header: 'Approved By', group: 'Approval Workflow',
+      defaultHidden: true, value: (r) => (r.approvedBy ? approverNames.get(r.approvedBy) ?? null : null),
+    },
+    {
+      key: 'approvedDate', header: 'Approved Date', group: 'Approval Workflow',
+      defaultHidden: true, value: (r) => r.approvedAt ?? null, render: (r) => formatDate(r.approvedAt),
+    },
     { key: 'remarks', header: 'Remarks', group: 'Additional', pinned: true, filterable: false, value: (r) => r.remarks },
     ...specColumns.map(({ base, aliases }): Column<InspectionRecord> => ({
       key: `spec:${base}`,

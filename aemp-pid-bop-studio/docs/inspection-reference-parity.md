@@ -222,6 +222,17 @@ and no security or business logic was changed in this pass.**
 | `insp_equipment_types` | id, category, name, description, spec_fields, active, created_at |
 | `projects` (host WCE) | id, rig_name, reference_date, inspector, revision, data, created_at, updated_at, created_by, version, updated_by, unit_id, name — RLS on, 4 policies, 4 rows |
 
+> **Status update — B1, B2 and B3 are fixed** by migration
+> `0034_inspection_approval_audit.sql`. `insp_records` gains `approved_at` and
+> `approved_by`; `insp_set_approval` now records both and **no longer overwrites**
+> `approver_id`, so the routing target survives approval. Existing approved rows had
+> `approved_by` backfilled from `approver_id` (which is what the old RPC wrote there);
+> `approved_at` is deliberately **not** backfilled, because no approval timestamp was ever
+> stored and `updated_at` would fabricate one. The dashboard's "Avg approval" and
+> "Approved 30d" tiles and the Columns menu's "Approved By" / "Approved Date" therefore
+> report on approvals recorded from 0034 onward, and show an em dash until then.
+> The remaining gaps below (B4–B10) are unchanged.
+
 ### Defect found during investigation (not a missing column)
 
 `insp_set_approval` executes `approver_id = auth.uid()`, which **overwrites** the approver

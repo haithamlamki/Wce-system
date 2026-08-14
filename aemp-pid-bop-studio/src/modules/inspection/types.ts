@@ -79,6 +79,12 @@ export interface InspectionRecord {
   unitName: string; companyName: string | null;
   /** Audit columns carried by insp_records_expanded (`select r.*`). */
   createdAt?: string | null; createdBy?: string | null;
+  /**
+   * Approval audit, added by migration 0034. `approverId` is who the record was
+   * SENT TO; `approvedBy`/`approvedAt` are who actually approved it and when.
+   * Both are null for approvals predating 0034.
+   */
+  approvedAt?: string | null; approvedBy?: string | null;
 }
 
 export type FileKind =
