@@ -386,6 +386,167 @@ record's current value for comparison, and the **exact source line** the value w
 sample documents). Other issuers will need their labels added. There is **no OCR**, so scanned
 or photographed certificates cannot be read at all by this path.
 
+## 8f. Production UAT — Equipment Inspection list (2026-08-14)
+
+Run against the running application (not source review), signed in as a real user, with the
+network panel open. Two defects were found that source review and the unit tests had both
+missed, because each only appears once the table is driven by a user.
+
+**Defect 1 — server-side sort and per-column filter sent UI column keys (shipped).**
+`Column.key` is a UI identity (`serial`, `interDue`), not a database column. The table emitted
+that key straight into `order=` and into the per-column filter, so clicking the Serial header
+produced `order=serial.asc` and PostgREST answered `column insp_records_expanded.serial does not
+exist`. The table dropped to "Could not load" and stayed there. Every sortable header and every
+Filters input was affected.
+
+*Correction.* `Column` gained an optional `field` — the database column backing that UI column —
+and the emitter translates key → field before sending. A column with no `field` cannot be
+ordered or filtered by the database, so instead of sending an invalid name the table now offers
+neither affordance for it: no `sortable` class, no arrow, no filter input. That is what the
+Specification columns need, since they live inside a `jsonb` payload rather than in a column of
+their own. Verified in the browser: `order=serial_number.asc,id.asc` → HTTP 206;
+`unit_name=ilike.%Rig 209%` → 8 records, every row Rig 209; the "Diameters" specification column
+renders with no sort arrow and no filter input.
+
+**Defect 2 — changing a filter kept the old page cursor.**
+Selecting a category while on page 3 left `offset` where it was, so a filter whose result set is
+shorter than the old cursor returned an empty table. Every filter control now resets to page 1
+first, and the table adopts the page the parent owns. Verified: on page 3 of 6,426 records,
+clicking "Hoisting System" issued exactly one request, `category=eq.hoisting&offset=0`, and
+landed on page 1 of 368.
+
+**Defect 3 — infinite refetch loop (introduced and caught during this UAT, never shipped).**
+The first attempt at Defect 1 read `columns` as an effect dependency. `columns` is rebuilt on
+every parent render, so each fetch re-fired the emitter, which stored a new query object, which
+refetched. The browser queued 84 concurrent PostgREST requests, exhausted the connection pool
+and began failing with `canceling statement due to statement timeout` — which looks exactly like
+a slow query and is not one. `EXPLAIN ANALYZE` of the same filtered query runs in 28 ms.
+
+*Correction.* The emitter reads `columns` through a ref, and both list views compare the incoming
+controls with `sameQuery` before storing them, so an identical re-emission cannot restart the
+fetch. `sameQuery` is covered by `lib/listQuery.test.ts`; the loop it prevents is the reason
+those tests exist.
+
+**Also verified in the running application:** page sizes 10/25/50/100/250/500 (250 renders 250
+rows against a 368-record filter); free-text search narrows and clears correctly; a no-match
+search shows the empty state rather than an error; combined category + per-column filters
+intersect; the Columns menu lists all four bands with Reset; enabling a Specification column
+adds it to the grouped header. Search, filtering, sorting, paging and the total count are all
+computed by the database — the client never receives rows outside the visible page.
+
+## 8g. Production UAT — record form, approvals, and measurements (2026-08-14)
+
+**Defect 4 — the edit form fetched the whole table to fill one form (shipped).**
+`DataEntryForm` called `fetchRecords()` and then `rows.find(x => x.id === id)`: every one of the
+6,400+ records was downloaded over sequential paged round trips so that a single record could be
+located in JavaScript. Until the last page arrived every field rendered blank, which is how this
+was found — the form simply looked empty. `fetchRecordById` had been written for exactly this
+job during the performance work and was never wired in; it was exported and unused.
+
+*Correction.* The form now calls `fetchRecordById(id)`. Measured in the browser: the form fills
+instantly on load. The only remaining caller of the full-table `fetchRecords()` is CSV export,
+which is correct — an explicit user action that genuinely wants every row.
+
+**Defect 5 — the record form silently dropped the record's company (shipped).**
+`mapRow()` reads `company_id`, but `LIST_COLUMNS` never selected it, so `companyId` arrived null
+on every record. The edit form prefilled Company as blank while the list showed the company name
+beside it (that comes from `company_name`, a different column), and the form writes `company_id`
+back on save. Because Company is a required field the save was blocked rather than silently
+clearing the column, so no data was lost — but the user was forced to re-pick the company on
+every edit, with a wrong pick indistinguishable from a right one.
+
+*Correction.* A `DETAIL_COLUMNS` list adds `company_id`, `component_description` and
+`reject_reason` to what the list selects. `fetchRecordById` also used `select('*')`; it now names
+its columns. Verified in the browser: Company prefills as "Abraj". The invariant is written down
+where it can be acted on — every field `mapRow()` reads must appear in the column list, or it
+silently becomes null on a round trip through the form.
+
+**Defect 6 — three identical queries per list load.**
+The initial query state did not match what the table emits once its controls settle, so the page
+fetched, settled, and fetched again. Seeding the state with the settled shape removes one round
+trip. A second remains in development only: `React.StrictMode` (`src/main.tsx`) deliberately
+double-invokes effects in development and not in production builds.
+
+**Approval workflow — verified without mutating anything.**
+The queue is empty because all 6,426 production records are `approved`; the empty state is
+truthful. Attempting the approval through `insp_set_approval` from a SQL session that lacks the
+permission was refused with `permission denied: insp_approve required`, which is the correct
+outcome and was not worked around. Reading the live function definition confirms the audit fix is
+in production: it gates on `has_insp_perm('insp_approve')`, sets `approved_by = auth.uid()`
+server-side rather than from anything the client sends, writes every call to `insp_audit_log`,
+and **never touches `approver_id`** — the data-loss defect fixed in migration 0034 stays fixed.
+
+**View safety audit.** Only two views exist in `public`; both are `security_invoker = true` and
+both have explicit column lists. One `select r.*` remains in the migration history — migration
+0030, the original `insp_records_expanded`, which is the definition that caused the column-freeze
+outage. It is superseded by 0035's explicit 36-column list and, being an applied production
+migration, is correctly left untouched.
+
+**Latency, measured from the running application** (users in Oman, database in `ap-northeast-1`,
+Tokyo). Each figure is the median of five calls:
+
+| Request | Median |
+|---|---|
+| CDN edge, request never reaches the origin | ~40 ms |
+| Trivial query (`insp_companies`, one row) | 238 ms |
+| List page, ten rows, no count | 235 ms |
+| List page, ten rows, `count: 'exact'` | **1,541 ms** |
+| Same, `count: 'planned'` | 237 ms |
+| Same, `count: 'estimated'` | 476 ms |
+
+Two independent findings. First, ~200 ms of *every* request is geography — the gap between the
+40 ms edge round trip and the 238 ms trivial query. That is the cost of the region, and no amount
+of query tuning removes it. Second, and larger: `count: 'exact'` costs ~1.3 s, roughly 85% of the
+list page's load time, even though the same count runs in 23 ms server-side under
+`EXPLAIN ANALYZE`. The pager needs a total, so this is a real trade-off rather than pure waste —
+see the recommendation in the phase report. No region migration was performed.
+
+## 8h. Exact count, paid once per result set (2026-08-15)
+
+The count stays **exact**. This is compliance data: when the page says 6,426 records match, that
+number has to be true, so a PostgreSQL planner estimate was rejected outright even though it is
+effectively free. What changed is how often the exact count is paid for.
+
+Rows and count are now two queries (`fetchRecordsRows` / `fetchRecordsCount`) built from one
+shared `applyScope`, so the count can never describe a different result set than the rows shown
+beside it. `countKey` gives a result set its identity: every row-restricting predicate plus the
+caller's user id, and deliberately **not** page, page size or sort order — none of which change
+how many rows match. `useRecordList` recounts only when that key changes, and `refresh()`
+invalidates it after a mutation or a manual reload. The cache is component state, so it cannot
+outlive the view, and the user id in the key means a total computed under one authorization
+scope can never be displayed under another. RLS is unaffected either way: both queries read the
+`security_invoker` view, so Postgres applies the caller's policies to the rows *and* to the count.
+
+Measured in the running application, requests counted from the network trace:
+
+| Action | Rows query | Count query | Requests | Total shown |
+|---|---|---|---|---|
+| Initial load | yes | yes | 2 | 6,426 |
+| Page 1 → 2 | yes | **no** | 1 | 6,426 |
+| Page 2 → 3 | yes | **no** | 1 | 6,426 |
+| Page size 10 → 100 | yes | **no** | 1 | 6,426 |
+| Sort change | yes | **no** | 1 | 6,426 |
+| Category filter | yes | yes | 2 | 368 |
+| Search | yes | yes | 2 | 51 |
+| Clear filters | yes | yes | 2 | 6,426 |
+
+Query cost, six interleaved runs each to cancel out network drift:
+
+| Query shape | Median |
+|---|---|
+| Combined rows + exact count (what shipped) | 3,116 ms |
+| Rows only — paging, page size, sorting | 1,812 ms |
+| Exact count only — filters, search | 1,883 ms |
+
+Paging and sorting drop by ~42%, and more to the point stop issuing the count query at all.
+Filter and search still pay for it, which is correct: the result set genuinely changed. Absolute
+figures move with network conditions — an earlier session measured 235 ms and 1,541 ms for the
+same two shapes — so the request counts above are the durable result, not the milliseconds.
+
+Note on request counts: development doubles them. `React.StrictMode` (`src/main.tsx`) invokes
+effects twice on purpose in development and once in production builds, so an initial load traced
+in the dev server shows 4 requests where production issues 2.
+
 ## 9. Not inspected on the reference
 
 After the third pass, only these remain uninspected:

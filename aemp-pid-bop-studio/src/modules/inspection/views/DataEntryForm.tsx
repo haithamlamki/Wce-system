@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useInspection } from '../state/InspectionContext';
-import { fetchRecords, insertRecord, updateRecord } from '../lib/records';
+import { fetchRecordById, insertRecord, updateRecord } from '../lib/records';
 import type { RecordDraft } from '../lib/records';
 import { computeDueDate } from '../lib/compliance';
 import { uploadFile } from '../lib/files';
@@ -56,12 +56,14 @@ export default function DataEntryForm() {
   const [notice, setNotice] = useState<string | null>(null);
   const [remarks, setRemarks] = useState('');
 
-  // Edit mode: pull the record out of the same RLS-filtered view the list uses.
+  // Edit mode: fetch THIS record from the same RLS-filtered view the list uses.
+  // Fetching the whole table and searching it in JavaScript pulled every record
+  // (6,400+ rows over sequential paged round trips) to fill one form, and left
+  // every field blank until the last page arrived.
   useEffect(() => {
     if (!id) return undefined;
     let alive = true;
-    fetchRecords().then((rows) => {
-      const r = rows.find((x) => x.id === id);
+    fetchRecordById(id).then((r) => {
       if (!alive || !r) return;
       setF({
         serialNumber: r.serialNumber, partNumber: r.partNumber, oem: r.oem,

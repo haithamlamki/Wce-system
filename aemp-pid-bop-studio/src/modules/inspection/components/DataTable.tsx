@@ -11,6 +11,13 @@ import Icon from './Icon';
 export interface Column<T> {
   /** Stable key; also the Columns-menu identity. */
   key: string;
+  /**
+   * Database column backing this UI column. Required for server-side sorting
+   * and per-column filtering, because `key` is a UI identity (`serial`) and the
+   * database column is not (`serial_number`). Columns without a field are not
+   * offered for server-side sort/filter rather than sending an invalid name.
+   */
+  field?: string;
   header: string;
   /** Band label shown in the grouped header row (reference: Equipment, …). */
   group?: string;
@@ -205,24 +212,49 @@ export default function DataTable<T>({
 
   useEffect(() => { if (!isServerMode) setPage(1); }, [q, perPage, rows, isServerMode]);
 
+  // In server mode the parent owns the page number, so an externally driven
+  // reset — a category chip narrowing the result set to fewer pages than the
+  // current cursor — pulls this component's cursor back with it.
+  const serverPage = server?.page;
+  useEffect(() => { if (serverPage !== undefined) setPage(serverPage); }, [serverPage]);
+
   // Server mode: report control changes upward, debouncing typed input so a
   // search does not fire a query per keystroke.
   const onChangeRef = useRef(server?.onChange);
   onChangeRef.current = server?.onChange;
+  // Read through a ref rather than a dependency: `columns` is rebuilt on every
+  // parent render, so depending on it would re-fire this effect after each
+  // fetch and spin the query forever.
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
 
   useEffect(() => {
     if (!isServerMode) return undefined;
     const t = setTimeout(() => {
+      // Translate UI column keys to database column names; a column without a
+      // `field` cannot be sorted or filtered server-side, so it is dropped
+      // rather than sent as an invalid column name.
+      const fieldOf = (key: string) => columnsRef.current.find((c) => c.key === key)?.field;
+      const filters: Record<string, string> = {};
+      for (const [key, value] of Object.entries(colFilters)) {
+        const f = fieldOf(key);
+        if (f && value.trim()) filters[f] = value;
+      }
       onChangeRef.current?.({
-        page, perPage, search: q, sortBy: sort?.key ?? null,
-        sortAsc: sort?.dir !== 'desc', columnFilters: colFilters,
+        page, perPage, search: q,
+        sortBy: sort ? fieldOf(sort.key) ?? null : null,
+        sortAsc: sort?.dir !== 'desc',
+        columnFilters: filters,
       });
     }, 250);
     return () => clearTimeout(t);
   }, [isServerMode, page, perPage, q, sort, colFilters]);
 
+  /** A column the database cannot order or filter by (no backing `field`). */
+  const notQueryable = (c: Column<T>) => isServerMode && !c.field;
+
   const toggleSort = (c: Column<T>) => {
-    if (!c.value || c.sortable === false) return;
+    if (!c.value || c.sortable === false || notQueryable(c)) return;
     setSort((s) => (s?.key === c.key
       ? { key: c.key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
       : { key: c.key, dir: 'asc' }));
@@ -424,13 +456,13 @@ export default function DataTable<T>({
               )}
               {visible.map((c) => (
                 <th key={c.key}
-                  className={c.value && c.sortable !== false ? 'sortable' : undefined}
+                  className={c.value && c.sortable !== false && !notQueryable(c) ? 'sortable' : undefined}
                   style={{ textAlign: c.align === 'right' ? 'right' : undefined, width: c.width }}
                   onClick={() => toggleSort(c)}
                   aria-sort={sort?.key === c.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
                 >
                   {c.header}
-                  {c.value && c.sortable !== false && (
+                  {c.value && c.sortable !== false && !notQueryable(c) && (
                     <span className="arrow" aria-hidden="true">
                       {sort?.key === c.key ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'}
                     </span>
@@ -444,7 +476,7 @@ export default function DataTable<T>({
                 {selectable && <th />}
                 {visible.map((c) => (
                   <th key={c.key}>
-                    {c.value && c.filterable !== false && (
+                    {c.value && c.filterable !== false && !notQueryable(c) && (
                       <input
                         className="insp-input" type="search"
                         value={colFilters[c.key] ?? ''}
