@@ -28,7 +28,7 @@ export default function PasswordResetView() {
   return (
     <div style={{ maxWidth: 460 }}>
       <h2 style={{ fontSize: 18 }}>Security Management — Password Reset</h2>
-      <div style={{ color: 'var(--dim)', fontSize: 12, marginBottom: 12 }}>
+      <div style={{ color: 'var(--i-muted)', fontSize: 12, marginBottom: 12 }}>
         Change the password of your own account.
       </div>
       <div className="insp-card">
@@ -39,7 +39,7 @@ export default function PasswordResetView() {
             <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>
         </div>
         {err && <div style={{ color: '#d33', fontSize: 12.5, marginTop: 8 }}>{err}</div>}
-        {msg && <div style={{ color: 'var(--green)', fontSize: 12.5, marginTop: 8 }}>{msg}</div>}
+        {msg && <div style={{ color: 'var(--i-success)', fontSize: 12.5, marginTop: 8 }}>{msg}</div>}
         <div className="insp-toolbar" style={{ marginTop: 12 }}>
           <button className="insp-btn primary" disabled={busy} onClick={save}>🔑 Change Password</button>
         </div>

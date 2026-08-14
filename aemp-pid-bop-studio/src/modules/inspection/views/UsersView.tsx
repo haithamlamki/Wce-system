@@ -11,7 +11,7 @@ import { isPrivileged, INSPECTION_PERMISSIONS, type InspectionPermission } from 
 import { createUser, listUsers, listUserGrants, saveInspPermissions, saveUserUnitAccess,
   updateUserProfile, type UnitAccess, type UserAccount } from '../lib/users';
 import { CATEGORY_LABELS, CATEGORY_ORDER } from '../types';
-import { EmptyState } from '../InspectionModule';
+import { EmptyState } from '../components/ui';
 
 const PERM_LABELS: Record<InspectionPermission, string> = {
   insp_view: 'View module',
@@ -137,12 +137,12 @@ export default function UsersView() {
     <div>
       <div className="insp-toolbar">
         <h2 style={{ margin: 0, fontSize: 18 }}>Security Management — Users</h2>
-        <span style={{ color: 'var(--dim)', fontSize: 12 }}>
+        <span style={{ color: 'var(--i-muted)', fontSize: 12 }}>
           Accounts, roles, unit access and time-limited (vendor) logins.
         </span>
         <div style={{ flex: 1 }} />
         <input placeholder="Search users…" value={q} onChange={(e) => setQ(e.target.value)}
-          style={{ border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 9px', background: 'var(--panel)', color: 'var(--ink)' }} />
+          style={{ border: '1px solid var(--i-border)', borderRadius: 6, padding: '6px 9px', background: 'var(--i-surface)', color: 'var(--i-fg)' }} />
         <button className="insp-btn primary" onClick={() => setShowCreate((v) => !v)}>+ New User</button>
       </div>
 
@@ -162,7 +162,7 @@ export default function UsersView() {
           <div className="insp-toolbar" style={{ marginTop: 10 }}>
             <button className="insp-btn primary" disabled={busy} onClick={doCreate}>Create</button>
             <button className="insp-btn" onClick={() => setShowCreate(false)}>Cancel</button>
-            <span style={{ color: 'var(--dim)', fontSize: 11.5 }}>
+            <span style={{ color: 'var(--i-muted)', fontSize: 11.5 }}>
               After creating, open the user below to set role, permissions and units. Share the initial
               password securely and ask them to change it after the first login.
             </span>
@@ -176,7 +176,7 @@ export default function UsersView() {
             <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Roles</th><th>Role</th><th>Status</th><th>Expiry</th><th /></tr></thead>
             <tbody>
               {list.map((u) => (
-                <tr key={u.id} style={sel?.id === u.id ? { outline: '2px solid var(--accent)' } : {}}>
+                <tr key={u.id} style={sel?.id === u.id ? { outline: '2px solid var(--i-brand)' } : {}}>
                   <td>{u.fullName || '—'}</td><td>{u.email}</td><td>{u.phone || '—'}</td>
                   <td>{u.jobRoles.join(', ') || '—'}</td><td>{u.role}</td>
                   <td>{u.active
@@ -187,7 +187,7 @@ export default function UsersView() {
                 </tr>
               ))}
               {list.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--dim)' }}>No users found</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--i-muted)' }}>No users found</td></tr>
               )}
             </tbody>
           </table>
@@ -196,7 +196,7 @@ export default function UsersView() {
         {sel && (
           <div className="insp-card" style={{ flex: 1.4, minWidth: 420 }}>
             <h3 style={{ marginTop: 0 }}>Edit User — {sel.fullName || sel.email}</h3>
-            {!grants && <div style={{ color: 'var(--dim)', fontSize: 12.5 }}>Loading grants…</div>}
+            {!grants && <div style={{ color: 'var(--i-muted)', fontSize: 12.5 }}>Loading grants…</div>}
             {grants && (<>
               <div className="insp-form-grid">
                 <div className="insp-field"><label>First Name</label>
@@ -251,10 +251,10 @@ export default function UsersView() {
                   <label key={p} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, textTransform: 'none', fontWeight: 400 }}>
                     <input type="checkbox" checked={perms.has(p)}
                       onChange={() => setPerms((s) => { const n = new Set(s); if (n.has(p)) n.delete(p); else n.add(p); return n; })} />
-                    {PERM_LABELS[p]} <code style={{ color: 'var(--dim)' }}>{p}</code>
+                    {PERM_LABELS[p]} <code style={{ color: 'var(--i-muted)' }}>{p}</code>
                   </label>
                 ))}
-                <span style={{ color: 'var(--dim)', fontSize: 11 }}>
+                <span style={{ color: 'var(--i-muted)', fontSize: 11 }}>
                   Admin and manager roles hold every permission implicitly. Other modules' grants are preserved.
                 </span>
               </div>
@@ -276,7 +276,7 @@ export default function UsersView() {
                         <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, fontWeight: 700, textTransform: 'none' }}>
                           <input type="checkbox" checked={hasUnit && cur === null}
                             onChange={() => toggleUnitFull(u.id)} />
-                          {u.name} <span style={{ color: 'var(--dim)', fontWeight: 400 }}>Full Access</span>
+                          {u.name} <span style={{ color: 'var(--i-muted)', fontWeight: 400 }}>Full Access</span>
                         </label>
                         <div style={{ marginTop: 4, display: 'grid', gap: 2 }}>
                           {CATEGORY_ORDER.map((c) => (
@@ -292,7 +292,7 @@ export default function UsersView() {
                     );
                   })}
                 </div>
-                <span style={{ color: 'var(--dim)', fontSize: 11 }}>
+                <span style={{ color: 'var(--i-muted)', fontSize: 11 }}>
                   Unit access is shared with the Tubular module (same assignment table); the system
                   checkboxes scope which equipment categories this user sees inside each unit.
                 </span>

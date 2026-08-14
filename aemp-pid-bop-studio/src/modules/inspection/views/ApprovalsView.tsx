@@ -1,104 +1,171 @@
 // ============================================================================
-//  Pending Approval queue (guide §5.10) — records whose status is
-//  pending_approval and whose submitter chose YOU as approver (privileged
-//  users see every pending record). Approve All / Approve Selected / Reject.
+//  Approvals — replicates the reference `/inspection/approvals` page (columns
+//  Serial, Equipment, Part, Rig, Requested by, When, Status plus the
+//  "Run due-date notifications now" action).
+//
+//  Business rule preserved from the previous implementation: a non-privileged
+//  approver only sees records that named them as approver. The DB RPC
+//  (insp_set_approval, guarded by insp_approve) remains the real authorization
+//  boundary — the checks below only drive the UI.
 // ============================================================================
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../state/AuthContext';
 import { useInspection } from '../state/InspectionContext';
 import { fetchRecords, setApproval } from '../lib/records';
+import { listExpiringFiles } from '../lib/files';
+import { buildAlerts } from '../lib/compliance';
 import { isPrivileged } from '../lib/permissions';
-import { CATEGORY_LABELS, type InspectionRecord } from '../types';
+import { formatDate } from '../lib/format';
+import DataTable from '../components/DataTable';
+import type { Column } from '../components/DataTable';
 import LogsDrawer from '../components/LogsDrawer';
-import { EmptyState } from '../InspectionModule';
+import { Badge, EmptyState, PageHeader } from '../components/ui';
+import { APPROVE_STATUS_LABELS } from '../types';
+import type { InspectionRecord } from '../types';
 
 export default function ApprovalsView() {
   const { session, role } = useAuth();
-  const { can } = useInspection();
+  const { can, approvers } = useInspection();
   const [rows, setRows] = useState<InspectionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [logsFor, setLogsFor] = useState<InspectionRecord | null>(null);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const reload = () => {
     setLoading(true);
-    fetchRecords().then((r) => { setRows(r); setLoading(false); })
-      .catch((e) => { setErr((e as Error).message); setLoading(false); });
+    fetchRecords()
+      .then((r) => { setRows(r); setErr(null); })
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setLoading(false));
   };
   useEffect(reload, []);
 
-  const pending = useMemo(() => rows.filter((r) =>
+  const pending = useMemo(() => rows.filter((r) => (
     r.approveStatus === 'pending_approval'
-    && (isPrivileged(role) || r.approverId === session?.user.id)), [rows, role, session]);
+    && (isPrivileged(role) || r.approverId === session?.user.id)
+  )), [rows, role, session]);
+
+  // Creator ids are uuids; resolve to a name only when the person also appears
+  // in the approver directory, otherwise show an em dash rather than guessing.
+  const nameById = useMemo(
+    () => new Map(approvers.map((a) => [a.id, a.name])),
+    [approvers],
+  );
 
   const act = async (ids: string[], approve: boolean) => {
-    if (ids.length === 0) { alert('Nothing selected.'); return; }
-    const reason = approve ? undefined : (prompt('Reject reason (optional)') ?? undefined);
+    if (ids.length === 0) return;
+    const reason = approve ? undefined : (window.prompt('Reject reason (optional)') ?? undefined);
     setBusy(true);
     try {
       const n = await setApproval(ids, approve, reason);
-      alert(`${approve ? 'Approved' : 'Rejected'} ${n} record(s).`);
-      setSelected(new Set()); reload();
-    } catch (e) { alert((e as Error).message); }
-    finally { setBusy(false); }
+      setNotice(`${approve ? 'Approved' : 'Rejected'} ${n} record${n === 1 ? '' : 's'}.`);
+      setSelected(new Set());
+      reload();
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runNotifications = async () => {
+    setBusy(true);
+    try {
+      const files = await listExpiringFiles();
+      const alerts = buildAlerts(rows, files, new Date().toISOString().slice(0, 10));
+      setNotice(`${alerts.length} due-date alert${alerts.length === 1 ? '' : 's'} generated.`);
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (!can('insp_approve')) {
-    return <EmptyState ico="⚿" title="Approval permission required"
-      desc="Ask your administrator for the insp_approve permission." />;
+    return (
+      <>
+        <PageHeader title="Approvals" subtitle="Inspection records waiting for your approval." />
+        <EmptyState ico="⚿" title="Approval permission required"
+          desc="Ask your administrator for the insp_approve permission." />
+      </>
+    );
   }
-  if (loading) return <EmptyState ico="◌" title="Loading" desc="Loading your approval queue…" />;
-  if (err) return <EmptyState ico="⚠" title="Error" desc={err} />;
+
+  const columns: Column<InspectionRecord>[] = [
+    { key: 'serial', header: 'Serial', value: (r) => r.serialNumber },
+    { key: 'equipment', header: 'Equipment', value: (r) => r.typeName },
+    { key: 'part', header: 'Part', value: (r) => r.partName },
+    { key: 'rig', header: 'Rig', value: (r) => r.unitName },
+    {
+      key: 'requestedBy',
+      header: 'Requested by',
+      value: (r) => (r.createdBy ? nameById.get(r.createdBy) ?? null : null),
+    },
+    {
+      key: 'when',
+      header: 'When',
+      value: (r) => r.createdAt ?? null,
+      render: (r) => formatDate(r.createdAt),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      value: (r) => APPROVE_STATUS_LABELS[r.approveStatus],
+      render: (r) => <Badge tone="info">{APPROVE_STATUS_LABELS[r.approveStatus]}</Badge>,
+    },
+  ];
 
   return (
-    <div>
-      <div className="insp-toolbar">
-        <h2 style={{ margin: 0, fontSize: 18 }}>Pending Approval</h2>
-        <span style={{ color: 'var(--dim)', fontSize: 12 }}>
-          Records waiting for your sign-off. Open the history before approving if you want to see what changed.
-        </span>
-        <div style={{ flex: 1 }} />
-        <button className="insp-btn primary" disabled={busy || pending.length === 0}
-          onClick={() => act(pending.map((r) => r.id), true)}>✓ Approve All ({pending.length})</button>
-        <button className="insp-btn" disabled={busy || selected.size === 0}
-          onClick={() => act([...selected], true)}>✓ Approve Selected ({selected.size})</button>
-        <button className="insp-btn" disabled={busy || selected.size === 0}
-          onClick={() => act([...selected], false)}>✗ Reject Selected</button>
-      </div>
+    <>
+      <PageHeader
+        title="Approvals"
+        subtitle="Inspection records waiting for your approval."
+        actions={(
+          <button type="button" className="insp-btn" disabled={busy} onClick={runNotifications}>
+            Run due-date notifications now
+          </button>
+        )}
+      />
 
-      <div className="insp-table-wrap">
-        <table className="insp-table" style={{ minWidth: 900 }}>
-          <thead><tr>
-            <th><input type="checkbox"
-              checked={pending.length > 0 && pending.every((r) => selected.has(r.id))}
-              onChange={(e) => setSelected(e.target.checked ? new Set(pending.map((r) => r.id)) : new Set())} /></th>
-            <th>Unit</th><th>Category</th><th>Equipment</th><th>Part</th>
-            <th>Serial Number</th><th>OEM</th><th>Interm. Due</th><th>Major Due</th><th>History</th>
-          </tr></thead>
-          <tbody>
-            {pending.map((r) => (
-              <tr key={r.id}>
-                <td><input type="checkbox" checked={selected.has(r.id)}
-                  onChange={() => setSelected((s) => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
-                <td>{r.unitName}</td><td>{CATEGORY_LABELS[r.category]}</td>
-                <td>{r.typeName}</td><td>{r.partName ?? ''}</td>
-                <td>{r.serialNumber}</td><td>{r.oem}</td>
-                <td>{r.intermediateDueDate ?? ''}</td><td>{r.majorDueDate ?? ''}</td>
-                <td><button className="insp-btn" style={{ padding: '2px 8px' }}
-                  onClick={() => setLogsFor(r)}>🗒</button></td>
-              </tr>
-            ))}
-            {pending.length === 0 && (
-              <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--dim)' }}>
-                Nothing waiting for your approval. ✅
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {notice && (
+        <div className="insp-card" style={{ marginBottom: 12, fontSize: 12.5 }} role="status">
+          {notice}
+        </div>
+      )}
+
+      <DataTable
+        rows={pending}
+        columns={columns}
+        rowKey={(r) => r.id}
+        loading={loading}
+        error={err}
+        selectable
+        selected={selected}
+        onSelectedChange={setSelected}
+        searchPlaceholder="Search serial, equipment, rig…"
+        emptyTitle="Nothing waiting for approval"
+        emptyDesc="No inspection records are pending your sign-off."
+        aboveTable={selected.size > 0 ? (
+          <div className="insp-toolbar">
+            <span>{selected.size} selected</span>
+            <div className="grow">
+              <button type="button" className="insp-btn primary" disabled={busy}
+                onClick={() => act([...selected], true)}>Approve selected</button>
+              <button type="button" className="insp-btn danger" disabled={busy}
+                onClick={() => act([...selected], false)}>Reject selected</button>
+            </div>
+          </div>
+        ) : undefined}
+        rowActions={(r) => (
+          <button type="button" className="insp-btn sm" title="History"
+            onClick={() => setLogsFor(r)}>🗒</button>
+        )}
+      />
+
       {logsFor && <LogsDrawer record={logsFor} onClose={() => setLogsFor(null)} />}
-    </div>
+    </>
   );
 }

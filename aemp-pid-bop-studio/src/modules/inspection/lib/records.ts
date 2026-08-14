@@ -40,6 +40,8 @@ export function mapRow(row: Record<string, unknown>): InspectionRecord {
     partName: (row.part_name as string) ?? null,
     componentName: (row.component_name as string) ?? null,
     unitName: s('unit_name'), companyName: (row.company_name as string) ?? null,
+    createdAt: (row.created_at as string) ?? null,
+    createdBy: (row.created_by as string) ?? null,
   };
 }
 
@@ -80,17 +82,43 @@ export async function fetchApprovers(): Promise<{ id: string; name: string }[]> 
   return (data ?? []) as { id: string; name: string }[];
 }
 
+/**
+ * Columns the dashboard aggregates over. Selecting these instead of `*` keeps
+ * the jsonb `specs` and `spec_fields` payloads out of a 6k-row scan, which is
+ * the difference between a snappy dashboard and a ~25s one.
+ */
+export const DASHBOARD_COLUMNS = [
+  'id', 'unit_id', 'unit_name', 'company_name', 'category', 'type_name',
+  'serial_number', 'oem', 'working_status', 'manufacture_year',
+  'intermediate_date', 'intermediate_freq_months', 'intermediate_due_date',
+  'major_date', 'major_freq_months', 'major_due_date',
+  'approve_status', 'approver_id', 'created_at', 'created_by',
+].join(',');
+
 export async function fetchRecords(opts: {
-  category?: InspCategory; typeId?: string; unitId?: string;
+  category?: InspCategory; typeId?: string; unitId?: string; columns?: string;
 } = {}): Promise<InspectionRecord[]> {
   const sb = need();
-  let q = sb.from('insp_records_expanded').select('*');
-  if (opts.category) q = q.eq('category', opts.category);
-  if (opts.typeId) q = q.eq('type_id', opts.typeId);
-  if (opts.unitId) q = q.eq('unit_id', opts.unitId);
-  const { data, error } = await q.order('created_at', { ascending: false }).limit(10000);
-  if (error) throw new Error(error.message);
-  return (data ?? []).map(mapRow);
+  // Paginate: PostgREST caps every response at 1000 rows server-side, so a
+  // plain .limit(10000) silently truncates once real data volumes arrive.
+  const PAGE = 1000;
+  const out: InspectionRecord[] = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = sb.from('insp_records_expanded').select(opts.columns ?? '*');
+    if (opts.category) q = q.eq('category', opts.category);
+    if (opts.typeId) q = q.eq('type_id', opts.typeId);
+    if (opts.unitId) q = q.eq('unit_id', opts.unitId);
+    const { data, error } = await q
+      .order('created_at', { ascending: false }).order('id')
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    // A runtime column list defeats supabase-js's select-string inference, so
+    // the rows come back untyped and are narrowed by mapRow instead.
+    const rows = (data ?? []) as unknown as Record<string, unknown>[];
+    out.push(...rows.map(mapRow));
+    if (rows.length < PAGE) break;
+  }
+  return out;
 }
 
 export interface RecordDraft {

@@ -1,64 +1,482 @@
-/* Inspection module — own shell inside the shared theme system. */
-.insp-app { display: flex; flex-direction: column; min-height: 100%; background: var(--sunk); color: var(--ink); }
-.insp-topbar { display: flex; align-items: center; gap: 14px; padding: 10px 18px; background: var(--panel); border-bottom: 1px solid var(--line2); }
-.insp-brand { display: flex; align-items: center; gap: 10px; }
-.insp-brand img { height: 30px; }
-.insp-brand h1 { font-size: 15px; margin: 0; }
-.insp-sub { font-size: 11px; color: var(--dim); }
-.insp-topbar-spacer { flex: 1; }
-.insp-home-link { font-size: 12.5px; color: var(--ink); text-decoration: none; border: 1px solid var(--line2); padding: 6px 10px; border-radius: 7px; }
-.insp-tabnav { display: flex; gap: 4px; padding: 0 18px; background: var(--panel); border-bottom: 2px solid var(--line2); overflow-x: auto; }
-.insp-tabnav a { padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--dim); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap; }
-.insp-tabnav a.active { color: var(--accent); border-bottom-color: var(--accent); }
-.insp-main { padding: 18px; flex: 1; }
-.insp-card { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; padding: 14px; }
-.insp-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
-.insp-btn { border: 1px solid var(--line2); background: var(--panel); color: var(--ink); padding: 7px 11px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.insp-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.insp-btn:disabled { opacity: .45; cursor: not-allowed; }
-.insp-table-wrap { overflow-x: auto; border: 1px solid var(--line2); border-radius: 8px; }
-.insp-table { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 1200px; }
-.insp-table th, .insp-table td { border-bottom: 1px solid var(--line2); padding: 7px 9px; text-align: left; white-space: nowrap; }
-.insp-table thead th { background: var(--sunk); position: sticky; top: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-.insp-table thead input { width: 110px; font-size: 11px; padding: 3px 5px; border: 1px solid var(--line2); border-radius: 5px; background: var(--panel); color: var(--ink); }
-.insp-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--sunk) 45%, transparent); }
-.insp-rag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-.insp-rag.overdue { background: color-mix(in srgb, #d33 20%, transparent); color: #d33; }
-.insp-rag.due_soon { background: color-mix(in srgb, #d90 20%, transparent); color: #b70; }
-.insp-rag.compliant { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
-.insp-rag.unknown { background: var(--sunk); color: var(--dim); }
-.insp-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.insp-field label { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; }
-.insp-field input, .insp-field select, .insp-field textarea { border: 1px solid var(--line2); border-radius: 6px; padding: 7px 9px; background: var(--panel); color: var(--ink); font-size: 12.5px; }
-.insp-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.insp-subtabs { display: flex; gap: 2px; margin-bottom: 12px; border-bottom: 1px solid var(--line2); }
-.insp-subtabs button { border: 0; background: none; padding: 8px 14px; font-size: 12.5px; font-weight: 600; color: var(--dim); cursor: pointer; border-bottom: 2px solid transparent; }
-.insp-subtabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
-.insp-cat-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
-.insp-cat-tabs button { border: 1px solid var(--line2); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 6px 13px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.insp-cat-tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-.insp-tree { min-width: 210px; border-right: 1px solid var(--line2); padding-right: 10px; font-size: 12.5px; }
-.insp-tree button { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--ink); padding: 5px 7px; border-radius: 6px; cursor: pointer; }
-.insp-tree button.active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.insp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.insp-kpi { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; padding: 14px; }
-.insp-kpi .num { font-size: 26px; font-weight: 800; }
-.insp-kpi .lbl { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
-.insp-empty { text-align: center; color: var(--dim); padding: 48px 0; }
-.insp-empty .ico { font-size: 34px; }
-.insp-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 92vw); background: var(--panel); border-left: 1px solid var(--line2); box-shadow: -6px 0 24px rgba(0,0,0,.18); z-index: 60; padding: 16px; overflow-y: auto; }
-.insp-dropzone { border: 2px dashed var(--line2); border-radius: 10px; padding: 22px; text-align: center; color: var(--dim); }
-.insp-dropzone.drag { border-color: var(--accent); color: var(--accent); }
-.insp-bell { position: relative; border: 1px solid var(--line2); background: var(--panel); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-size: 14px; }
-.insp-bell .badge { position: absolute; top: -6px; right: -6px; background: #d33; color: #fff; font-size: 10px; font-weight: 800; border-radius: 999px; padding: 1px 5px; }
-.insp-bell-panel { position: absolute; right: 0; top: 40px; width: 340px; max-height: 420px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.2); z-index: 70; }
-.insp-bell-panel .item { padding: 9px 12px; border-bottom: 1px solid var(--line2); font-size: 12px; }
-/* Dashboard grouped headers + RAG date cells (reference parity) */
-.insp-th-group { border-bottom: 2px solid var(--line2); background: var(--panel) !important; }
-.insp-group-toggle { border: 0; background: none; color: var(--ink); font-size: 10.5px; font-weight: 800; letter-spacing: .06em; cursor: pointer; padding: 2px 4px; }
-.insp-doc-th { writing-mode: vertical-rl; transform: rotate(180deg); max-height: 120px; font-size: 10px !important; padding: 6px 3px !important; }
-.insp-cell-rag.overdue { background: color-mix(in srgb, #d33 32%, transparent); }
-.insp-cell-rag.due_soon { background: color-mix(in srgb, #e6c34a 45%, transparent); }
-.insp-cell-rag.compliant { background: color-mix(in srgb, var(--green) 30%, transparent); }
-/* Configure Access matrix (Security Management, reference User Edit page) */
-.insp-access-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; max-height: 420px; overflow-y: auto; padding: 2px; }
+/* ============================================================================
+   Equipment Inspection module — visual system replicated from the reference
+   system at einspection.abrajenergy.com (tokens captured 2026-08-14).
+   Scoped under .insp-app so the host app's WCE/Tubular themes are unaffected.
+   ========================================================================== */
+
+.insp-app {
+  --i-brand: oklch(55% .15 248);
+  --i-accent: oklch(70% .11 195);
+  --i-success: oklch(60% .15 155);
+  --i-warning: oklch(71% .16 75);
+  --i-danger: oklch(57.5% .22 25);
+  --i-info: oklch(63.5% .13 225);
+
+  --i-bg: #fff;
+  --i-surface: #fff;
+  --i-surface-2: #f4f4f5;
+  --i-surface-3: #e4e4e7;
+  --i-border: #e5e7eb;
+  --i-border-2: #d1d5db;
+  --i-border-3: #9ca3af;
+  --i-fg: #18181b;
+  --i-fg-2: #27272a;
+  --i-muted: #71717a;
+  --i-muted-2: #52525b;
+
+  --i-primary-muted: color-mix(in oklch, var(--i-brand) 10%, transparent);
+  --i-primary-border: color-mix(in oklch, var(--i-brand) 25%, transparent);
+  --i-radius: 8px;
+  --i-sidebar-w: 256px;
+  --i-topbar-h: 56px;
+
+  font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  color: var(--i-fg);
+  background: var(--i-bg);
+  min-height: 100%;
+  /* The host app renders modules inside a flex <main class="viewport">, so the
+     shell must claim the full row instead of shrink-wrapping to its content. */
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Dark palette copied from the reference system's own `.dark` :root block. */
+.insp-app.dark {
+  --i-bg: #07090f;
+  --i-surface: #0f131c;
+  --i-surface-2: #161c28;
+  --i-surface-3: #1f2838;
+  --i-border: #e2e8f012;
+  --i-border-2: #e2e8f01f;
+  --i-border-3: #e2e8f033;
+  --i-fg: #eef2fa;
+  --i-fg-2: #b8c1d4;
+  --i-muted: #6a748a;
+  --i-muted-2: #b8c1d4;
+  --i-popover: #18202e;
+  --i-brand: color-mix(in oklch, oklch(55% .15 248) 72%, #fff);
+  --i-primary-muted: color-mix(in oklch, oklch(55% .15 248) 18%, transparent);
+  --i-primary-border: color-mix(in oklch, oklch(55% .15 248) 38%, transparent);
+}
+.insp-app.dark .insp-popover,
+.insp-app.dark .insp-combo-pop,
+.insp-app.dark .insp-bell-panel { background: var(--i-popover); }
+
+/* ---- topbar --------------------------------------------------------------- */
+.insp-topbar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 12px;
+  height: var(--i-topbar-h); padding: 0 16px;
+  background: var(--i-surface); border-bottom: 1px solid var(--i-border);
+}
+.insp-topbar .brand { display: flex; align-items: center; gap: 10px; }
+.insp-topbar .brand img { height: 20px; }
+.insp-topbar .brand .word { font-size: 13px; font-weight: 500; color: var(--i-fg-2); }
+.insp-topbar .spacer { flex: 1; }
+.insp-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: var(--i-radius);
+  border: 0; background: none; color: var(--i-muted); cursor: pointer; font-size: 15px;
+}
+.insp-iconbtn:hover { background: var(--i-surface-2); color: var(--i-fg); }
+.insp-avatar {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 0; background: none; cursor: pointer; padding: 4px 6px;
+  border-radius: var(--i-radius); color: var(--i-fg); font-size: 13px;
+}
+.insp-avatar:hover { background: var(--i-surface-2); }
+.insp-avatar .ini {
+  width: 26px; height: 26px; border-radius: 999px;
+  background: var(--i-primary-muted); color: var(--i-brand);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+}
+
+/* ---- body layout ---------------------------------------------------------- */
+.insp-body { display: flex; align-items: flex-start; min-height: calc(100vh - var(--i-topbar-h)); }
+.insp-sidebar {
+  width: var(--i-sidebar-w); flex: 0 0 var(--i-sidebar-w);
+  position: sticky; top: var(--i-topbar-h);
+  height: calc(100vh - var(--i-topbar-h));
+  overflow-y: auto; padding: 12px 12px 24px;
+  background: var(--i-surface); border-right: 1px solid var(--i-border);
+}
+.insp-app.nav-collapsed .insp-sidebar { display: none; }
+.insp-navsec { margin-top: 14px; }
+.insp-navsec:first-child { margin-top: 2px; }
+.insp-navsec h6 {
+  margin: 0 0 6px; padding: 0 8px;
+  font-size: 10px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--i-muted);
+}
+.insp-navitem {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 12px; margin-bottom: 2px;
+  border: 0; border-radius: var(--i-radius); background: none;
+  color: var(--i-fg-2); font-size: 13.5px; font-weight: 450;
+  text-align: left; text-decoration: none; cursor: pointer;
+}
+.insp-navitem:hover { background: var(--i-surface-2); }
+.insp-navitem.active { background: var(--i-primary-muted); color: var(--i-brand); font-weight: 500; }
+.insp-navitem .ico { width: 16px; text-align: center; font-size: 13px; opacity: .85; }
+
+.insp-main { flex: 1; min-width: 0; padding: 20px 24px 48px; }
+
+/* ---- page header ---------------------------------------------------------- */
+.insp-pagehead { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.insp-pagehead h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.insp-pagehead p { margin: 2px 0 0; font-size: 12.5px; color: var(--i-muted); }
+.insp-pagehead .actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---- controls ------------------------------------------------------------- */
+.insp-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--i-border-2); background: var(--i-surface); color: var(--i-fg-2);
+  padding: 6px 11px; border-radius: var(--i-radius);
+  font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
+}
+.insp-btn:hover:not(:disabled) { background: var(--i-surface-2); }
+.insp-btn:disabled { opacity: .5; cursor: not-allowed; }
+.insp-btn.primary { background: var(--i-brand); border-color: var(--i-brand); color: #fff; }
+.insp-btn.primary:hover:not(:disabled) { filter: brightness(1.06); }
+.insp-btn.danger { color: var(--i-danger); border-color: color-mix(in oklch, var(--i-danger) 35%, transparent); }
+.insp-btn.sm { padding: 4px 8px; font-size: 11.5px; }
+
+.insp-input, .insp-select {
+  border: 1px solid var(--i-border-2); border-radius: var(--i-radius);
+  background: var(--i-surface); color: var(--i-fg);
+  padding: 6px 10px; font-size: 12.5px; font-family: inherit;
+}
+.insp-input:focus, .insp-select:focus {
+  outline: 2px solid var(--i-primary-border); outline-offset: -1px; border-color: var(--i-brand);
+}
+.insp-input::placeholder { color: var(--i-muted); }
+.insp-search { position: relative; }
+.insp-search .insp-input { padding-left: 30px; width: 280px; max-width: 100%; }
+.insp-search .mag {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 12px; color: var(--i-muted); pointer-events: none;
+}
+
+/* chips (category selector) */
+.insp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.insp-chip {
+  border: 1px solid var(--i-border-2); background: var(--i-surface); color: var(--i-fg-2);
+  border-radius: var(--i-radius); padding: 5px 11px;
+  font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;
+}
+.insp-chip:hover { background: var(--i-surface-2); }
+.insp-chip.active { background: var(--i-primary-muted); border-color: var(--i-primary-border); color: var(--i-brand); }
+
+/* labelled filter selects row */
+.insp-filterrow { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; }
+.insp-filterrow .fld { display: flex; flex-direction: column; gap: 4px; }
+.insp-filterrow .fld > span { font-size: 11.5px; color: var(--i-muted); }
+.insp-filterrow .insp-select { min-width: 150px; }
+
+/* toolbar: search left, Filters/Columns right */
+.insp-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.insp-toolbar .grow { margin-left: auto; display: flex; gap: 8px; }
+
+/* ---- cards ---------------------------------------------------------------- */
+.insp-card {
+  background: var(--i-surface); border: 1.2px solid var(--i-border);
+  border-radius: 16px; padding: 16px;
+}
+.insp-card > h3 {
+  margin: 0 0 10px; font-size: 12.5px; font-weight: 600; color: var(--i-fg-2);
+  display: flex; align-items: center; gap: 6px;
+}
+.insp-section-title {
+  margin: 20px 0 13px; font-size: 13.9px; font-weight: 600;
+  color: var(--i-muted-2); letter-spacing: -.03em;
+}
+/* The reference lays every dashboard section out as two equal columns at any
+   desktop width — not an auto-fit track list. */
+.insp-grid-2, .insp-grid-3 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 19px; }
+@media (max-width: 900px) {
+  .insp-grid-2, .insp-grid-3 { grid-template-columns: 1fr; }
+}
+
+/* KPI cards */
+.insp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.insp-kpi {
+  background: var(--i-surface); border: 1px solid var(--i-border);
+  border-radius: 10px; padding: 12px 14px;
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.insp-kpi .lbl { font-size: 11.5px; color: var(--i-muted); }
+.insp-kpi .num { font-size: 20px; font-weight: 650; line-height: 1.25; }
+.insp-kpi .cap { font-size: 11px; color: var(--i-muted); }
+.insp-kpi .kico { margin-left: auto; font-size: 14px; opacity: .55; }
+.insp-kpi .num.danger { color: var(--i-danger); }
+.insp-kpi .num.warning { color: var(--i-warning); }
+
+/* ---- table ---------------------------------------------------------------- */
+.insp-table-wrap {
+  overflow-x: auto; background: var(--i-surface);
+  border: 1px solid var(--i-border); border-radius: 10px;
+}
+.insp-table { border-collapse: collapse; width: 100%; }
+.insp-table thead th {
+  background: color-mix(in srgb, var(--i-surface-2) 70%, transparent);
+  border-bottom: 1.2px solid var(--i-border);
+  padding: 0 14px; height: 40px;
+  font-size: 12.8px; font-weight: 500; color: var(--i-muted-2);
+  text-align: left; white-space: nowrap;
+}
+.insp-table thead th.group {
+  height: 30px; font-size: 11.5px; font-weight: 600; color: var(--i-fg-2);
+  border-bottom: 1px solid var(--i-border); text-align: left;
+}
+.insp-table tbody td {
+  padding: 9px 14px; font-size: 13.9px; color: var(--i-fg);
+  border-bottom: 1px solid var(--i-border); vertical-align: middle; white-space: nowrap;
+}
+.insp-table tbody tr:last-child td { border-bottom: 0; }
+.insp-table tbody tr:hover td { background: color-mix(in srgb, var(--i-surface-2) 55%, transparent); }
+.insp-table th.sortable { cursor: pointer; user-select: none; }
+.insp-table th.sortable .arrow { margin-left: 4px; font-size: 9px; opacity: .5; }
+.insp-table .rowacts { display: flex; gap: 4px; justify-content: flex-end; }
+.insp-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Filters row: one search input per column, inside the table head. */
+.insp-table thead tr.insp-filterrow-th th {
+  height: auto; padding: 6px 10px;
+  background: color-mix(in srgb, var(--i-surface-2) 40%, transparent);
+}
+.insp-table thead tr.insp-filterrow-th .insp-input {
+  width: 100%; min-width: 90px; padding: 4px 8px; font-size: 12px;
+}
+
+/* Columns menu: grouped, scrollable, checkmark items. */
+.insp-colmenu { min-width: 240px; max-height: 420px; overflow-y: auto; padding: 6px; }
+.insp-colmenu .title { font-size: 12.5px; font-weight: 600; padding: 6px 8px 2px; }
+.insp-colmenu .reset {
+  display: block; width: 100%; text-align: left; border: 0; background: none;
+  color: var(--i-muted); font-size: 12.5px; padding: 6px 8px;
+  border-radius: 6px; cursor: pointer;
+}
+.insp-colmenu .reset:hover:not(:disabled) { background: var(--i-surface-2); color: var(--i-fg); }
+.insp-colmenu .reset:disabled { opacity: .5; cursor: default; }
+.insp-colmenu .grp {
+  font-size: 11px; font-weight: 600; color: var(--i-muted);
+  padding: 8px 8px 3px; letter-spacing: .01em;
+}
+.insp-colmenu [role="menuitemcheckbox"] {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  border: 0; background: none; color: var(--i-fg-2); cursor: pointer;
+  font-size: 12.5px; padding: 6px 8px; border-radius: 6px;
+}
+.insp-colmenu [role="menuitemcheckbox"]:hover { background: var(--i-surface-2); }
+.insp-colmenu .tick { width: 12px; color: var(--i-brand); font-size: 11px; }
+
+/* Searchable combobox (reference uses one wherever a value is picked). */
+.insp-combo { position: relative; display: inline-block; }
+.insp-combo.block { display: block; }
+.insp-combo-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; min-width: 150px;
+  border: 1px solid var(--i-border-2); border-radius: var(--i-radius);
+  background: var(--i-surface); color: var(--i-fg);
+  padding: 6px 10px; font-size: 12.5px; font-family: inherit; cursor: pointer;
+}
+.insp-combo-trigger:hover:not(:disabled) { background: var(--i-surface-2); }
+.insp-combo-trigger:disabled { opacity: .5; cursor: not-allowed; }
+.insp-combo-trigger .ph { color: var(--i-muted); }
+.insp-combo-trigger span:first-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.insp-combo-pop {
+  position: absolute; left: 0; top: calc(100% + 4px); z-index: 70;
+  min-width: 100%; width: max-content; max-width: 320px;
+  background: var(--i-surface); border: 1px solid var(--i-border);
+  border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.12); padding: 6px;
+}
+.insp-combo-pop > .insp-input { width: 100%; margin-bottom: 4px; }
+.insp-combo-pop .list { max-height: 260px; overflow-y: auto; }
+.insp-combo-pop .none { padding: 8px; font-size: 12.5px; color: var(--i-muted); }
+.insp-combo-pop [role="option"] {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  border: 0; background: none; color: var(--i-fg-2); cursor: pointer;
+  font-size: 12.5px; padding: 6px 8px; border-radius: 6px;
+}
+.insp-combo-pop [role="option"]:hover { background: var(--i-surface-2); }
+.insp-combo-pop [role="option"] .tick {
+  width: 13px; display: inline-flex; color: var(--i-brand);
+}
+
+/* Grouped-header band label with its column-visibility and collapse controls. */
+.insp-table thead th.group .bandhead { display: inline-flex; align-items: center; gap: 2px; }
+.insp-iconbtn.xs { width: 20px; height: 20px; border-radius: 5px; color: var(--i-muted); }
+.insp-iconbtn.xs:hover { background: var(--i-surface-3); color: var(--i-fg); }
+
+/* Inline labelled filter shown in the toolbar (Equipment page). */
+.insp-inline-filter { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--i-muted); }
+
+.insp-btn.active { background: var(--i-primary-muted); border-color: var(--i-primary-border); color: var(--i-brand); }
+.insp-btn svg, .insp-navitem svg, .insp-iconbtn svg { flex: none; }
+.insp-iconbtn.sm { width: 28px; height: 28px; }
+.insp-iconbtn.danger:hover { color: var(--i-danger); }
+.insp-navitem .ico { display: inline-flex; align-items: center; justify-content: center; }
+
+/* ---- badges --------------------------------------------------------------- */
+.insp-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 6px;
+  font-size: 11.5px; font-weight: 500; line-height: 1.55; white-space: nowrap;
+}
+.insp-badge.success { background: color-mix(in oklch, var(--i-success) 14%, transparent); color: var(--i-success); }
+.insp-badge.danger  { background: color-mix(in oklch, var(--i-danger) 14%, transparent);  color: var(--i-danger); }
+.insp-badge.warning { background: color-mix(in oklch, var(--i-warning) 16%, transparent); color: color-mix(in oklch, var(--i-warning) 80%, black); }
+.insp-badge.info    { background: color-mix(in oklch, var(--i-info) 14%, transparent);    color: var(--i-info); }
+.insp-badge.neutral { background: var(--i-surface-2); color: var(--i-muted); }
+
+/* RAG pill kept for the drawers and the security screens, which predate the
+   badge component and still address these class names. */
+.insp-rag {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px;
+  font-size: 11.5px; font-weight: 500; line-height: 1.55; white-space: nowrap;
+}
+.insp-rag.overdue   { background: color-mix(in oklch, var(--i-danger) 14%, transparent);  color: var(--i-danger); }
+.insp-rag.due_soon  { background: color-mix(in oklch, var(--i-warning) 16%, transparent); color: color-mix(in oklch, var(--i-warning) 80%, black); }
+.insp-rag.compliant { background: color-mix(in oklch, var(--i-success) 14%, transparent); color: var(--i-success); }
+.insp-rag.unknown   { background: var(--i-surface-2); color: var(--i-muted); }
+
+/* ---- pagination footer ---------------------------------------------------- */
+.insp-tablefoot {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px; font-size: 12.5px; color: var(--i-muted);
+}
+.insp-tablefoot .pages { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.insp-pagebtn {
+  min-width: 30px; height: 30px; padding: 0 8px;
+  border: 1px solid var(--i-border-2); background: var(--i-surface); color: var(--i-fg-2);
+  border-radius: 6px; font-size: 12px; cursor: pointer;
+}
+.insp-pagebtn:hover:not(:disabled) { background: var(--i-surface-2); }
+.insp-pagebtn.active { background: var(--i-brand); border-color: var(--i-brand); color: #fff; }
+.insp-pagebtn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---- forms ---------------------------------------------------------------- */
+.insp-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.insp-field { display: flex; flex-direction: column; gap: 5px; }
+.insp-field > label { font-size: 12px; font-weight: 500; color: var(--i-fg-2); }
+.insp-field .req { color: var(--i-danger); }
+.insp-field .err { font-size: 11.5px; color: var(--i-danger); }
+.insp-field input[readonly] { background: var(--i-surface-2); color: var(--i-muted); }
+
+/* ---- states --------------------------------------------------------------- */
+.insp-empty { text-align: center; color: var(--i-muted); padding: 44px 16px; }
+.insp-empty .ico { font-size: 26px; opacity: .5; }
+.insp-empty .t { font-weight: 600; color: var(--i-fg-2); margin-top: 8px; font-size: 13.5px; }
+.insp-empty .d { font-size: 12.5px; margin-top: 3px; }
+.insp-skel { background: var(--i-surface-2); border-radius: 6px; height: 12px; animation: inspPulse 1.4s ease-in-out infinite; }
+@keyframes inspPulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+.insp-spinner {
+  width: 18px; height: 18px; border-radius: 999px; display: inline-block;
+  border: 2px solid var(--i-border-2); border-top-color: var(--i-brand);
+  animation: inspSpin .7s linear infinite;
+}
+@keyframes inspSpin { to { transform: rotate(360deg) } }
+
+/* ---- overlays ------------------------------------------------------------- */
+.insp-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 92vw); z-index: 60;
+  background: var(--i-surface); border-left: 1px solid var(--i-border);
+  box-shadow: -6px 0 24px rgba(0,0,0,.12); padding: 16px; overflow-y: auto;
+}
+.insp-popover {
+  position: absolute; right: 0; top: 38px; z-index: 70; min-width: 230px;
+  background: var(--i-surface); border: 1px solid var(--i-border);
+  border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.12); padding: 8px;
+}
+.insp-popover label {
+  display: flex; align-items: center; gap: 8px; padding: 5px 7px;
+  font-size: 12.5px; border-radius: 6px; cursor: pointer;
+}
+.insp-popover label:hover { background: var(--i-surface-2); }
+.insp-rel { position: relative; }
+.insp-dropzone {
+  border: 1.5px dashed var(--i-border-2); border-radius: 10px;
+  padding: 20px; text-align: center; color: var(--i-muted); font-size: 12.5px; cursor: pointer;
+}
+.insp-dropzone.drag { border-color: var(--i-brand); color: var(--i-brand); background: var(--i-primary-muted); }
+.insp-bell-panel {
+  position: absolute; right: 0; top: 40px; width: 340px; max-height: 420px; overflow-y: auto;
+  background: var(--i-surface); border: 1px solid var(--i-border); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.14); z-index: 70;
+}
+.insp-bell-panel .item { padding: 9px 12px; border-bottom: 1px solid var(--i-border); font-size: 12.5px; }
+.insp-badge-dot {
+  position: absolute; top: 3px; right: 3px; min-width: 15px; height: 15px; padding: 0 3px;
+  background: var(--i-danger); color: #fff; font-size: 9.5px; font-weight: 700;
+  border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* ---- charts --------------------------------------------------------------- */
+.insp-chart { position: relative; height: 220px; }
+.insp-chart-center {
+  position: absolute; inset: 0; display: grid; place-content: center; justify-items: center;
+  pointer-events: none; gap: 2px;
+}
+.insp-chart-center strong { font-size: 25px; font-weight: 650; }
+.insp-chart-center span { font-size: 11px; color: var(--i-muted); }
+.insp-chart.tall { height: 300px; }
+.insp-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--i-muted); margin-top: 8px; }
+.insp-legend .sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+.insp-segmented { display: inline-flex; gap: 2px; padding: 2px; background: var(--i-surface-2); border-radius: 7px; }
+.insp-segmented button {
+  border: 0; background: none; color: var(--i-muted); cursor: pointer;
+  font-size: 11.5px; font-weight: 500; padding: 3px 10px; border-radius: 5px;
+}
+.insp-segmented button.active { background: var(--i-surface); color: var(--i-fg); box-shadow: 0 1px 2px rgba(0,0,0,.07); }
+.insp-bars { display: flex; flex-direction: column; gap: 5px; }
+.insp-bars .row { display: grid; grid-template-columns: 74px 1fr 42px; gap: 8px; align-items: center; font-size: 11.5px; }
+.insp-bars .track { background: var(--i-surface-2); border-radius: 3px; height: 11px; overflow: hidden; }
+.insp-bars .fill { height: 100%; border-radius: 3px; background: var(--i-brand); }
+.insp-bars .val { text-align: right; color: var(--i-muted); font-variant-numeric: tabular-nums; }
+
+/* ---- equipment detail ----------------------------------------------------- */
+.insp-deflist { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin: 0; }
+.insp-deflist dt { font-size: 11.5px; color: var(--i-muted); margin-bottom: 3px; }
+.insp-deflist dd { margin: 0; font-size: 13.5px; }
+.insp-plainlist { list-style: none; margin: 0; padding: 0; }
+.insp-plainlist li {
+  display: flex; align-items: center; gap: 8px; justify-content: space-between;
+  padding: 7px 0; font-size: 13px; border-bottom: 1px solid var(--i-border);
+}
+.insp-plainlist li:last-child { border-bottom: 0; }
+.insp-partblock { border-bottom: 1px solid var(--i-border); padding: 10px 0; }
+.insp-partblock:last-child { border-bottom: 0; }
+.insp-partblock .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.insp-partblock .sub { font-size: 11.5px; color: var(--i-muted); margin-top: 2px; }
+.insp-partblock .none { font-size: 12px; color: var(--i-muted); margin-top: 6px; }
+
+/* ---- library split -------------------------------------------------------- */
+.insp-split { display: grid; grid-template-columns: 260px 1fr; gap: 14px; align-items: start; }
+.insp-tree button {
+  display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+  border: 0; background: none; color: var(--i-fg-2); padding: 6px 8px;
+  border-radius: 6px; cursor: pointer; font-size: 12.5px;
+}
+.insp-tree button:hover { background: var(--i-surface-2); }
+.insp-tree button.active { background: var(--i-primary-muted); color: var(--i-brand); }
+
+/* ---- responsive ----------------------------------------------------------- */
+@media (max-width: 1024px) {
+  .insp-sidebar { position: fixed; left: 0; top: var(--i-topbar-h); z-index: 45; box-shadow: 2px 0 16px rgba(0,0,0,.12); }
+  .insp-app:not(.nav-open) .insp-sidebar { display: none; }
+  .insp-main { padding: 16px; }
+  .insp-split { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .insp-pagehead { flex-direction: column; }
+  .insp-pagehead .actions { margin-left: 0; }
+  .insp-search .insp-input { width: 100%; }
+  .insp-toolbar .grow { margin-left: 0; width: 100%; }
+  .insp-topbar .brand .word { display: none; }
+  .insp-avatar .nm { display: none; }
+}

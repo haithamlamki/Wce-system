@@ -1,32 +1,34 @@
 // ============================================================================
-//  Equipment Inspection module shell — lazy-loaded from App.tsx; hides the WCE
-//  appbar (same pattern as /tubular). Access-gated by insp_view.
+//  Equipment Inspection module shell — lazy-loaded from App.tsx. Replicates the
+//  reference system's sidebar shell and route set (see
+//  docs/inspection-reference-parity.md). Access-gated by insp_view; the DB
+//  (RLS + SECURITY DEFINER RPCs) remains the authorization boundary.
 // ============================================================================
+import { useCallback, useEffect, useState } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import './inspection.css';
 import { InspectionProvider, useInspection } from './state/InspectionContext';
 import InspectionTopbar from './components/shell/InspectionTopbar';
-import InspectionTabNav from './components/shell/InspectionTabNav';
-import RegisterView from './views/RegisterView';
+import InspectionSidebar from './components/shell/InspectionSidebar';
+import { EmptyState } from './components/ui';
+import DashboardView from './views/DashboardView';
+import EquipmentView from './views/EquipmentView';
 import RecordsView from './views/RecordsView';
-import CatalogView from './views/CatalogView';
-import MetricsView from './views/MetricsView';
-import LibraryView from './views/LibraryView';
+import DataEntryForm from './views/DataEntryForm';
+import DataUploadView from './views/DataUploadView';
 import ApprovalsView from './views/ApprovalsView';
+import SharedDocumentsView from './views/SharedDocumentsView';
+import EquipmentCategoriesView from './views/EquipmentCategoriesView';
+import PidView from './views/PidView';
+import LibraryView from './views/LibraryView';
+import FrequenciesView from './views/FrequenciesView';
+import CompaniesView from './views/CompaniesView';
+import UnitsView from './views/UnitsView';
+import CatalogView from './views/CatalogView';
 import UsersView from './views/UsersView';
 import PasswordResetView from './views/PasswordResetView';
 
-export function EmptyState({ ico, title, desc }: { ico: string; title: string; desc: string }) {
-  return (
-    <div className="insp-empty">
-      <div className="ico">{ico}</div>
-      <div style={{ fontWeight: 700, marginTop: 6 }}>{title}</div>
-      <div style={{ fontSize: 12.5, marginTop: 4 }}>{desc}</div>
-    </div>
-  );
-}
-
-function AccessGate() {
+function ModuleRoutes() {
   const { enabled, loading, canAccess, error } = useInspection();
   if (!enabled) {
     return <EmptyState ico="☁" title="Cloud Required"
@@ -40,12 +42,21 @@ function AccessGate() {
   }
   return (
     <Routes>
-      <Route index element={<RegisterView />} />
+      <Route index element={<DashboardView />} />
+      <Route path="equipment" element={<EquipmentView />} />
+      <Route path="equipment/:typeId" element={<CatalogView />} />
       <Route path="records" element={<RecordsView />} />
-      <Route path="catalog" element={<CatalogView />} />
-      <Route path="metrics" element={<MetricsView />} />
-      <Route path="library" element={<LibraryView />} />
+      <Route path="records/new" element={<DataEntryForm />} />
+      <Route path="records/:id/edit" element={<DataEntryForm />} />
+      <Route path="records/upload" element={<DataUploadView />} />
       <Route path="approvals" element={<ApprovalsView />} />
+      <Route path="shared-documents" element={<SharedDocumentsView />} />
+      <Route path="equipment-categories" element={<EquipmentCategoriesView />} />
+      <Route path="pid" element={<PidView />} />
+      <Route path="library" element={<LibraryView />} />
+      <Route path="admin/inspection-frequencies" element={<FrequenciesView />} />
+      <Route path="companies" element={<CompaniesView />} />
+      <Route path="units" element={<UnitsView />} />
       <Route path="users" element={<UsersView />} />
       <Route path="password" element={<PasswordResetView />} />
       <Route path="*" element={<EmptyState ico="?" title="Not Found" desc="This Inspection page does not exist." />} />
@@ -53,15 +64,39 @@ function AccessGate() {
   );
 }
 
+const THEME_KEY = 'insp.theme';
+
 export default function InspectionModule() {
+  const [navOpen, setNavOpen] = useState(() => typeof window === 'undefined' || window.innerWidth > 1024);
+  const [dark, setDark] = useState(() => {
+    try { return localStorage.getItem(THEME_KEY) === 'dark'; } catch { return false; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light'); } catch { /* storage unavailable */ }
+  }, [dark]);
+
+  const closeOnMobile = useCallback(() => {
+    if (typeof window !== 'undefined' && window.innerWidth <= 1024) setNavOpen(false);
+  }, []);
+
+  const cls = ['insp-app', dark ? 'dark' : '', navOpen ? 'nav-open' : 'nav-collapsed']
+    .filter(Boolean).join(' ');
+
   return (
     <InspectionProvider>
-      <div className="insp-app">
-        <InspectionTopbar />
-        <InspectionTabNav />
-        <main className="insp-main">
-          <AccessGate />
-        </main>
+      <div className={cls}>
+        <InspectionTopbar
+          onToggleNav={() => setNavOpen((v) => !v)}
+          dark={dark}
+          onToggleDark={() => setDark((v) => !v)}
+        />
+        <div className="insp-body">
+          <InspectionSidebar onNavigate={closeOnMobile} />
+          <main className="insp-main">
+            <ModuleRoutes />
+          </main>
+        </div>
       </div>
     </InspectionProvider>
   );
