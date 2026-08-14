@@ -140,6 +140,25 @@ export interface ListQuery {
 
 export interface Page<T> { rows: T[]; total: number }
 
+/**
+ * True when two queries would fetch the same page. List views hold their query
+ * in state and refetch whenever its identity changes, so a repeated control
+ * emission carrying identical values must not be stored — replacing the state
+ * with an equal-but-new object would restart the fetch and loop indefinitely.
+ */
+export function sameQuery(a: ListQuery, b: ListQuery): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof ListQuery>;
+  for (const k of keys) {
+    if (k === 'columnFilters') continue;
+    if (a[k] !== b[k]) return false;
+  }
+  const fa = a.columnFilters ?? {};
+  const fb = b.columnFilters ?? {};
+  const fkeys = new Set([...Object.keys(fa), ...Object.keys(fb)]);
+  for (const k of fkeys) if (fa[k] !== fb[k]) return false;
+  return true;
+}
+
 /** Escapes PostgREST `or=` reserved characters in a user-supplied term. */
 function safeTerm(s: string): string {
   return s.replace(/[(),*"\\]/g, ' ').trim();
@@ -152,23 +171,33 @@ function safeTerm(s: string): string {
  * user can only page through rows they are already permitted to read, and the
  * count reflects only those rows.
  */
-export async function fetchRecordsPage(q: ListQuery): Promise<Page<InspectionRecord>> {
-  const sb = need();
-  let query = sb
-    .from('insp_records_expanded')
-    .select(LIST_COLUMNS, { count: 'exact' });
-
-  if (q.category) query = query.eq('category', q.category);
-  if (q.unitId) query = query.eq('unit_id', q.unitId);
-  if (q.typeId) query = query.eq('type_id', q.typeId);
-  if (q.partId) query = query.eq('part_id', q.partId);
-  if (q.workingStatus) query = query.eq('working_status', q.workingStatus);
-  if (q.approveStatus) query = query.eq('approve_status', q.approveStatus);
-  if (q.approverId) query = query.eq('approver_id', q.approverId);
+/**
+ * Applies every predicate that decides WHICH rows match — and nothing that
+ * decides how they are ordered or paged.
+ *
+ * The rows query and the count query both go through here, so the count can
+ * never describe a different result set than the rows it is displayed beside.
+ * Ordering and range stay out deliberately: they do not change cardinality, and
+ * that is exactly why a count may be reused across paging and sorting.
+ *
+ * This is a filter, not a security boundary. `insp_records_expanded` is
+ * `security_invoker`, so RLS on `insp_records` is applied by Postgres to the
+ * calling user on both queries regardless of what is passed here.
+ */
+function applyScope<T>(query: T, q: ListQuery): T {
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  let x = query as any;
+  if (q.category) x = x.eq('category', q.category);
+  if (q.unitId) x = x.eq('unit_id', q.unitId);
+  if (q.typeId) x = x.eq('type_id', q.typeId);
+  if (q.partId) x = x.eq('part_id', q.partId);
+  if (q.workingStatus) x = x.eq('working_status', q.workingStatus);
+  if (q.approveStatus) x = x.eq('approve_status', q.approveStatus);
+  if (q.approverId) x = x.eq('approver_id', q.approverId);
 
   const term = safeTerm(q.search ?? '');
   if (term) {
-    query = query.or(
+    x = x.or(
       `serial_number.ilike.*${term}*,type_name.ilike.*${term}*,`
       + `part_name.ilike.*${term}*,component_name.ilike.*${term}*,unit_name.ilike.*${term}*`,
     );
@@ -176,32 +205,93 @@ export async function fetchRecordsPage(q: ListQuery): Promise<Page<InspectionRec
 
   for (const [col, raw] of Object.entries(q.columnFilters ?? {})) {
     const v = safeTerm(raw);
-    if (v) query = query.ilike(col, `%${v}%`);
+    if (v) x = x.ilike(col, `%${v}%`);
   }
+  return x as T;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}
 
+/**
+ * The authoritative number of rows matching a scope, counted by Postgres.
+ *
+ * Kept separate from the rows query because an exact count over this view costs
+ * ~1.3 s while a page of rows costs ~235 ms — measured in the browser, not
+ * inferred. Paging and sorting reuse the answer (see countKey); filters and
+ * search recompute it. `head: true` asks PostgREST for the count alone, with no
+ * row payload.
+ */
+export async function fetchRecordsCount(q: ListQuery): Promise<number> {
+  const sb = need();
+  const query = applyScope(
+    sb.from('insp_records_expanded').select('id', { count: 'exact', head: true }),
+    q,
+  );
+  const { error, count } = await query;
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+/**
+ * Identity of a RESULT SET, for deciding when a cached count is still valid.
+ *
+ * Includes every row-restricting predicate and the caller's identity. Excludes
+ * page, page size and sort order — none of them change how many rows match, and
+ * excluding them is the whole point of the cache.
+ *
+ * `scopeId` is the authenticated user id. A count is a fact about what one user
+ * is allowed to see, so a change of user must invalidate it; without this a
+ * cached total could outlive the authorization scope it was computed under.
+ */
+export function countKey(q: ListQuery, scopeId: string): string {
+  const filters = Object.entries(q.columnFilters ?? {})
+    .filter(([, v]) => v.trim() !== '')
+    .sort(([a], [b]) => a.localeCompare(b));
+  return JSON.stringify([
+    scopeId,
+    q.category ?? null, q.unitId ?? null, q.typeId ?? null, q.partId ?? null,
+    q.workingStatus ?? null, q.approveStatus ?? null, q.approverId ?? null,
+    (q.search ?? '').trim(),
+    filters,
+  ]);
+}
+
+/** One page of rows. Deliberately does NOT count — see fetchRecordsCount. */
+export async function fetchRecordsRows(q: ListQuery): Promise<InspectionRecord[]> {
+  const sb = need();
+  let query = applyScope(sb.from('insp_records_expanded').select(LIST_COLUMNS), q);
   const sortBy = q.sortBy ?? 'created_at';
   query = query.order(sortBy, { ascending: q.sortAsc ?? false }).order('id');
-
   const from = (q.page - 1) * q.perPage;
-  const { data, error, count } = await query.range(from, from + q.perPage - 1);
+  const { data, error } = await query.range(from, from + q.perPage - 1);
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as unknown as Record<string, unknown>[];
-  return { rows: rows.map(mapRow), total: count ?? 0 };
+  return rows.map(mapRow);
 }
 
-/** The approval queue: filtered in the database, never in the browser. */
-export async function fetchApprovalQueue(
-  q: Omit<ListQuery, 'approveStatus'> & { approverId?: string | null },
-): Promise<Page<InspectionRecord>> {
-  const base = await fetchRecordsPage({ ...q, approveStatus: 'pending_approval' });
-  return base;
-}
+
+/**
+ * Columns the record DETAIL view renders: everything the list shows plus the
+ * fields it deliberately omits. Named explicitly rather than `select *` so a
+ * column added to the view later does not silently start arriving here.
+ *
+ * `company_id` matters for correctness, not just completeness. The edit form
+ * prefills from this row and writes every field back on save, so a company_id
+ * that never arrives is a company the form cannot show and would otherwise
+ * clear. The list has no such risk — it renders `company_name` and never writes
+ * — so the id stays out of LIST_COLUMNS.
+ *
+ * Any field mapRow() reads must appear here; anything missing silently becomes
+ * null on a round trip through the form.
+ */
+export const DETAIL_COLUMNS = [
+  LIST_COLUMNS, 'company_id', 'component_description', 'reject_reason',
+].join(',');
 
 /** One complete record, including the heavy fields the list omits. */
 export async function fetchRecordById(id: string): Promise<InspectionRecord | null> {
   const sb = need();
   const { data, error } = await sb
-    .from('insp_records_expanded').select('*').eq('id', id).maybeSingle();
+    .from('insp_records_expanded').select(DETAIL_COLUMNS).eq('id', id).maybeSingle();
   if (error) throw new Error(error.message);
   return data ? mapRow(data as unknown as Record<string, unknown>) : null;
 }
@@ -227,7 +317,8 @@ export async function fetchNotificationSummary(): Promise<Record<string, unknown
  *
  * This is the EXPORT path and must not be used for page loading — it is what
  * made the dashboard, record list and approval queue each transfer ~1.8 MB.
- * Use fetchRecordsPage / fetchDashboard / fetchNotificationSummary instead.
+ * Use fetchRecordsRows + fetchRecordsCount / fetchDashboard /
+ * fetchNotificationSummary instead.
  */
 export async function fetchRecords(opts: {
   category?: InspCategory; typeId?: string; unitId?: string; columns?: string;

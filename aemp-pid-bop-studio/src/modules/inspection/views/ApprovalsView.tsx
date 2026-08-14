@@ -8,10 +8,11 @@
 //  (insp_set_approval, guarded by insp_approve) remains the real authorization
 //  boundary — the checks below only drive the UI.
 // ============================================================================
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '../../../state/AuthContext';
 import { useInspection } from '../state/InspectionContext';
-import { fetchRecordsPage, setApproval } from '../lib/records';
+import { sameQuery, setApproval } from '../lib/records';
+import { useRecordList } from '../state/useRecordList';
 import type { ListQuery } from '../lib/records';
 import { listExpiringFiles } from '../lib/files';
 import { buildAlerts } from '../lib/compliance';
@@ -27,9 +28,6 @@ import type { InspectionRecord } from '../types';
 export default function ApprovalsView() {
   const { session, role } = useAuth();
   const { can, approvers } = useInspection();
-  const [rows, setRows] = useState<InspectionRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [logsFor, setLogsFor] = useState<InspectionRecord | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,21 +36,26 @@ export default function ApprovalsView() {
   // The queue is filtered BY THE DATABASE: approve_status and, for
   // non-privileged approvers, the approver scoping too. The page never sees
   // records outside its queue, so nothing is filtered in JavaScript.
-  const [query, setQuery] = useState<ListQuery>({ page: 1, perPage: 10 });
-  const [total, setTotal] = useState(0);
+  // Seeded with the shape the table emits once its controls settle (see
+  // RecordsView) so the queue loads with one query rather than three.
+  const [query, setQuery] = useState<ListQuery>(
+    { page: 1, perPage: 10, search: '', sortBy: undefined, sortAsc: undefined, columnFilters: {} },
+  );
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    fetchRecordsPage({
+  // The approver scoping is part of the query, so it is also part of the count
+  // cache key — a privileged and a non-privileged user can never share a total.
+  const scoped = useMemo(
+    (): ListQuery => ({
       ...query,
       approveStatus: 'pending_approval',
       approverId: isPrivileged(role) ? undefined : session?.user.id,
-    })
-      .then((p) => { setRows(p.rows); setTotal(p.total); setErr(null); })
-      .catch((e) => setErr((e as Error).message))
-      .finally(() => setLoading(false));
-  }, [query, role, session]);
-  useEffect(reload, [reload]);
+    }),
+    [query, role, session],
+  );
+
+  const {
+    rows, total, loading, error: err, refresh: reload,
+  } = useRecordList(scoped, session?.user.id ?? '');
 
   const pending = rows;
 
@@ -103,23 +106,23 @@ export default function ApprovalsView() {
   }
 
   const columns: Column<InspectionRecord>[] = [
-    { key: 'serial', header: 'Serial', value: (r) => r.serialNumber },
-    { key: 'equipment', header: 'Equipment', value: (r) => r.typeName },
-    { key: 'part', header: 'Part', value: (r) => r.partName },
-    { key: 'rig', header: 'Rig', value: (r) => r.unitName },
+    { key: 'serial', field: 'serial_number', header: 'Serial', value: (r) => r.serialNumber },
+    { key: 'equipment', field: 'type_name', header: 'Equipment', value: (r) => r.typeName },
+    { key: 'part', field: 'part_name', header: 'Part', value: (r) => r.partName },
+    { key: 'rig', field: 'unit_name', header: 'Rig', value: (r) => r.unitName },
     {
-      key: 'requestedBy',
+      key: 'requestedBy', field: 'created_by',
       header: 'Requested by',
       value: (r) => (r.createdBy ? nameById.get(r.createdBy) ?? null : null),
     },
     {
-      key: 'when',
+      key: 'when', field: 'created_at',
       header: 'When',
       value: (r) => r.createdAt ?? null,
       render: (r) => formatDate(r.createdAt),
     },
     {
-      key: 'status',
+      key: 'status', field: 'approve_status',
       header: 'Status',
       value: (r) => APPROVE_STATUS_LABELS[r.approveStatus],
       render: (r) => <Badge tone="info">{APPROVE_STATUS_LABELS[r.approveStatus]}</Badge>,
@@ -153,16 +156,19 @@ export default function ApprovalsView() {
           page: query.page,
           perPage: query.perPage,
           loading,
-          onChange: (n) => setQuery((q) => ({
-            ...q,
-            page: n.page,
-            perPage: n.perPage,
-            search: n.search,
-            sortBy: n.sortBy ?? undefined,
-            // Only override the default ordering once a column is actually sorted.
-            sortAsc: n.sortBy ? n.sortAsc : undefined,
-            columnFilters: n.columnFilters,
-          })),
+          onChange: (n) => setQuery((q) => {
+            const next = {
+              ...q,
+              page: n.page,
+              perPage: n.perPage,
+              search: n.search,
+              sortBy: n.sortBy ?? undefined,
+              // Only override the default ordering once a column is actually sorted.
+              sortAsc: n.sortBy ? n.sortAsc : undefined,
+              columnFilters: n.columnFilters,
+            };
+            return sameQuery(q, next) ? q : next;
+          }),
         }}
         error={err}
         selectable

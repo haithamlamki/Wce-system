@@ -7,10 +7,12 @@
 //  Bulk date updates and approvals go through the SECURITY DEFINER RPCs; the
 //  permission checks here only drive the UI, the DB remains the boundary.
 // ============================================================================
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useInspection } from '../state/InspectionContext';
-import { bulkUpdateDates, deleteRecord, fetchRecords, fetchRecordsPage } from '../lib/records';
+import { bulkUpdateDates, deleteRecord, fetchRecords, sameQuery } from '../lib/records';
+import { useRecordList } from '../state/useRecordList';
+import { useAuth } from '../../../state/AuthContext';
 import type { ListQuery } from '../lib/records';
 import { complianceStatus } from '../lib/compliance';
 import { downloadCsv, recordsToCsv } from '../lib/exportCsv';
@@ -42,10 +44,8 @@ function DueCell({ due, today }: { due: string | null; today: string }) {
 
 export default function RecordsView() {
   const { can, types, parts, units, approvers } = useInspection();
+  const { session } = useAuth();
   const navigate = useNavigate();
-  const [rows, setRows] = useState<InspectionRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
   const [category, setCategory] = useState<InspCategory | ''>('');
   const [unitId, setUnitId] = useState('');
   const [typeId, setTypeId] = useState('');
@@ -61,25 +61,37 @@ export default function RecordsView() {
 
   // Pagination, search, sorting, filtering and the total count are all done by
   // the database; only the visible page is transferred.
+  // Seeded with the exact shape the table emits once its controls settle, so
+  // the first emission compares equal and the page loads with ONE query instead
+  // of refetching as each empty control reports itself.
   const [table, setTable] = useState<Omit<ListQuery, 'category' | 'unitId' | 'typeId' | 'partId'>>(
-    { page: 1, perPage: 10 },
+    { page: 1, perPage: 10, search: '', sortBy: undefined, sortAsc: undefined, columnFilters: {} },
   );
-  const [total, setTotal] = useState(0);
+  // Narrowing the result set invalidates the current page cursor: page 3 of the
+  // unfiltered list is past the end of a filter that returns a single page, so
+  // the table would come back empty. Every filter control resets to page 1
+  // first; React batches both updates into one render, so one query is sent.
+  const toPage1 = useCallback(
+    () => setTable((t) => (t.page === 1 ? t : { ...t, page: 1 })),
+    [],
+  );
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    fetchRecordsPage({
+  // Memoized because it is the list hook's effect dependency: a fresh object on
+  // every render would refetch on every render.
+  const query = useMemo(
+    (): ListQuery => ({
       ...table,
       category: category || undefined,
       unitId: unitId || undefined,
       typeId: typeId || undefined,
       partId: partId || undefined,
-    })
-      .then((p) => { setRows(p.rows); setTotal(p.total); setErr(null); })
-      .catch((e) => setErr((e as Error).message))
-      .finally(() => setLoading(false));
-  }, [table, category, unitId, typeId, partId]);
-  useEffect(reload, [reload]);
+    }),
+    [table, category, unitId, typeId, partId],
+  );
+
+  const {
+    rows, total, loading, error: err, refresh: reload,
+  } = useRecordList(query, session?.user.id ?? '');
 
   // Only ids present in the approver directory resolve to a name; others stay
   // blank rather than showing a raw uuid.
@@ -173,14 +185,14 @@ export default function RecordsView() {
   }, [types]);
 
   const columns: Column<InspectionRecord>[] = [
-    { key: 'unit', header: 'Unit', group: 'Equipment', pinned: true, value: (r) => r.unitName },
-    { key: 'company', header: 'Company', group: 'Equipment', value: (r) => r.companyName },
-    { key: 'serial', header: 'Serial', group: 'Equipment', value: (r) => r.serialNumber },
-    { key: 'type', header: 'Equipment', group: 'Equipment', value: (r) => r.typeName },
-    { key: 'part', header: 'Part', group: 'Equipment', value: (r) => r.partName },
-    { key: 'component', header: 'Component', group: 'Equipment', value: (r) => r.componentName },
+    { key: 'unit', field: 'unit_name', header: 'Unit', group: 'Equipment', pinned: true, value: (r) => r.unitName },
+    { key: 'company', field: 'company_name', header: 'Company', group: 'Equipment', value: (r) => r.companyName },
+    { key: 'serial', field: 'serial_number', header: 'Serial', group: 'Equipment', value: (r) => r.serialNumber },
+    { key: 'type', field: 'type_name', header: 'Equipment', group: 'Equipment', value: (r) => r.typeName },
+    { key: 'part', field: 'part_name', header: 'Part', group: 'Equipment', value: (r) => r.partName },
+    { key: 'component', field: 'component_name', header: 'Component', group: 'Equipment', value: (r) => r.componentName },
     {
-      key: 'status',
+      key: 'status', field: 'working_status',
       header: 'Status',
       group: 'Equipment',
       value: (r) => WORKING_STATUS_LABELS[r.workingStatus],
@@ -190,14 +202,14 @@ export default function RecordsView() {
         </Badge>
       ),
     },
-    { key: 'category', header: 'Category', group: 'Equipment', defaultHidden: true, value: (r) => CATEGORY_LABELS[r.category] },
+    { key: 'category', field: 'category', header: 'Category', group: 'Equipment', defaultHidden: true, value: (r) => CATEGORY_LABELS[r.category] },
     { key: 'componentDescription', header: 'Component Description', group: 'Equipment', defaultHidden: true, value: (r) => r.componentDescription },
-    { key: 'partNumber', header: 'Part Number', group: 'Equipment', defaultHidden: true, value: (r) => r.partNumber },
-    { key: 'oem', header: 'OEM', group: 'Equipment', defaultHidden: true, value: (r) => r.oem },
-    { key: 'manufactureYear', header: 'Manufacture Year', group: 'Equipment', defaultHidden: true, align: 'right', value: (r) => r.manufactureYear },
-    { key: 'inspectionCompany', header: 'Inspection Company', group: 'Equipment', defaultHidden: true, value: (r) => r.inspectionCompany },
+    { key: 'partNumber', field: 'part_number', header: 'Part Number', group: 'Equipment', defaultHidden: true, value: (r) => r.partNumber },
+    { key: 'oem', field: 'oem', header: 'OEM', group: 'Equipment', defaultHidden: true, value: (r) => r.oem },
+    { key: 'manufactureYear', field: 'manufacture_year', header: 'Manufacture Year', group: 'Equipment', defaultHidden: true, align: 'right', value: (r) => r.manufactureYear },
+    { key: 'inspectionCompany', field: 'inspection_company', header: 'Inspection Company', group: 'Equipment', defaultHidden: true, value: (r) => r.inspectionCompany },
     {
-      key: 'interDue',
+      key: 'interDue', field: 'intermediate_due_date',
       header: 'Intermediate Due',
       group: 'Inspection Schedule',
       pinned: true,
@@ -206,19 +218,19 @@ export default function RecordsView() {
       render: (r) => <DueCell due={r.intermediateDueDate} today={today} />,
     },
     {
-      key: 'majorDue',
+      key: 'majorDue', field: 'major_due_date',
       header: 'Major Due',
       group: 'Inspection Schedule',
       filterPlaceholder: 'Filter Major Due',
       value: (r) => r.majorDueDate,
       render: (r) => <DueCell due={r.majorDueDate} today={today} />,
     },
-    { key: 'interDate', header: 'Intermediate Date', group: 'Inspection Schedule', defaultHidden: true, value: (r) => r.intermediateDate, render: (r) => formatDate(r.intermediateDate) },
-    { key: 'interFreq', header: 'Intermediate Frequency', group: 'Inspection Schedule', defaultHidden: true, value: (r) => (r.intermediateFreqMonths ? frequencyLabel(r.intermediateFreqMonths) : null) },
-    { key: 'majorDate', header: 'Major Date', group: 'Inspection Schedule', defaultHidden: true, value: (r) => r.majorDate, render: (r) => formatDate(r.majorDate) },
-    { key: 'majorFreq', header: 'Major Frequency', group: 'Inspection Schedule', defaultHidden: true, value: (r) => (r.majorFreqMonths ? frequencyLabel(r.majorFreqMonths) : null) },
+    { key: 'interDate', field: 'intermediate_date', header: 'Intermediate Date', group: 'Inspection Schedule', defaultHidden: true, value: (r) => r.intermediateDate, render: (r) => formatDate(r.intermediateDate) },
+    { key: 'interFreq', field: 'intermediate_freq_months', header: 'Intermediate Frequency', group: 'Inspection Schedule', defaultHidden: true, value: (r) => (r.intermediateFreqMonths ? frequencyLabel(r.intermediateFreqMonths) : null) },
+    { key: 'majorDate', field: 'major_date', header: 'Major Date', group: 'Inspection Schedule', defaultHidden: true, value: (r) => r.majorDate, render: (r) => formatDate(r.majorDate) },
+    { key: 'majorFreq', field: 'major_freq_months', header: 'Major Frequency', group: 'Inspection Schedule', defaultHidden: true, value: (r) => (r.majorFreqMonths ? frequencyLabel(r.majorFreqMonths) : null) },
     {
-      key: 'approve',
+      key: 'approve', field: 'approve_status',
       header: 'Approve Status',
       group: 'Approval Workflow',
       pinned: true,
@@ -231,26 +243,26 @@ export default function RecordsView() {
       ),
     },
     {
-      key: 'requestedBy', header: 'Approval Requested By', group: 'Approval Workflow',
+      key: 'requestedBy', field: 'created_by', header: 'Approval Requested By', group: 'Approval Workflow',
       defaultHidden: true, value: (r) => (r.createdBy ? approverNames.get(r.createdBy) ?? null : null),
     },
     {
-      key: 'requestedDate', header: 'Approval Requested Date', group: 'Approval Workflow',
+      key: 'requestedDate', field: 'created_at', header: 'Approval Requested Date', group: 'Approval Workflow',
       defaultHidden: true, value: (r) => r.createdAt ?? null, render: (r) => formatDate(r.createdAt),
     },
     {
-      key: 'requestedFor', header: 'Approval Requested For', group: 'Approval Workflow',
+      key: 'requestedFor', field: 'approver_id', header: 'Approval Requested For', group: 'Approval Workflow',
       defaultHidden: true, value: (r) => (r.approverId ? approverNames.get(r.approverId) ?? null : null),
     },
     {
-      key: 'approvedBy', header: 'Approved By', group: 'Approval Workflow',
+      key: 'approvedBy', field: 'approved_by', header: 'Approved By', group: 'Approval Workflow',
       defaultHidden: true, value: (r) => (r.approvedBy ? approverNames.get(r.approvedBy) ?? null : null),
     },
     {
-      key: 'approvedDate', header: 'Approved Date', group: 'Approval Workflow',
+      key: 'approvedDate', field: 'approved_at', header: 'Approved Date', group: 'Approval Workflow',
       defaultHidden: true, value: (r) => r.approvedAt ?? null, render: (r) => formatDate(r.approvedAt),
     },
-    { key: 'remarks', header: 'Remarks', group: 'Additional', pinned: true, filterable: false, value: (r) => r.remarks },
+    { key: 'remarks', field: 'remarks', header: 'Remarks', group: 'Additional', pinned: true, filterable: false, value: (r) => r.remarks },
     ...specColumns.map(({ base, aliases }): Column<InspectionRecord> => ({
       key: `spec:${base}`,
       header: base,
@@ -297,10 +309,10 @@ export default function RecordsView() {
 
       <div className="insp-chips">
         <button type="button" className={`insp-chip${category === '' ? ' active' : ''}`}
-          onClick={() => { setCategory(''); setTypeId(''); setPartId(''); }}>All</button>
+          onClick={() => { toPage1(); setCategory(''); setTypeId(''); setPartId(''); }}>All</button>
         {CHIP_ORDER.map((c) => (
           <button key={c} type="button" className={`insp-chip${category === c ? ' active' : ''}`}
-            onClick={() => { setCategory(c); setTypeId(''); setPartId(''); }}>
+            onClick={() => { toPage1(); setCategory(c); setTypeId(''); setPartId(''); }}>
             {CATEGORY_LABELS[c]}
           </button>
         ))}
@@ -310,7 +322,8 @@ export default function RecordsView() {
         <div className="fld">
           <span id="flt-rig-lbl">Rig</span>
           <Combobox
-            value={unitId} onChange={setUnitId} block={false}
+            value={unitId} block={false}
+            onChange={(v) => { toPage1(); setUnitId(v); }}
             placeholder="All rigs"
             options={[{ value: '', label: 'All rigs' },
               ...units.map((u) => ({ value: u.id, label: u.name }))]}
@@ -320,7 +333,7 @@ export default function RecordsView() {
           <span>Equipment</span>
           <Combobox
             value={typeId} block={false}
-            onChange={(v) => { setTypeId(v); setPartId(''); }}
+            onChange={(v) => { toPage1(); setTypeId(v); setPartId(''); }}
             placeholder="All equipment"
             options={[{ value: '', label: 'All equipment' },
               ...catTypes.map((t) => ({ value: t.id, label: t.name }))]}
@@ -329,7 +342,8 @@ export default function RecordsView() {
         <div className="fld">
           <span>Part</span>
           <Combobox
-            value={partId} onChange={setPartId} disabled={!typeId} block={false}
+            value={partId} disabled={!typeId} block={false}
+            onChange={(v) => { toPage1(); setPartId(v); }}
             placeholder="All parts"
             options={[{ value: '', label: 'All parts' },
               ...typeParts.map((p) => ({ value: p.id, label: p.name }))]}
@@ -352,16 +366,19 @@ export default function RecordsView() {
           page: table.page,
           perPage: table.perPage,
           loading,
-          onChange: (n) => setTable((t) => ({
-            ...t,
-            page: n.page,
-            perPage: n.perPage,
-            search: n.search,
-            sortBy: n.sortBy ?? undefined,
-            // Only override the default ordering once a column is actually sorted.
-            sortAsc: n.sortBy ? n.sortAsc : undefined,
-            columnFilters: n.columnFilters,
-          })),
+          onChange: (n) => setTable((t) => {
+            const next = {
+              ...t,
+              page: n.page,
+              perPage: n.perPage,
+              search: n.search,
+              sortBy: n.sortBy ?? undefined,
+              // Only override the default ordering once a column is actually sorted.
+              sortAsc: n.sortBy ? n.sortAsc : undefined,
+              columnFilters: n.columnFilters,
+            };
+            return sameQuery(t, next) ? t : next;
+          }),
         }}
         error={err}
         selectable
