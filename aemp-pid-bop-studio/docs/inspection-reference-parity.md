@@ -277,6 +277,38 @@ A future data normalisation is still *optional*: `update insp_equipment_types se
 = <compact forms>` would align the catalog with the data with zero record rewrites, because
 the spaced forms are unused. Not done here — it is a data change, and the UI no longer needs it.
 
+## 8d. Fourth pass — final closure (2026-08-14, reference re-authenticated)
+
+The two items previously left unverified were captured from the live reference and are now
+implemented exactly rather than approximated.
+
+**Dashboard KPI icons** (read from the reference's own cards, replacing the earlier
+stand-ins): Compliance Score `shield-check`, Overdue `triangle-alert`, Due next 30
+`calendar-clock`, Coverage `chart-pie`, Avg approval `stamp`. Four of the five stand-ins had
+been wrong.
+
+**Per-band controls in the grouped header.** Each band label is followed by:
+
+- a `sliders-horizontal` icon button, `aria-label="<Band> column visibility"`,
+  `aria-haspopup="menu"` — opens the Columns menu **scoped to that band** (a `Reset columns`
+  action plus only that band's toggleable columns);
+- a `chevron-down` icon button, `aria-label="Collapse <Band>"`, flipping to
+  `"Expand <Band>"` — collapsing a band hides its columns down to the pinned one (collapsing
+  Equipment takes it from colspan 7 to 1, leaving `Unit`).
+
+A band with no toggleable columns gets only the chevron — which is why the reference's
+`Additional` band shows a chevron alone. Reproduced, including the exact aria-label wording.
+
+**Bug found while verifying.** On a cold load all 15 Specification columns appeared. The
+`hidden` set initialises at mount, but the Specifications band is derived from the catalog,
+which loads asynchronously — so those columns did not exist yet and never received their
+`defaultHidden`. `DataTable` now applies `defaultHidden` to each column the first time it is
+seen, so late-arriving columns start hidden without overriding a user's later choice.
+
+After the fix the defaults match the reference exactly: visible columns Unit, Company,
+Serial, Equipment, Part, Component, Status, Intermediate Due, Major Due, Approve Status,
+Remarks, with band colspans **7 / 2 / 1 / 1**.
+
 ### Verified this pass
 
 - **RPC security**: `has_insp_perm`, `insp_set_approval`, `insp_bulk_update_dates`,
@@ -302,14 +334,6 @@ the spaced forms are unused. Not done here — it is a data change, and the UI n
 
 After the third pass, only these remain uninspected:
 
-- **The dashboard KPI card icons.** The reference shows an icon on each KPI card; the exact
-  Lucide choices were never read. Semantic stand-ins are used (`gauge`, `triangle-alert`,
-  `timer`, `target`, `badge-check`) so the UI is not left with unicode glyphs, but these five
-  are the only icons in the module *not* confirmed against the reference.
-- **The per-band icon controls** in the Inspections grouped header (a settings-style glyph
-  and a chevron beside each band label). The reference session expired again before their
-  behaviour could be exercised, and they were **deliberately not implemented** rather than
-  guessed at. Re-authenticate the reference and this can be closed in minutes.
 - **Pages this account cannot open**, which are absent from its sidebar and so were never
   reachable: `/users`, `/roles`, `/permissions`, `/scope-templates`, `/admin/audit-logs`,
   `/admin/logs`, `/assistant`.

@@ -257,15 +257,15 @@ export default function DashboardView() {
       )}
 
       <div className="insp-kpis">
-        <Kpi label="Compliance Score" value={`${m.score}%`} ico="gauge"
+        <Kpi label="Compliance Score" value={`${m.score}%`} ico="kpi-compliance"
           caption={`${m.compliant}/${m.scheduled} scheduled`} />
-        <Kpi label="Overdue" value={String(m.overdue)} tone="danger" ico="alert"
+        <Kpi label="Overdue" value={String(m.overdue)} tone="danger" ico="kpi-overdue"
           caption={m.worstOverdueDays ? `worst ${m.worstOverdueDays}d` : undefined} />
-        <Kpi label="Due next 30" value={String(m.dueSoon)} tone="warning" ico="timer" />
-        <Kpi label="Coverage" value={`${m.coverage}%`} ico="target"
+        <Kpi label="Due next 30" value={String(m.dueSoon)} tone="warning" ico="kpi-due" />
+        <Kpi label="Coverage" value={`${m.coverage}%`} ico="kpi-coverage"
           caption={`${m.obligations} obligations`} />
         {/* insp_records has no approved_at timestamp, so turnaround is unavailable. */}
-        <Kpi label="Avg approval" value="—" caption="days" ico="approvals" />
+        <Kpi label="Avg approval" value="—" caption="days" ico="kpi-approval" />
       </div>
 
       <SectionTitle>Compliance &amp; Risk</SectionTitle>

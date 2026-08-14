@@ -308,6 +308,11 @@
   width: 13px; display: inline-flex; color: var(--i-brand);
 }
 
+/* Grouped-header band label with its column-visibility and collapse controls. */
+.insp-table thead th.group .bandhead { display: inline-flex; align-items: center; gap: 2px; }
+.insp-iconbtn.xs { width: 20px; height: 20px; border-radius: 5px; color: var(--i-muted); }
+.insp-iconbtn.xs:hover { background: var(--i-surface-3); color: var(--i-fg); }
+
 /* Inline labelled filter shown in the toolbar (Equipment page). */
 .insp-inline-filter { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--i-muted); }
 

@@ -77,11 +77,26 @@ export default function DataTable<T>({
     [columns],
   );
   const [hidden, setHidden] = useState<ReadonlySet<string>>(defaultHidden);
+  // Columns can arrive after mount (the Specifications band is derived from the
+  // catalog, which loads asynchronously). Apply `defaultHidden` to each column
+  // the first time it is seen, so late arrivals still start hidden without
+  // overriding a choice the user has since made.
+  const seenKeys = useRef<Set<string>>(new Set(columns.map((c) => c.key)));
+  useEffect(() => {
+    const unseen = columns.filter((c) => !seenKeys.current.has(c.key));
+    if (unseen.length === 0) return;
+    unseen.forEach((c) => seenKeys.current.add(c.key));
+    const late = unseen.filter((c) => c.defaultHidden).map((c) => c.key);
+    if (late.length > 0) setHidden((h) => new Set([...h, ...late]));
+  }, [columns]);
   // The reference's "Filters" button reveals a per-column search row inside the
   // table head; "Columns" opens a grouped visibility menu.
   const [showFilters, setShowFilters] = useState(false);
   const [colFilters, setColFilters] = useState<Record<string, string>>({});
-  const [openMenu, setOpenMenu] = useState<'columns' | null>(null);
+  // `openMenu` is 'columns' for the toolbar menu or `band:<label>` for the
+  // per-band menu the reference puts in the grouped header.
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [collapsedBands, setCollapsedBands] = useState<ReadonlySet<string>>(new Set());
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -95,9 +110,15 @@ export default function DataTable<T>({
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onEsc); };
   }, [openMenu]);
 
+  // A collapsed band keeps only its pinned columns, exactly as the reference's
+  // chevron control behaves (collapsing "Equipment" leaves "Unit" standing).
   const visible = useMemo(
-    () => columns.filter((c) => !c.hidden && !hidden.has(c.key)),
-    [columns, hidden],
+    () => columns.filter((c) => {
+      if (c.hidden || hidden.has(c.key)) return false;
+      if (c.group && collapsedBands.has(c.group) && !c.pinned) return false;
+      return true;
+    }),
+    [columns, hidden, collapsedBands],
   );
 
   /** Columns menu, grouped by band exactly like the reference's menu. */
@@ -231,7 +252,7 @@ export default function DataTable<T>({
             }}>
             <Icon name="filter" /> Filters
           </button>
-          <div className="insp-rel" ref={openMenu ? menuRef : undefined}>
+          <div className="insp-rel" ref={openMenu === 'columns' ? menuRef : undefined}>
             <button type="button" className="insp-btn"
               aria-expanded={openMenu === 'columns'} aria-haspopup="menu"
               onClick={() => setOpenMenu((m) => (m === 'columns' ? null : 'columns'))}>
@@ -279,9 +300,72 @@ export default function DataTable<T>({
             {groups && (
               <tr>
                 {selectable && <th className="group" aria-hidden="true" />}
-                {groups.map((g, i) => (
-                  <th key={`${g.label}-${i}`} className="group" colSpan={g.span}>{g.label}</th>
-                ))}
+                {groups.map((g, i) => {
+                  const toggleable = columns.filter(
+                    (c) => (c.group ?? '') === g.label && !c.hidden && !c.pinned,
+                  );
+                  const collapsed = collapsedBands.has(g.label);
+                  return (
+                    <th key={`${g.label}-${i}`} className="group" colSpan={g.span}>
+                      {g.label && (
+                        <span className="bandhead">
+                          <span>{g.label}</span>
+                          {toggleable.length > 0 && (
+                            <span className="insp-rel">
+                              <button type="button" className="insp-iconbtn xs"
+                                aria-label={`${g.label} column visibility`} aria-haspopup="menu"
+                                aria-expanded={openMenu === `band:${g.label}`}
+                                onClick={() => setOpenMenu(
+                                  (m) => (m === `band:${g.label}` ? null : `band:${g.label}`),
+                                )}>
+                                <Icon name="band-columns" size={13} />
+                              </button>
+                              {openMenu === `band:${g.label}` && (
+                                <div className="insp-popover insp-colmenu" role="menu"
+                                  aria-label={`${g.label} columns`} ref={menuRef}>
+                                  <button type="button" role="menuitem" className="reset"
+                                    onClick={() => setHidden((h) => {
+                                      const n = new Set(h);
+                                      toggleable.forEach((c) => {
+                                        if (c.defaultHidden) n.add(c.key); else n.delete(c.key);
+                                      });
+                                      return n;
+                                    })}>
+                                    Reset columns
+                                  </button>
+                                  {toggleable.map((c) => {
+                                    const on = !hidden.has(c.key);
+                                    return (
+                                      <button key={c.key} type="button" role="menuitemcheckbox"
+                                        aria-checked={on}
+                                        onClick={() => setHidden((h) => {
+                                          const n = new Set(h);
+                                          if (n.has(c.key)) n.delete(c.key); else n.add(c.key);
+                                          return n;
+                                        })}>
+                                        <span className="tick" aria-hidden="true">{on ? '✓' : ''}</span>
+                                        {c.header}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </span>
+                          )}
+                          <button type="button" className="insp-iconbtn xs"
+                            aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${g.label}`}
+                            onClick={() => setCollapsedBands((s) => {
+                              const n = new Set(s);
+                              if (n.has(g.label)) n.delete(g.label); else n.add(g.label);
+                              return n;
+                            })}>
+                            <Icon name={collapsed ? 'band-expand' : 'band-collapse'} size={13} />
+                          </button>
+                        </span>
+                      )}
+                    </th>
+                  );
+                })}
                 {rowActions && <th className="group" aria-hidden="true" />}
               </tr>
             )}

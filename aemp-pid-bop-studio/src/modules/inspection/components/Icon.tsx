@@ -4,9 +4,10 @@
 //  same glyph for each affordance.
 // ============================================================================
 import {
-  BadgeCheck, Bell, Boxes, Building2, ClipboardCheck, Download, Factory,
-  FileDown, FileStack, FileText, FolderOpen, Funnel, Gauge, LayoutDashboard, Moon,
-  PanelLeft, Pencil, Plus, ScrollText, Settings2, Share2, Sun, Tags, Target, Timer,
+  BadgeCheck, Bell, Boxes, Building2, CalendarClock, ChartPie, ChevronDown,
+  ChevronRight, ClipboardCheck, Download, Factory, FileDown, FileStack, FileText,
+  FolderOpen, Funnel, LayoutDashboard, Moon, PanelLeft, Pencil, Plus, ScrollText,
+  Settings2, Share2, ShieldCheck, SlidersHorizontal, Stamp, Sun, Tags, Timer,
   Trash2, TriangleAlert, Upload,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -40,13 +41,16 @@ const ICONS = {
   edit: Pencil,
   delete: Trash2,
   download: Download,
-  // Dashboard KPI glyphs. The reference shows an icon on each KPI card but the
-  // session expired before its exact choices could be read, so these are
-  // semantic stand-ins — see docs/inspection-reference-parity.md §9.
-  gauge: Gauge,
-  alert: TriangleAlert,
-  timer: Timer,
-  target: Target,
+  // Column-band controls in the grouped header.
+  'band-columns': SlidersHorizontal,
+  'band-collapse': ChevronDown,
+  'band-expand': ChevronRight,
+  // Dashboard KPI glyphs, read from the reference's own cards.
+  'kpi-compliance': ShieldCheck,
+  'kpi-overdue': TriangleAlert,
+  'kpi-due': CalendarClock,
+  'kpi-coverage': ChartPie,
+  'kpi-approval': Stamp,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
