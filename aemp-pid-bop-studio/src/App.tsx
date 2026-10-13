@@ -14,6 +14,8 @@ import RegisterView from './views/RegisterView';
 import AccountView from './views/AccountView';
 import DashboardView from './views/DashboardView';
 import HomeView from './views/HomeView';
+import UsersView from './views/UsersView';
+import UserAccountView from './views/UserAccountView';
 
 // Tubular Fleet Management is code-split so the WCE bundle is unaffected.
 const TubularModule = lazy(() => import('./modules/tubular/TubularModule'));
@@ -35,6 +37,7 @@ const TABS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/account', label: 'Account' },
 ];
+const USERS_TAB = { to: '/users', label: '⚿ Users' };
 
 function ModeToggle() {
   const { mode, setMode } = useProject();
@@ -106,13 +109,17 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
   const [aiOpen, setAiOpen] = useState(false);
   const [pmOpen, setPmOpen] = useState(false);
   const { pathname } = useLocation();
+  const { isSuperAdmin } = useAuth();
   // The Tubular module renders its own full prototype shell (topbar + tabnav),
   // so the WCE appbar is hidden entirely there. On /home a minimal header
   // remains; WCE deep links (/full, /bop, …) are unchanged.
   const inTubular = pathname.startsWith('/tubular');
   const inRigString = pathname.startsWith('/rig-string');
   const inInspection = pathname.startsWith('/inspection');
-  const inWce = !inTubular && !inRigString && !inInspection && pathname !== '/home';
+  const inUsers = pathname.startsWith('/users');
+  const inWce = !inTubular && !inRigString && !inInspection && !inUsers && pathname !== '/home';
+  // User Management is reachable from every header that shows tabs, for the Super Admin only.
+  const navTabs = [...(inWce ? TABS : TABS.slice(0, 1)), ...(isSuperAdmin ? [USERS_TAB] : [])];
   return (
     <>
       {!inTubular && !inInspection && (
@@ -126,7 +133,7 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
         </div>
         {inWce && <StatusChip />}
         <nav className="tabs">
-          {(inWce ? TABS : TABS.slice(0, 1)).map((t) => (
+          {navTabs.map((t) => (
             <NavLink key={t.to} to={t.to} className={({ isActive }) => (isActive ? 'active' : '')}>
               {t.label}
             </NavLink>
@@ -178,6 +185,8 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
           <Route path="/register" element={<RegisterView />} />
           <Route path="/dashboard" element={<DashboardView />} />
           <Route path="/account" element={<AccountView />} />
+          <Route path="/users" element={<UsersView />} />
+          <Route path="/users/:id" element={<UserAccountView />} />
         </Routes>
       </main>
       <AssistantPanel open={aiOpen} onClose={() => setAiOpen(false)} />
@@ -188,15 +197,16 @@ function Shell({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void
 }
 
 function Gate({ theme, cycleTheme }: { theme: ThemeMode; cycleTheme: () => void }) {
-  const { enabled, loading, session, recovery } = useAuth();
+  const { enabled, loading, session, recovery, mustChangePassword } = useAuth();
   const [skipped, setSkipped] = useState(false);
 
   if (enabled && loading) {
     return <div style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', color: 'var(--faint)' }}>Loading…</div>;
   }
   // A reset link creates a recovery session; force the set-new-password screen
-  // instead of dropping the user straight into the app.
-  if (enabled && recovery) {
+  // instead of dropping the user straight into the app. Accounts created with a
+  // default password get the same screen on first sign-in.
+  if (enabled && (recovery || (session && mustChangePassword))) {
     return <ResetPasswordScreen />;
   }
   if (enabled && !session && !skipped) {

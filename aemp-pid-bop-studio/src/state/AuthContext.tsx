@@ -29,8 +29,14 @@ interface AuthCtx {
   updatePassword: (password: string) => Promise<void>;
   /** True while the user is in the password-recovery flow (clicked reset link). */
   recovery: boolean;
+  /** True when an admin-provisioned account still has its default password
+   *  (auth user_metadata.must_change_password) — forces the set-password screen. */
+  mustChangePassword: boolean;
   /** Update the caller's assigned rig (writes profiles.rig). */
   updateRig: (rig: string) => Promise<void>;
+  /** profiles.is_super_admin (0038) — unlocks User Management. UI gate only;
+   *  the user-management RPCs re-check it server-side. */
+  isSuperAdmin: boolean;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -41,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [fullName, setFullName] = useState('');
   const [rig, setRig] = useState<string | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [recovery, setRecovery] = useState(false);
 
   // F13: onAuthStateChange/getSession can fire overlapping, un-awaited
@@ -53,17 +60,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (uid: string, fallbackName: string) => {
     if (!supabase) return;
     const myToken = raceGuard.start();
-    let { data, error } = await supabase.from('profiles')
-      .select('role, full_name, rig, active, access_expiry').eq('id', uid).single();
-    if (error) {
-      // Pre-0032 backends have no active/access_expiry columns — retry without them.
-      ({ data, error } = await supabase.from('profiles').select('role, full_name, rig').eq('id', uid).single());
-      if (error) console.error('Failed to load profile:', error);
+    // Newest schema first; older backends lack is_super_admin (pre-0038) or
+    // active/access_expiry (pre-0032), so fall back column set by column set.
+    const columnSets = [
+      'role, full_name, rig, active, access_expiry, is_super_admin',
+      'role, full_name, rig, active, access_expiry',
+      'role, full_name, rig',
+    ];
+    let data: Record<string, unknown> | null = null;
+    let error: unknown = null;
+    for (const cols of columnSets) {
+      ({ data, error } = await supabase.from('profiles').select(cols).eq('id', uid).single());
+      if (!error) break;
     }
+    if (error) console.error('Failed to load profile:', error);
     if (!raceGuard.isCurrent(myToken)) return; // superseded by a newer load or a sign-out — discard
     // Account validity gate (0032): deactivated or expired accounts are signed
     // out immediately, matching the source system's login-screen block.
-    const p = data as (typeof data & { active?: boolean; access_expiry?: string | null }) | null;
+    const p = data as { role?: Role; full_name?: string; rig?: string | null; active?: boolean;
+      access_expiry?: string | null; is_super_admin?: boolean } | null;
     const expired = p?.access_expiry ? p.access_expiry < new Date().toISOString().slice(0, 10) : false;
     if (p && (p.active === false || expired)) {
       await supabase.auth.signOut();
@@ -72,9 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         : 'This account\'s access period has expired. Contact your administrator.');
       return;
     }
-    setRole((data?.role as Role) ?? 'field');
-    setFullName(data?.full_name || fallbackName);
-    setRig(data?.rig ?? null);
+    setRole(p?.role ?? 'field');
+    setFullName(p?.full_name || fallbackName);
+    setRig(p?.rig ?? null);
+    setIsSuperAdmin(p?.is_super_admin === true);
   }, [raceGuard]);
 
   useEffect(() => {
@@ -90,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       setSession(s);
       if (s) loadProfile(s.user.id, s.user.email ?? '');
-      else { raceGuard.invalidate(); setRole(null); setFullName(''); setRig(null); }
+      else { raceGuard.invalidate(); setRole(null); setFullName(''); setRig(null); setIsSuperAdmin(false); }
     });
     return () => sub.subscription.unsubscribe();
   }, [loadProfile, raceGuard]);
@@ -123,7 +139,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updatePassword = useCallback(async (password: string) => {
     if (!supabase) throw new Error('Cloud not configured');
-    const { error } = await supabase.auth.updateUser({ password });
+    // Clearing must_change_password in the same call releases the forced
+    // first-login password screen once the new password is saved.
+    const { error } = await supabase.auth.updateUser({ password, data: { must_change_password: false } });
     if (error) throw new Error(error.message);
     setRecovery(false);
   }, []);
@@ -138,6 +156,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthCtx = {
     enabled: isSupabaseConfigured, loading, session, user: session?.user ?? null,
     role, fullName, rig, signIn, signUp, signOut, resetPassword, updatePassword, recovery, updateRig,
+    mustChangePassword: session?.user?.user_metadata?.must_change_password === true,
+    isSuperAdmin,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
