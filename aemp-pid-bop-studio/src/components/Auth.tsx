@@ -87,9 +87,10 @@ export function LoginScreen({ onSkip }: { onSkip: () => void }) {
   );
 }
 
-/** Shown after a user returns via a password-reset link (recovery session). */
+/** Shown after a user returns via a password-reset link (recovery session),
+ *  or on first sign-in with an admin-issued default password. */
 export function ResetPasswordScreen() {
-  const { updatePassword } = useAuth();
+  const { updatePassword, mustChangePassword, signOut } = useAuth();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
@@ -118,13 +119,20 @@ export function ResetPasswordScreen() {
           </p>
         ) : (
           <>
-            <p style={{ color: 'var(--dim)', fontSize: 13, margin: '0 0 14px' }}>Choose a new password for your account.</p>
+            <p style={{ color: 'var(--dim)', fontSize: 13, margin: '0 0 14px' }}>
+              {mustChangePassword
+                ? 'You signed in with a temporary password. Choose a new password to continue.'
+                : 'Choose a new password for your account.'}
+            </p>
             <label style={ml}>New password</label>
             <input style={inp} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
             <label style={ml}>Confirm password</label>
             <input style={inp} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={6} />
             {msg && <div style={{ fontSize: 12, color: 'var(--amber)', margin: '10px 0 0' }}>{msg}</div>}
             <button style={primary} disabled={busy} type="submit">{busy ? '…' : 'Update password'}</button>
+            {mustChangePassword && (
+              <button type="button" style={{ ...link, display: 'block', margin: '12px auto 0' }} onClick={signOut}>Sign out</button>
+            )}
           </>
         )}
       </form>
