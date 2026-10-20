@@ -5,7 +5,7 @@
 //  Field: pan-and-read; click toggles installed/removed; hover tooltips.
 //  Pan / wheel-zoom / fit-to-view, title block + legend overlay, 3D iso view.
 // ============================================================================
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProject, type Mode } from '../state/ProjectContext';
 import PropertiesPanel from '../components/PropertiesPanel';
 import { SYM, type SymbolKey } from '../lib/symbols';
@@ -27,6 +27,9 @@ import ContextMenu, { type CtxMenuState } from '../components/pid/ContextMenu';
 import { resizeAnchor, resizePatch, type HandleName, type ResizeStart } from '../lib/resize';
 import { applySmartSnap, buildSnapSets, type Guide, type SnapSets } from '../lib/snapGuides';
 import type { Component, Edge, PortName } from '../types';
+
+// real-3D drawing view (three.js) — loaded only when the user opens it
+const Pid3DView = lazy(() => import('../components/Pid3DView'));
 
 interface PortRef { id: string; port?: PortName }
 interface ConnectState { from: PortRef; to: { x: number; y: number }; target?: PortRef }
@@ -108,6 +111,7 @@ export default function PidFullView() {
   const [portHover, setPortHover] = useState<PortRef | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
   const [iso, setIso] = useState(false);
+  const [real3d, setReal3d] = useState(false);
   const [showTitle, setShowTitle] = useState(true);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
@@ -117,7 +121,7 @@ export default function PidFullView() {
   // right-click context menu (node / empty-canvas variant)
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
 
-  const editable = mode === 'admin' && !iso;
+  const editable = mode === 'admin' && !iso && !real3d;
   // drop-shadow depth is per-node SVG filter work — only worth it on smaller
   // diagrams; disable on dense masters to keep rendering fast.
   const shadow = !iso && project.nodes.length <= 80;
@@ -519,7 +523,7 @@ export default function PidFullView() {
     p.addAnnotation({ kind: 'text', x: w.x, y: w.y, w: 140, h: 24, text: 'Note' });
   }
 
-  const showPalette = mode === 'admin' && !iso;
+  const showPalette = mode === 'admin' && !iso && !real3d;
   const hasNodes = project.nodes.length > 0;
   const pendingNode = (pendingId && nodeMap.get(pendingId)) ?? null;
 
@@ -540,13 +544,17 @@ export default function PidFullView() {
 
         {/* top-right view controls (both modes) */}
         <div style={viewControls}>
-          <button style={{ ...pill, ...(iso ? pillActive : {}) }} onClick={() => { setIso((v) => !v); setConnect(null); setPortHover(null); }}>3D</button>
+          <button style={{ ...pill, ...(real3d ? pillActive : {}) }} title="Real 3D models, pipes and connection points"
+            onClick={() => { setReal3d((v) => !v); setIso(false); setConnect(null); setPortHover(null); setHover(null); setPipeMenu(null); }}>3D</button>
+          <button style={{ ...pill, ...(iso ? pillActive : {}) }} title="Isometric presentation of the flat drawing"
+            onClick={() => { setIso((v) => !v); setReal3d(false); setConnect(null); setPortHover(null); }}>Iso</button>
           <button style={{ ...pill, ...(showTitle ? pillActive : {}) }} onClick={() => setShowTitle((v) => !v)}>Title</button>
           <button style={pill} title="Export / Print (PDF, PNG, SVG)" onClick={() => setShowExport(true)}>⎙ Export</button>
         </div>
 
-        {mode === 'field' && !iso && <div style={modebar}>Field mode · read-only (pan &amp; hover)</div>}
-        {iso && <div style={{ ...modebar, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>3D presentation · pan &amp; hover (editing disabled)</div>}
+        {mode === 'field' && !iso && !real3d && <div style={modebar}>Field mode · read-only (pan &amp; hover)</div>}
+        {iso && <div style={{ ...modebar, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>Iso presentation · pan &amp; hover (editing disabled)</div>}
+        {real3d && <div style={{ ...modebar, background: 'color-mix(in srgb,var(--accent2) 14%,var(--panel))', borderColor: 'var(--accent2)', color: 'var(--accent2)' }}>3D · {mode === 'admin' ? 'click connection points to connect' : 'orbit & hover'}</div>}
 
         {/* approve bar (click-to-place) */}
         {pendingNode && (
@@ -574,7 +582,7 @@ export default function PidFullView() {
 
         <svg ref={svgRef} width="100%" height="100%"
           role="application" tabIndex={0} aria-label="P&ID editor canvas"
-          style={{ position: 'absolute', inset: 0, cursor: iso || mode === 'field' ? 'grab' : connect || portHover?.port ? 'crosshair' : 'default', touchAction: 'none' }}
+          style={{ position: 'absolute', inset: 0, display: real3d ? 'none' : undefined, cursor: iso || mode === 'field' ? 'grab' : connect || portHover?.port ? 'crosshair' : 'default', touchAction: 'none' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
           onPointerLeave={() => { onPointerUp(); setHover(null); }} onContextMenu={onContextMenu}
           onWheel={onWheel} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
@@ -670,6 +678,18 @@ export default function PidFullView() {
             )}
           </g>
         </svg>
+
+        {real3d && (
+          <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 12.5, color: 'var(--faint)' }}>Loading 3D…</div>}>
+            <Pid3DView
+              nodes={project.nodes} edges={project.edges} nodeMap={nodeMap}
+              selectedIds={p.selectedIds} editable={mode === 'admin'}
+              onHover={(n, x, y) => setHover(n ? { n, x, y } : null)}
+              onSelect={(id) => p.setSelectedIds(id ? [id] : [])}
+              onConnect={(from, to, sx, sy) => setPipeMenu({ from, to, sx, sy })}
+            />
+          </Suspense>
+        )}
 
         <AnnotationLayer view={view} editable={editable} />
 
