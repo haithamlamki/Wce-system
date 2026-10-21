@@ -40,7 +40,7 @@ export const APPROVE_STATUS_LABELS: Record<ApproveStatus, string> = {
 };
 
 export const INTERMEDIATE_FREQUENCIES = [6, 12, 24, 36, 48, 60] as const;
-export const MAJOR_FREQUENCIES = [6, 12, 24, 36, 48, 60, 120, 144] as const;
+export const MAJOR_FREQUENCIES = [6, 12, 24, 36, 48, 60, 96, 120, 144] as const;
 
 /** 6 → "6 Months", 12 → "1 Year", 24 → "2 Year" … (source system wording). */
 export function frequencyLabel(months: number): string {
@@ -50,6 +50,8 @@ export function frequencyLabel(months: number): string {
 export interface EquipmentType {
   id: string; category: InspCategory; name: string; description: string;
   specFields: string[]; active: boolean;
+  /** SAP references shown on the reference Equipment page (migration 0040). */
+  sapEquipmentNumber?: string; sapAssetNumber?: string;
 }
 export interface EquipmentPart {
   id: string; typeId: string; name: string; description: string; position: number;
@@ -58,7 +60,11 @@ export interface PartComponent {
   id: string; partId: string; name: string; description: string; position: number;
 }
 export interface Company { id: string; name: string }
-export interface InspUnit { id: string; name: string; unitType: 'rig' | 'hoist' | 'other' }
+export interface InspUnit {
+  id: string; name: string; unitType: 'rig' | 'hoist' | 'other';
+  /** Owning company (insp_companies) and client description, per migration 0040. */
+  companyId?: string | null; description?: string;
+}
 
 export interface InspectionRecord {
   id: string;

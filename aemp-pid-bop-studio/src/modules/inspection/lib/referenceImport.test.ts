@@ -61,6 +61,81 @@ describe('parseReferenceExport', () => {
     expect(rows).toHaveLength(2);
     expect(skippedDuplicates).toBe(1);
   });
+
+  it('keeps records sharing a Unit+Serial when equipment or part differ', () => {
+    const otherPart = [...ROW]; otherPart[3] = 'Air pump 2';
+    const { rows, skippedDuplicates } = parseReferenceExport(refWb([ROW, otherPart]));
+    expect(rows).toHaveLength(2);
+    expect(skippedDuplicates).toBe(0);
+  });
+});
+
+// Oct-2026 layout: Category column, reordered base columns, renamed
+// "Manufacture Year", extra non-spec columns and the approval workflow block.
+const V2_HEADER = ['Company', 'Unit', 'Category', 'Equipment', 'Equipment Part', 'Component',
+  'Component Description', 'Serial Number', 'Part Number', 'OEM', 'Inspection Company', 'Status',
+  'Intermediate Inspection Date', 'Intermediate Inspection Due Date', 'Intermediate Inspection Frequency',
+  'Major Inspection Date', 'Major Inspection Due Date', 'Major Inspection Frequency',
+  'Manufacture Year', 'Working Pressure(Psi)', 'Grade()', 'Elastomer Description',
+  'Inspection Report', 'Remarks', 'Approve Status', 'Approval Requested By',
+  'Approval Requested Date', 'Approval Requested For', 'Approved By', 'Approved Date'];
+const V2_ROW = ['Abraj ', 'hoist 2', 'Power System', 'Air pump', 'Air pump 1', 'Valve',
+  'desc', 'SN-7', 'PN-1', 'SARA SAE', 'BUREAU VERITAS', 'Defected',
+  '2025-08-14', '2026-08-14', '6 Months', '', '', '',
+  '2015', '5000', 'G105', 'NBR', 'RPT-1', 'note', 'Pending Approval', 'Requester A',
+  '2026-09-29', 'Approver B', '', ''];
+
+function v2Wb(rows: (string | number)[][]): XLSX.WorkBook {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([V2_HEADER, ...rows]), 'Equipment Inspection');
+  return wb;
+}
+
+describe('reference export, Oct-2026 layout', () => {
+  it('is detected by header names, not position', () => {
+    expect(isReferenceExport(v2Wb([V2_ROW]))).toBe(true);
+  });
+
+  it('reads columns by name, keeps category and only true spec columns', () => {
+    const { rows } = parseReferenceExport(v2Wb([V2_ROW]));
+    const r = rows[0];
+    expect(r).toMatchObject({
+      company: 'Abraj', unit: 'hoist 2', equipment: 'Air pump', part: 'Air pump 1',
+      component: 'Valve', description: 'desc', serial: 'SN-7', partNumber: 'PN-1',
+      oem: 'SARA SAE', status: 'defected', category: 'power',
+      intermediateDate: '2025-08-14', intermediateFreqMonths: 6,
+      majorDate: null, majorFreqMonths: null, manufactureYear: 2015,
+      remarks: 'note', elastomer: 'NBR', inspectionReport: 'RPT-1',
+    });
+    expect(r.specs).toEqual({ 'Working Pressure(Psi)': '5000', 'Grade()': 'G105' });
+  });
+
+  it('carries the approval workflow block', () => {
+    const approved = [...V2_ROW]; approved[7] = 'SN-8';
+    approved[24] = 'Approved'; approved[28] = '20465'; approved[29] = '2026-10-11';
+    const { rows } = parseReferenceExport(v2Wb([V2_ROW, approved]));
+    expect(rows[0].approval).toEqual({
+      status: 'pending_approval', requestedBy: 'Requester A', requestedAt: '2026-09-29',
+      requestedFor: 'Approver B', approvedBy: null, approvedAt: null,
+    });
+    expect(rows[1].approval).toMatchObject({
+      status: 'approved', approvedBy: '20465', approvedAt: '2026-10-11',
+    });
+  });
+
+  it('defaults approval to approved and category to null for the Aug layout', () => {
+    const { rows } = parseReferenceExport(refWb([ROW]));
+    expect(rows[0].category).toBeNull();
+    expect(rows[0].approval.status).toBe('approved');
+  });
+
+  it('uses the file category for new equipment types', () => {
+    const { rows } = parseReferenceExport(v2Wb([V2_ROW]));
+    const plan = planCatalogAdditions(rows, {
+      types: [], parts: [], components: [], units: [], companies: [],
+    });
+    expect(plan.types[0]).toMatchObject({ name: 'Air pump', category: 'power' });
+  });
 });
 
 describe('planCatalogAdditions', () => {

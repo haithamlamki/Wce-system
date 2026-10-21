@@ -19,6 +19,7 @@ import DataUploadView from './views/DataUploadView';
 import ApprovalsView from './views/ApprovalsView';
 import SharedDocumentsView from './views/SharedDocumentsView';
 import EquipmentCategoriesView from './views/EquipmentCategoriesView';
+import SpecificationsView from './views/SpecificationsView';
 import PidView from './views/PidView';
 import LibraryView from './views/LibraryView';
 import FrequenciesView from './views/FrequenciesView';
@@ -52,6 +53,7 @@ function ModuleRoutes() {
       <Route path="approvals" element={<ApprovalsView />} />
       <Route path="shared-documents" element={<SharedDocumentsView />} />
       <Route path="equipment-categories" element={<EquipmentCategoriesView />} />
+      <Route path="specifications" element={<SpecificationsView />} />
       <Route path="pid" element={<PidView />} />
       <Route path="library" element={<LibraryView />} />
       <Route path="admin/inspection-frequencies" element={<FrequenciesView />} />

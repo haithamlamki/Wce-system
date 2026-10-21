@@ -10,7 +10,7 @@
 //  failing with a statement timeout. `sameQuery` is what stops it.
 // ============================================================================
 import { describe, expect, it } from 'vitest';
-import { countKey, sameQuery } from './records';
+import { complianceClauses, countKey, sameQuery } from './records';
 
 describe('sameQuery', () => {
   it('treats a repeated emission of the same controls as unchanged', () => {
@@ -137,5 +137,44 @@ describe('countKey', () => {
       .not.toBe(countKey({ ...base, approverId: 'a2' }, 'u1'));
     expect(countKey({ ...base, approverId: 'a1' }, 'u1'))
       .not.toBe(countKey(base, 'u1'));
+  });
+});
+
+describe('scope tree and inspection status filters', () => {
+  const base = { page: 1, perPage: 10 };
+
+  it('keeps unit scope as a string so repeated emissions compare equal', () => {
+    expect(sameQuery({ ...base, unitScope: 'u1,u2' }, { ...base, unitScope: 'u1,u2' })).toBe(true);
+  });
+
+  it('gives each scope and status its own count', () => {
+    expect(countKey({ ...base, unitScope: 'u1,u2' }, 'u')).not.toBe(countKey(base, 'u'));
+    expect(countKey({ ...base, compliance: 'overdue' }, 'u'))
+      .not.toBe(countKey({ ...base, compliance: 'due_soon' }, 'u'));
+  });
+});
+
+describe('complianceClauses', () => {
+  const T = '2026-10-21';
+  it('overdue: any due date in the past', () => {
+    expect(complianceClauses('overdue', T)).toEqual([
+      'intermediate_due_date.lt.2026-10-21,major_due_date.lt.2026-10-21',
+    ]);
+  });
+
+  it('due soon: nothing overdue and a due date within 30 days', () => {
+    expect(complianceClauses('due_soon', T)).toEqual([
+      'intermediate_due_date.is.null,intermediate_due_date.gte.2026-10-21',
+      'major_due_date.is.null,major_due_date.gte.2026-10-21',
+      'intermediate_due_date.lte.2026-11-20,major_due_date.lte.2026-11-20',
+    ]);
+  });
+
+  it('compliant: scheduled, nothing overdue and nothing due within 30 days', () => {
+    expect(complianceClauses('compliant', T)).toEqual([
+      'intermediate_due_date.is.null,intermediate_due_date.gt.2026-11-20',
+      'major_due_date.is.null,major_due_date.gt.2026-11-20',
+      'intermediate_due_date.not.is.null,major_due_date.not.is.null',
+    ]);
   });
 });

@@ -1,6 +1,7 @@
 // ============================================================================
 //  Equipment — replicates the reference `/equipment` list
-//  (columns: Equipment Type, Category, Description, Parts, Specs).
+//  (columns: Equipment Type, Category, Description, SAP Equipment Number,
+//  SAP Asset Number, Parts, Specs).
 //  Opening a row goes to the equipment-type detail page (CatalogView).
 // ============================================================================
 import { useMemo } from 'react';
@@ -33,6 +34,8 @@ export default function EquipmentView() {
     { key: 'name', header: 'Equipment Type', value: (t) => t.name },
     { key: 'category', header: 'Category', value: (t) => CATEGORY_LABELS[t.category] },
     { key: 'description', header: 'Description', value: (t) => t.description },
+    { key: 'sapEquipment', header: 'SAP Equipment Number', value: (t) => t.sapEquipmentNumber || '—' },
+    { key: 'sapAsset', header: 'SAP Asset Number', value: (t) => t.sapAssetNumber || '—' },
     { key: 'parts', header: 'Parts', align: 'right', value: (t) => partCounts.get(t.id) ?? 0 },
     { key: 'specs', header: 'Specs', align: 'right', value: (t) => t.specFields.length },
   ];

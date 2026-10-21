@@ -12,7 +12,8 @@ import Chart from '../components/Chart';
 import Icon from '../components/Icon';
 import type { IconName } from '../components/Icon';
 import { fetchDashboard } from '../lib/records';
-import { frequencyLabel } from '../types';
+import { CATEGORY_LABELS, frequencyLabel } from '../types';
+import type { InspCategory } from '../types';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -108,15 +109,21 @@ export default function DashboardView() {
       arr.map((r) => [r.label, { compliant: r.compliant, dueSoon: r.dueSoon, overdue: r.overdue }]),
     );
     const scheduled = stats.scheduled ?? 0;
+    // The source's KPI strip counts obligations (individual due dates), not
+    // records: Overdue = due dates past, Due next 30 = due dates in the next
+    // 30 days, Compliance = share of obligations not overdue. Verified against
+    // its dashboard on identical data (39% = (11268 − 6874) / 11268).
+    const obligations = stats.obligations ?? 0;
+    const overdueObligations = Object.values(stats.aging ?? {}).reduce((a, b) => a + b, 0);
     return {
       total: stats.total ?? 0,
       scheduled,
-      overdue: stats.overdue ?? 0,
-      dueSoon: stats.dueSoon ?? 0,
+      overdue: overdueObligations,
+      dueSoon: stats.forecast?.['Next 30'] ?? 0,
       compliant: stats.compliant ?? 0,
-      obligations: stats.obligations ?? 0,
+      obligations,
       worstOverdueDays: stats.worstOverdueDays ?? 0,
-      score: scheduled ? Math.round(((stats.compliant ?? 0) / scheduled) * 100) : 0,
+      score: obligations ? Math.round(((obligations - overdueObligations) / obligations) * 100) : 0,
       coverage: stats.total ? Math.round((scheduled / stats.total) * 100) : 0,
       aging: stats.aging ?? {},
       forecast: stats.forecast ?? {},
@@ -157,7 +164,8 @@ export default function DashboardView() {
   const distList = [...distRows.entries()]
     .sort((a, b) => (b[1].compliant + b[1].dueSoon + b[1].overdue) - (a[1].compliant + a[1].dueSoon + a[1].overdue))
     .slice(0, 12)
-    .map(([label, split]) => ({ label, split }));
+    // Category rows arrive as enum keys; show the source system's names.
+    .map(([label, split]) => ({ label: CATEGORY_LABELS[label as InspCategory] ?? label, split }));
 
   return (
     <>
@@ -171,7 +179,7 @@ export default function DashboardView() {
 
       <div className="insp-kpis">
         <Kpi label="Compliance Score" value={`${m.score}%`} ico="kpi-compliance"
-          caption={`${m.compliant}/${m.scheduled} scheduled`} />
+          caption={`${m.scheduled}/${m.total} scheduled`} />
         <Kpi label="Overdue" value={String(m.overdue)} tone="danger" ico="kpi-overdue"
           caption={m.worstOverdueDays ? `worst ${m.worstOverdueDays}d` : undefined} />
         <Kpi label="Due next 30" value={String(m.dueSoon)} tone="warning" ico="kpi-due" />
