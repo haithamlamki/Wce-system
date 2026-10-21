@@ -13,7 +13,9 @@ import { useInspection } from '../state/InspectionContext';
 import { bulkUpdateDates, deleteRecord, fetchRecords, sameQuery } from '../lib/records';
 import { useRecordList } from '../state/useRecordList';
 import { useAuth } from '../../../state/AuthContext';
-import type { ListQuery } from '../lib/records';
+import type { ComplianceFilter, ListQuery } from '../lib/records';
+import ScopeTree from '../components/ScopeTree';
+import type { ScopeSel } from '../components/ScopeTree';
 import { complianceStatus } from '../lib/compliance';
 import { downloadCsv, recordsToCsv } from '../lib/exportCsv';
 import { formatDate } from '../lib/format';
@@ -34,6 +36,14 @@ import type { InspCategory, InspectionRecord } from '../types';
 const CHIP_ORDER: InspCategory[] = [...CATEGORY_ORDER]
   .sort((a, b) => CATEGORY_LABELS[a].localeCompare(CATEGORY_LABELS[b]));
 
+/** Reference "Inspection Status" pills, with their RAG dot colours. */
+const STATUS_PILLS: { value: ComplianceFilter | ''; label: string; dot?: string }[] = [
+  { value: '', label: 'All' },
+  { value: 'overdue', label: 'Overdue', dot: '--i-danger' },
+  { value: 'due_soon', label: 'Due Soon', dot: '--i-warning' },
+  { value: 'compliant', label: 'Compliant', dot: '--i-success' },
+];
+
 function DueCell({ due, today }: { due: string | null; today: string }) {
   if (!due) return <>—</>;
   const status = complianceStatus(due, today);
@@ -43,13 +53,15 @@ function DueCell({ due, today }: { due: string | null; today: string }) {
 }
 
 export default function RecordsView() {
-  const { can, types, parts, units, approvers } = useInspection();
+  const { can, types, parts, units, companies, approvers } = useInspection();
   const { session } = useAuth();
   const navigate = useNavigate();
   const [category, setCategory] = useState<InspCategory | ''>('');
   const [unitId, setUnitId] = useState('');
   const [typeId, setTypeId] = useState('');
   const [partId, setPartId] = useState('');
+  const [scope, setScope] = useState<{ sel: ScopeSel; unitIds: string }>({ sel: {}, unitIds: '' });
+  const [compliance, setCompliance] = useState<ComplianceFilter | ''>('');
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [bulkMajor, setBulkMajor] = useState('');
   const [bulkInter, setBulkInter] = useState('');
@@ -85,8 +97,10 @@ export default function RecordsView() {
       unitId: unitId || undefined,
       typeId: typeId || undefined,
       partId: partId || undefined,
+      unitScope: scope.unitIds || undefined,
+      compliance: compliance || undefined,
     }),
-    [table, category, unitId, typeId, partId],
+    [table, category, unitId, typeId, partId, scope.unitIds, compliance],
   );
 
   const {
@@ -349,6 +363,19 @@ export default function RecordsView() {
               ...typeParts.map((p) => ({ value: p.id, label: p.name }))]}
           />
         </div>
+        <div className="fld">
+          <span>Inspection Status</span>
+          <div className="insp-chips" role="group" aria-label="Inspection Status" style={{ margin: 0 }}>
+            {STATUS_PILLS.map((s) => (
+              <button key={s.value} type="button"
+                className={`insp-chip${compliance === s.value ? ' active' : ''}`}
+                onClick={() => { toPage1(); setCompliance(s.value); }}>
+                {s.dot && <span className="insp-dot" style={{ background: `var(${s.dot})` }} />}
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {notice && (
@@ -357,6 +384,10 @@ export default function RecordsView() {
         </div>
       )}
 
+      <div className="insp-scope-layout">
+      <ScopeTree units={units} companies={companies} sel={scope.sel}
+        onSelect={(sel, unitIds) => { toPage1(); setScope({ sel, unitIds }); }} />
+      <div className="insp-scope-main">
       <DataTable
         rows={rows}
         columns={columns}
@@ -424,6 +455,8 @@ export default function RecordsView() {
           </>
         )}
       />
+      </div>
+      </div>
 
       {filesFor && (
         <FilesDrawer record={filesFor} onClose={() => setFilesFor(null)} onRecordChanged={reload} />

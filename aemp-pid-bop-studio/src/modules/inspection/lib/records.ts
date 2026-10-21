@@ -53,7 +53,7 @@ export async function fetchCatalog() {
     sb.from('insp_equipment_types').select('*').order('name'),
     sb.from('insp_equipment_parts').select('*').order('position'),
     sb.from('insp_part_components').select('*').order('position'),
-    sb.from('units').select('id,name,unit_type').order('name'),
+    sb.from('units').select('id,name,unit_type,company_id,description').order('name'),
     sb.from('insp_companies').select('id,name').order('name'),
   ]);
   for (const r of [types, parts, components, units, companies]) {
@@ -63,6 +63,7 @@ export async function fetchCatalog() {
     types: (types.data ?? []).map((t): EquipmentType => ({
       id: t.id, category: t.category, name: t.name, description: t.description,
       specFields: (t.spec_fields as string[]) ?? [], active: t.active,
+      sapEquipmentNumber: t.sap_equipment_number ?? '', sapAssetNumber: t.sap_asset_number ?? '',
     })),
     parts: (parts.data ?? []).map((p): EquipmentPart => ({
       id: p.id, typeId: p.type_id, name: p.name, description: p.description, position: p.position,
@@ -70,7 +71,10 @@ export async function fetchCatalog() {
     components: (components.data ?? []).map((c): PartComponent => ({
       id: c.id, partId: c.part_id, name: c.name, description: c.description, position: c.position,
     })),
-    units: (units.data ?? []).map((u): InspUnit => ({ id: u.id, name: u.name, unitType: u.unit_type })),
+    units: (units.data ?? []).map((u): InspUnit => ({
+      id: u.id, name: u.name, unitType: u.unit_type,
+      companyId: u.company_id ?? null, description: u.description ?? '',
+    })),
     companies: (companies.data ?? []) as Company[],
   };
 }
@@ -136,6 +140,44 @@ export interface ListQuery {
   sortAsc?: boolean;
   /** Per-column filters, keyed by list column name. */
   columnFilters?: Record<string, string>;
+  /**
+   * Scope-tree selection: comma-joined unit ids. A string, not an array, so
+   * sameQuery's per-key identity check holds across re-emissions.
+   */
+  unitScope?: string;
+  /** Inspection Status filter — the dashboard's red/amber/green rule. */
+  compliance?: ComplianceFilter | '';
+}
+
+export type ComplianceFilter = 'overdue' | 'due_soon' | 'compliant';
+
+function addDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * PostgREST `or=` groups (ANDed together) selecting one compliance band, with
+ * the same thresholds insp_dashboard_stats scores by: overdue = any due date
+ * past; due soon = none past, one within 30 days; compliant = scheduled, none
+ * within 30 days.
+ */
+export function complianceClauses(status: ComplianceFilter, today: string): string[] {
+  const t30 = addDays(today, 30);
+  const I = 'intermediate_due_date'; const M = 'major_due_date';
+  if (status === 'overdue') return [`${I}.lt.${today},${M}.lt.${today}`];
+  if (status === 'due_soon') {
+    return [`${I}.is.null,${I}.gte.${today}`, `${M}.is.null,${M}.gte.${today}`,
+      `${I}.lte.${t30},${M}.lte.${t30}`];
+  }
+  return [`${I}.is.null,${I}.gt.${t30}`, `${M}.is.null,${M}.gt.${t30}`,
+    `${I}.not.is.null,${M}.not.is.null`];
+}
+
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export interface Page<T> { rows: T[]; total: number }
@@ -194,6 +236,10 @@ function applyScope<T>(query: T, q: ListQuery): T {
   if (q.workingStatus) x = x.eq('working_status', q.workingStatus);
   if (q.approveStatus) x = x.eq('approve_status', q.approveStatus);
   if (q.approverId) x = x.eq('approver_id', q.approverId);
+  if (q.unitScope) x = x.in('unit_id', q.unitScope.split(','));
+  if (q.compliance) {
+    for (const clause of complianceClauses(q.compliance, localToday())) x = x.or(clause);
+  }
 
   const term = safeTerm(q.search ?? '');
   if (term) {
@@ -252,6 +298,7 @@ export function countKey(q: ListQuery, scopeId: string): string {
     q.workingStatus ?? null, q.approveStatus ?? null, q.approverId ?? null,
     (q.search ?? '').trim(),
     filters,
+    q.unitScope || null, q.compliance || null,
   ]);
 }
 
@@ -358,10 +405,10 @@ export interface RecordDraft {
 
 export type ImportRow = RecordDraft;
 
-/** Maps the 0032 unique-index violation to the source system's wording. */
+/** Maps the 0040 record-identity violation to the source system's wording. */
 function friendly(error: { code?: string; message: string }, draft?: Partial<RecordDraft>): Error {
-  if (error.code === '23505' && error.message.includes('insp_records_unit_serial_key')) {
-    return new Error(`A record with Serial Number "${draft?.serial_number ?? ''}" already exists for this Unit.`);
+  if (error.code === '23505' && error.message.includes('insp_records_identity_key')) {
+    return new Error(`A record with Serial Number "${draft?.serial_number ?? ''}" already exists for this Unit and equipment part.`);
   }
   return new Error(error.message);
 }

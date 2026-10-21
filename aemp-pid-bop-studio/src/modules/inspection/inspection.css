@@ -480,3 +480,28 @@
   .insp-topbar .brand .word { display: none; }
   .insp-avatar .nm { display: none; }
 }
+
+/* ---- Inspections scope tree (reference left panel) ------------------------ */
+.insp-scope-layout { display: flex; gap: 12px; align-items: flex-start; }
+.insp-scope-main { flex: 1; min-width: 0; }
+.insp-scope {
+  flex: 0 0 200px; background: var(--i-surface); border: 1px solid var(--i-border);
+  border-radius: 10px; padding: 8px; font-size: 12.5px;
+}
+.insp-scope-row { display: flex; align-items: center; }
+.insp-scope-caret {
+  border: 0; background: none; color: var(--i-muted); padding: 2px; cursor: pointer;
+  display: inline-flex;
+}
+.insp-scope-node {
+  display: flex; align-items: center; gap: 6px; flex: 1; text-align: left; border: 0;
+  background: none; color: var(--i-fg-2); padding: 5px 6px; border-radius: 6px;
+  cursor: pointer; font-size: 12.5px;
+}
+.insp-scope-node:hover { background: var(--i-surface-2); }
+.insp-scope-node.active { background: var(--i-primary-muted); color: var(--i-brand); }
+.insp-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+@media (max-width: 1024px) {
+  .insp-scope-layout { flex-direction: column; align-items: stretch; }
+  .insp-scope { flex-basis: auto; }
+}
