@@ -17,6 +17,7 @@ import { computeDueDate } from '../lib/compliance';
 import { uploadFile } from '../lib/files';
 import { PageHeader } from '../components/ui';
 import Combobox from '../components/Combobox';
+import VendorCombobox from '../components/VendorCombobox';
 import type { ComboOption } from '../components/Combobox';
 import {
   FILE_KIND_LABELS, INTERMEDIATE_FREQUENCIES, MAJOR_FREQUENCIES,
@@ -182,8 +183,9 @@ export default function DataEntryForm() {
         <div className="insp-form-grid">
           {field('Serial Number', 'serialNumber', text('serialNumber'), true)}
           {field('Part Number', 'partNumber', text('partNumber'))}
-          {field('OEM', 'oem', text('oem'))}
-          {field('Inspection Company', 'inspectionCompany', text('inspectionCompany'), true)}
+          {field('OEM', 'oem', <VendorCombobox id="fld-oem" value={f.oem} onChange={set('oem')} />)}
+          {field('Inspection Company', 'inspectionCompany', <VendorCombobox id="fld-inspectionCompany"
+            value={f.inspectionCompany} invalid={!!errors.inspectionCompany} onChange={set('inspectionCompany')} />, true)}
           {field('Unit', 'unitId', select('unitId', 'Select unit…',
             units.map((u) => ({ value: u.id, label: u.name }))), true)}
           {field('Company', 'companyId', select('companyId', 'Select company…',

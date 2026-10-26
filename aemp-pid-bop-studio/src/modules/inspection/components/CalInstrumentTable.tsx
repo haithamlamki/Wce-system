@@ -6,6 +6,7 @@
 // ============================================================================
 import { useMemo, useState } from 'react';
 import Icon from './Icon';
+import VendorCombobox from './VendorCombobox';
 import { formatDate } from '../lib/format';
 import { complianceStatus } from '../lib/compliance';
 import {
@@ -133,6 +134,9 @@ export default function CalInstrumentTable(p: Props) {
     }
     if (f === 'lastCalibration' || f === 'dueDate') {
       return <input {...common} type="date" value={c[f] ?? ''} onChange={(e) => setField(r, f, e.target.value)} />;
+    }
+    if (f === 'certifyingCompany') {
+      return <VendorCombobox ariaLabel={label} value={c.certifyingCompany} invalid={!!err} onChange={(v) => setField(r, f, v)} />;
     }
     if (MULTILINE.has(f)) {
       return <textarea {...common} rows={2} value={c[f] as string} onChange={(e) => setField(r, f, e.target.value)} />;

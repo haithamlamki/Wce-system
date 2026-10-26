@@ -40,6 +40,7 @@ const SECTIONS: { title: string; items: Item[] }[] = [
     title: 'Organization',
     items: [
       { to: '/inspection/companies', label: 'Companies', ico: 'companies' },
+      { to: '/inspection/vendor-companies', label: 'Vendor Companies', ico: 'vendor-companies' },
       { to: '/inspection/units', label: 'Units', ico: 'units' },
     ],
   },
@@ -52,6 +53,9 @@ export default function InspectionSidebar({ onNavigate }: { onNavigate?: () => v
   const sections = SECTIONS.map((s) => {
     if (s.title === 'Equipment' && !can('insp_calibration_view')) {
       return { ...s, items: s.items.filter((it) => it.ico !== 'calibration') };
+    }
+    if (s.title === 'Organization' && !can('insp_vendor_view')) {
+      return { ...s, items: s.items.filter((it) => it.ico !== 'vendor-companies') };
     }
     // The reference exposes user administration only to accounts holding the
     // permission; here the equivalent gate is the privileged role.
