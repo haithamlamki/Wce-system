@@ -181,6 +181,7 @@ export async function syncReferenceExport(
       approval_requested_at: r.approval.requestedAt,
       approved_by_name: r.approval.approvedBy,
       approved_at: r.approval.approvedAt,
+      category: r.category,                  // kept only where it differs from the type's (0047)
       match_serial: r.serial ? unique.has(pairKey(r.unit.toLowerCase(), r.serial)) : false,
     };
   });
