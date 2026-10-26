@@ -15,6 +15,8 @@ function fmtSize(b: number): string {
   return b > 1_048_576 ? `${(b / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
 }
 
+const fileFolder = (f: InspFile) => f.folder || FILE_KIND_LABELS[f.kind];
+
 export default function FilesDrawer({ record, onClose, onRecordChanged }: {
   record: InspectionRecord; onClose: () => void; onRecordChanged?: () => void;
 }) {
@@ -31,6 +33,10 @@ export default function FilesDrawer({ record, onClose, onRecordChanged }: {
   const [readFile, setReadFile] = useState<File | null>(null);
   const [lastPdfs, setLastPdfs] = useState<File[]>([]);
   const isCert = CERTIFICATE_KINDS.includes(kind);
+  // Reference-style folder view: copied files keep their source folder name.
+  const [folder, setFolder] = useState('');
+  const folders = [...new Set(files.map(fileFolder))].sort();
+  const shown = folder ? files.filter((f) => fileFolder(f) === folder) : files;
 
   const reload = useCallback(() => {
     listFiles(record.id).then(setFiles).catch((e) => setErr((e as Error).message));
@@ -123,13 +129,20 @@ export default function FilesDrawer({ record, onClose, onRecordChanged }: {
       )}
 
       <div style={{ marginTop: 12 }}>
-        {files.map((f) => (
+        {folders.length > 1 && (
+          <div className="insp-field" style={{ marginBottom: 8 }}><label htmlFor="files-folder">Showing</label>
+            <select id="files-folder" value={folder} onChange={(e) => setFolder(e.target.value)}>
+              <option value="">All folders ({files.length})</option>
+              {folders.map((n) => <option key={n} value={n}>{n} ({files.filter((f) => fileFolder(f) === n).length})</option>)}
+            </select></div>
+        )}
+        {shown.map((f) => (
           <div key={f.id} className="insp-card" style={{ marginBottom: 6, padding: 9, display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ fontSize: 16 }}>📄</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.fileName}</div>
               <div style={{ fontSize: 11, color: 'var(--i-muted)' }}>
-                {FILE_KIND_LABELS[f.kind]} · {fmtSize(f.fileSize)}
+                {fileFolder(f)} · {fmtSize(f.fileSize)}
                 {f.expiryDate && <> · expires {f.expiryDate}</>}
               </div>
             </div>

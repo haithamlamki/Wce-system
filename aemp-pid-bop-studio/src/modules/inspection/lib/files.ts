@@ -19,6 +19,7 @@ export function mapFile(row: Record<string, unknown>): InspFile {
     fileSize: Number(row.file_size ?? 0),
     expiryDate: (row.expiry_date as string) ?? null,
     createdAt: String(row.created_at ?? ''),
+    folder: (row.folder as string) ?? null,
   };
 }
 
