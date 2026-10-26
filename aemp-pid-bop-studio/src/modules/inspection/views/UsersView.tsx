@@ -21,6 +21,8 @@ const PERM_LABELS: Record<InspectionPermission, string> = {
   insp_manage_catalog: 'Manage Equipment Components',
   insp_manage_files: 'Manage files & library',
   insp_export: 'Export data',
+  insp_calibration_view: 'Calibration Register (view)',
+  insp_calibration_edit: 'Calibration Register (create / edit / upload)',
 };
 
 /** unitId → categories (null = Full Access); absence = no access to the unit. */

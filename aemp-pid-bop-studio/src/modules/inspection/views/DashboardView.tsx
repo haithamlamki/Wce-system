@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../state/AuthContext';
 import { Card, EmptyState, LoadingState, PageHeader, SectionTitle } from '../components/ui';
 import Chart from '../components/Chart';
+import CalibrationDashboard from '../components/CalibrationDashboard';
 import Icon from '../components/Icon';
 import type { IconName } from '../components/Icon';
 import { fetchDashboard } from '../lib/records';
@@ -290,6 +291,8 @@ export default function DashboardView() {
           <div className="insp-legend"><span>missing values per field</span></div>
         </Card>
       </div>
+
+      <CalibrationDashboard />
     </>
   );
 }

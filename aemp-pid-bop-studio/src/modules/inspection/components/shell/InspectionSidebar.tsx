@@ -6,6 +6,7 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../../../state/AuthContext';
 import { isPrivileged } from '../../lib/permissions';
+import { useInspection } from '../../state/InspectionContext';
 import Icon from '../Icon';
 import type { IconName } from '../Icon';
 
@@ -24,6 +25,7 @@ const SECTIONS: { title: string; items: Item[] }[] = [
       { to: '/inspection/approvals', label: 'Approvals', ico: 'approvals' },
       { to: '/inspection/equipment-categories', label: 'Equipment Categories', ico: 'categories' },
       { to: '/inspection/specifications', label: 'Specifications', ico: 'specifications' },
+      { to: '/inspection/calibration', label: 'Calibration Register', ico: 'calibration' },
       { to: '/inspection/pid', label: 'P&ID', ico: 'pid' },
       { to: '/inspection/library', label: 'Library', ico: 'library' },
     ],
@@ -45,8 +47,12 @@ const SECTIONS: { title: string; items: Item[] }[] = [
 
 export default function InspectionSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { role } = useAuth();
+  const { can } = useInspection();
 
   const sections = SECTIONS.map((s) => {
+    if (s.title === 'Equipment' && !can('insp_calibration_view')) {
+      return { ...s, items: s.items.filter((it) => it.ico !== 'calibration') };
+    }
     // The reference exposes user administration only to accounts holding the
     // permission; here the equivalent gate is the privileged role.
     if (s.title === 'Administration' && isPrivileged(role)) {
