@@ -13,6 +13,8 @@ export const INSPECTION_PERMISSIONS = [
   'insp_manage_catalog',
   'insp_manage_files',
   'insp_export',
+  'insp_calibration_view',
+  'insp_calibration_edit',
 ] as const;
 
 export type InspectionPermission = (typeof INSPECTION_PERMISSIONS)[number];

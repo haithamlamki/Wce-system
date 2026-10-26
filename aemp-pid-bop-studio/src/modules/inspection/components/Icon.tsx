@@ -6,7 +6,7 @@
 import {
   BadgeCheck, Bell, Boxes, Building2, CalendarClock, ChartPie, ChevronDown,
   ChevronRight, ClipboardCheck, Download, Factory, FileDown, FileStack, FileText,
-  FolderOpen, Funnel, LayoutDashboard, Moon, PanelLeft, Pencil, Plus, Ruler, ScrollText,
+  FolderOpen, Funnel, Gauge, LayoutDashboard, Moon, PanelLeft, Pencil, Plus, Ruler, ScrollText,
   Settings2, Share2, ShieldCheck, SlidersHorizontal, Stamp, Sun, Tags, Timer,
   Trash2, TriangleAlert, Upload,
 } from 'lucide-react';
@@ -21,6 +21,7 @@ const ICONS = {
   'shared-documents': FileStack,
   categories: Tags,
   specifications: Ruler,
+  calibration: Gauge,
   pid: Share2,
   library: FolderOpen,
   frequencies: Timer,

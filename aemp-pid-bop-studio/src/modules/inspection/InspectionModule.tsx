@@ -20,6 +20,8 @@ import ApprovalsView from './views/ApprovalsView';
 import SharedDocumentsView from './views/SharedDocumentsView';
 import EquipmentCategoriesView from './views/EquipmentCategoriesView';
 import SpecificationsView from './views/SpecificationsView';
+import CalibrationListView from './views/CalibrationListView';
+import CalibrationRegisterView from './views/CalibrationRegisterView';
 import PidView from './views/PidView';
 import LibraryView from './views/LibraryView';
 import FrequenciesView from './views/FrequenciesView';
@@ -54,6 +56,8 @@ function ModuleRoutes() {
       <Route path="shared-documents" element={<SharedDocumentsView />} />
       <Route path="equipment-categories" element={<EquipmentCategoriesView />} />
       <Route path="specifications" element={<SpecificationsView />} />
+      <Route path="calibration" element={<CalibrationListView />} />
+      <Route path="calibration/:id" element={<CalibrationRegisterView />} />
       <Route path="pid" element={<PidView />} />
       <Route path="library" element={<LibraryView />} />
       <Route path="admin/inspection-frequencies" element={<FrequenciesView />} />
