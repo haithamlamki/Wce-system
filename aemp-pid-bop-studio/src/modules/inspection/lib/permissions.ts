@@ -15,6 +15,8 @@ export const INSPECTION_PERMISSIONS = [
   'insp_export',
   'insp_calibration_view',
   'insp_calibration_edit',
+  'insp_vendor_view',
+  'insp_vendor_edit',
 ] as const;
 
 export type InspectionPermission = (typeof INSPECTION_PERMISSIONS)[number];

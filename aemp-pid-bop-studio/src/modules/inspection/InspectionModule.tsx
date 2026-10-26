@@ -26,6 +26,8 @@ import PidView from './views/PidView';
 import LibraryView from './views/LibraryView';
 import FrequenciesView from './views/FrequenciesView';
 import CompaniesView from './views/CompaniesView';
+import VendorCompaniesView from './views/VendorCompaniesView';
+import VendorCompanyView from './views/VendorCompanyView';
 import UnitsView from './views/UnitsView';
 import CatalogView from './views/CatalogView';
 import UsersView from './views/UsersView';
@@ -62,6 +64,10 @@ function ModuleRoutes() {
       <Route path="library" element={<LibraryView />} />
       <Route path="admin/inspection-frequencies" element={<FrequenciesView />} />
       <Route path="companies" element={<CompaniesView />} />
+      <Route path="vendor-companies" element={<VendorCompaniesView />} />
+      <Route path="vendor-companies/new" element={<VendorCompanyView />} />
+      <Route path="vendor-companies/:id" element={<VendorCompanyView />} />
+      <Route path="vendor-companies/:id/edit" element={<VendorCompanyView />} />
       <Route path="units" element={<UnitsView />} />
       <Route path="users" element={<UsersView />} />
       <Route path="password" element={<PasswordResetView />} />

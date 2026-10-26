@@ -23,6 +23,8 @@ const PERM_LABELS: Record<InspectionPermission, string> = {
   insp_export: 'Export data',
   insp_calibration_view: 'Calibration Register (view)',
   insp_calibration_edit: 'Calibration Register (create / edit / upload)',
+  insp_vendor_view: 'Vendor Companies (view)',
+  insp_vendor_edit: 'Vendor Companies (create / edit)',
 };
 
 /** unitId → categories (null = Full Access); absence = no access to the unit. */

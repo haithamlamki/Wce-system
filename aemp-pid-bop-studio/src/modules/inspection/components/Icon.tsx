@@ -7,7 +7,7 @@ import {
   BadgeCheck, Bell, Boxes, Building2, CalendarClock, ChartPie, ChevronDown,
   ChevronRight, ClipboardCheck, Download, Factory, FileDown, FileStack, FileText,
   FolderOpen, Funnel, Gauge, LayoutDashboard, Moon, PanelLeft, Pencil, Plus, Ruler, ScrollText,
-  Settings2, Share2, ShieldCheck, SlidersHorizontal, Stamp, Sun, Tags, Timer,
+  Settings2, Share2, ShieldCheck, SlidersHorizontal, Stamp, Store, Sun, Tags, Timer,
   Trash2, TriangleAlert, Upload,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -26,6 +26,7 @@ const ICONS = {
   library: FolderOpen,
   frequencies: Timer,
   companies: Building2,
+  'vendor-companies': Store,
   units: Factory,
   // topbar
   'panel-left': PanelLeft,
