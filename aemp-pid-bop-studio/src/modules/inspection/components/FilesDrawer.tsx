@@ -4,6 +4,7 @@
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
 import { deleteFile, getSignedUrl, listFiles, uploadFile } from '../lib/files';
+import { downloadSetFile, fetchRecordSharedDocuments, formatSize, type RecordSharedSet } from '../lib/sharedDocuments';
 import { useInspection } from '../state/InspectionContext';
 import { CERTIFICATE_KINDS, FILE_KIND_LABELS, type FileKind, type InspFile,
   type InspectionRecord } from '../types';
@@ -35,6 +36,11 @@ export default function FilesDrawer({ record, onClose, onRecordChanged }: {
     listFiles(record.id).then(setFiles).catch((e) => setErr((e as Error).message));
   }, [record.id]);
   useEffect(reload, [reload]);
+  // Document sets linked to this record (reference GET /records/{id}/shared-documents).
+  const [shared, setShared] = useState<RecordSharedSet[]>([]);
+  useEffect(() => {
+    fetchRecordSharedDocuments(record.id).then(setShared).catch(() => setShared([]));
+  }, [record.id]);
 
   const doUpload = async (list: FileList | File[]) => {
     setBusy(true); setErr(null);
@@ -151,6 +157,27 @@ export default function FilesDrawer({ record, onClose, onRecordChanged }: {
         ))}
         {files.length === 0 && <div style={{ color: 'var(--i-muted)', fontSize: 12.5, textAlign: 'center', padding: 16 }}>No files yet.</div>}
       </div>
+
+      {shared.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <b style={{ fontSize: 12.5 }}>Shared documents</b>
+          {shared.map((s) => (
+            <div key={s.id} className="insp-card" style={{ marginTop: 6, padding: 9 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600 }}>{s.name}</div>
+              {s.description && <div style={{ fontSize: 11, color: 'var(--i-muted)' }}>{s.description}</div>}
+              {s.documents.map((d) => (
+                <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    📎 {d.fileName} <span style={{ color: 'var(--i-muted)' }}>· {d.category ?? 'No category'} · {formatSize(d.size)}</span>
+                  </span>
+                  <button className="insp-btn sm" onClick={() => downloadSetFile(d).catch((e) => setErr((e as Error).message))}>
+                    Download</button>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

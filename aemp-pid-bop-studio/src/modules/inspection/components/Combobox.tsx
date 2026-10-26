@@ -88,3 +88,67 @@ export default function Combobox({
     </div>
   );
 }
+
+/**
+ * Multi-select variant (reference rig picker): the popover stays open while
+ * options toggle; the trigger summarises the selection ("3 rigs selected").
+ */
+export function MultiCombobox({
+  selected, onChange, options, placeholder, searchPlaceholder = 'Search…', noun, id,
+}: {
+  selected: string[]; onChange: (values: string[]) => void; options: ComboOption[];
+  placeholder: string; searchPlaceholder?: string; noun: string; id?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) { setQ(''); return undefined; }
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return needle ? options.filter((o) => o.label.toLowerCase().includes(needle)) : options;
+  }, [options, q]);
+  const label = selected.length === 0 ? placeholder
+    : selected.length === 1 ? options.find((o) => o.value === selected[0])?.label ?? `1 ${noun} selected`
+      : `${selected.length} ${noun}s selected`;
+  const toggle = (v: string) => onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
+
+  return (
+    <div className="insp-combo block" ref={wrapRef}>
+      <button type="button" id={id} role="combobox" aria-expanded={open} aria-haspopup="dialog"
+        className="insp-combo-trigger" onClick={() => setOpen((v) => !v)}>
+        <span className={selected.length ? '' : 'ph'}>{label}</span>
+        <ChevronsUpDown size={14} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="insp-combo-pop" role="dialog" aria-label={placeholder}>
+          <input autoFocus className="insp-input" type="search" value={q}
+            placeholder={searchPlaceholder} aria-label={searchPlaceholder} onChange={(e) => setQ(e.target.value)} />
+          <div className="list" role="listbox" aria-multiselectable="true">
+            {shown.length === 0 && <div className="none">No results.</div>}
+            {shown.map((o) => (
+              <button key={o.value} type="button" role="option" aria-selected={selected.includes(o.value)}
+                onClick={() => toggle(o.value)}>
+                <span className="tick">{selected.includes(o.value) && <Check size={13} aria-hidden="true" />}</span>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

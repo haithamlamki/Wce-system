@@ -18,6 +18,8 @@ import DataEntryForm from './views/DataEntryForm';
 import DataUploadView from './views/DataUploadView';
 import ApprovalsView from './views/ApprovalsView';
 import SharedDocumentsView from './views/SharedDocumentsView';
+import SharedDocumentSetFormView from './views/SharedDocumentSetFormView';
+import SharedDocumentSetView from './views/SharedDocumentSetView';
 import EquipmentCategoriesView from './views/EquipmentCategoriesView';
 import SpecificationsView from './views/SpecificationsView';
 import CalibrationListView from './views/CalibrationListView';
@@ -62,6 +64,8 @@ function ModuleRoutes() {
       <Route path="records/upload" element={<DataUploadView />} />
       <Route path="approvals" element={<ApprovalsView />} />
       <Route path="shared-documents" element={<SharedDocumentsView />} />
+      <Route path="shared-documents/new" element={<SharedDocumentSetFormView />} />
+      <Route path="shared-documents/:id" element={<SharedDocumentSetView />} />
       <Route path="equipment-categories" element={<EquipmentCategoriesView />} />
       <Route path="specifications" element={<SpecificationsView />} />
       <Route path="calibration" element={<CalibrationListView />} />
