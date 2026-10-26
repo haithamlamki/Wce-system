@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { canAccessModule, hasPermission, isPrivileged, INSPECTION_PERMISSIONS } from './permissions';
+import {
+  canAccessModule, diffSets, hasPermission, isPrivileged, INSPECTION_PERMISSIONS, PERMISSION_RESOURCES, permissionsOf,
+} from './permissions';
 
 describe('inspection permissions', () => {
+  it('lists the 80 reference keys across 21 resources', () => {
+    expect(INSPECTION_PERMISSIONS).toHaveLength(80);
+    expect(new Set(INSPECTION_PERMISSIONS).size).toBe(80);
+    expect(PERMISSION_RESOURCES).toHaveLength(21);
+    expect(permissionsOf('inspection')).toContain('inspection:edit-identity');
+    expect(permissionsOf('inspection')).not.toContain('inspection-file:upload');
+  });
+
   it('admin and manager are privileged; field and null are not', () => {
     expect(isPrivileged('admin')).toBe(true);
     expect(isPrivileged('manager')).toBe(true);
@@ -15,15 +25,20 @@ describe('inspection permissions', () => {
     }
   });
 
-  it('non-privileged users need an explicit grant', () => {
-    expect(hasPermission('field', new Set(), 'insp_view')).toBe(false);
-    expect(hasPermission('field', new Set(['insp_view']), 'insp_view')).toBe(true);
-    expect(hasPermission('field', new Set(['insp_view']), 'insp_approve')).toBe(false);
+  it('non-privileged users need the key from one of their roles', () => {
+    expect(hasPermission('field', new Set(), 'inspection:view')).toBe(false);
+    expect(hasPermission('field', new Set(['inspection:view']), 'inspection:view')).toBe(true);
+    expect(hasPermission('field', new Set(['inspection:view']), 'inspection:approve')).toBe(false);
   });
 
-  it('module access requires insp_view (or privilege)', () => {
+  it('module access needs any key (or privilege)', () => {
     expect(canAccessModule(null, new Set())).toBe(false);
-    expect(canAccessModule('field', new Set(['insp_view']))).toBe(true);
+    expect(canAccessModule('field', new Set(['calibration:view']))).toBe(true);
     expect(canAccessModule('manager', new Set())).toBe(true);
+  });
+
+  it('diffSets returns the additions and removals', () => {
+    expect(diffSets(['a', 'b'], ['b', 'c', 'c'])).toEqual({ added: ['c'], removed: ['a'] });
+    expect(diffSets([], [])).toEqual({ added: [], removed: [] });
   });
 });

@@ -1,7 +1,7 @@
 // ============================================================================
 //  Vendor Companies — data access (migration 0043) and the `mycerts` edge
-//  function. RLS lets anyone with insp_view read names; writes need
-//  insp_vendor_edit.
+//  function. RLS lets inspection / calibration / vendor viewers read names; writes need
+//  vendor-company:create / vendor-company:update.
 // ============================================================================
 import { supabase } from '../../../lib/supabase';
 import type { CertResult, VendorCompany } from './vendors';

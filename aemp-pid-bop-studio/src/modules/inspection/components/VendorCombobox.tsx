@@ -39,7 +39,7 @@ function CertCheck({ name }: { name: string }) {
   return (
     <small style={{ color: 'var(--i-muted)' }}>
       No exact match. Enter the full registered name, or search on the{' '}
-      {can('insp_vendor_view') ? <Link to="/inspection/vendor-companies">Vendor Companies</Link> : 'Vendor Companies'} screen.{stale}
+      {can('vendor-company:view') ? <Link to="/inspection/vendor-companies">Vendor Companies</Link> : 'Vendor Companies'} screen.{stale}
     </small>
   );
 }

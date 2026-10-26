@@ -299,19 +299,19 @@ export default function RecordsView() {
         subtitle="Browse and search inspection records by rig, equipment and category."
         actions={(
           <>
-            {can('insp_export') && (
+            {can('inspection:export') && (
               <button type="button" className="insp-btn"
                 onClick={exportAll} disabled={busy}>
                 <Icon name="export" /> Export
               </button>
             )}
-            {can('insp_upload') && (
+            {can('inspection:import') && (
               <button type="button" className="insp-btn"
                 onClick={() => navigate('/inspection/records/upload')}>
                 <Icon name="upload" /> Upload
               </button>
             )}
-            {can('insp_data_entry') && (
+            {can('inspection:create') && (
               <button type="button" className="insp-btn primary"
                 onClick={() => navigate('/inspection/records/new')}>
                 <Icon name="plus" /> New record
@@ -418,7 +418,7 @@ export default function RecordsView() {
         searchPlaceholder="Search serial, equipment, part…"
         emptyTitle="No inspection records"
         emptyDesc="No records match the current category, rig, equipment or search."
-        aboveTable={selected.size > 0 && can('insp_data_entry') ? (
+        aboveTable={selected.size > 0 && can('inspection:update') ? (
           <div className="insp-toolbar">
             <span>{selected.size} selected</span>
             <label className="fld" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -443,11 +443,11 @@ export default function RecordsView() {
               aria-label="Documents" onClick={() => setFilesFor(r)}><Icon name="documents" /></button>
             <button type="button" className="insp-iconbtn sm" title="History"
               aria-label="History" onClick={() => setLogsFor(r)}><Icon name="history" /></button>
-            {can('insp_data_entry') && (
+            {can('inspection:update') && (
               <button type="button" className="insp-iconbtn sm" title="Edit" aria-label="Edit"
                 onClick={() => navigate(`/inspection/records/${r.id}/edit`)}><Icon name="edit" /></button>
             )}
-            {can('insp_manage_catalog') && (
+            {can('inspection:delete') && (
               <button type="button" className="insp-iconbtn sm danger" title="Delete"
                 aria-label="Delete" disabled={busy}
                 onClick={() => doDelete(r)}><Icon name="delete" /></button>

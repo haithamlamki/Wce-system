@@ -16,7 +16,7 @@ import type { VendorCompany } from '../lib/vendors';
 export default function VendorCompaniesView() {
   const { can } = useInspection();
   const navigate = useNavigate();
-  const editable = can('insp_vendor_edit');
+  const editable = can('vendor-company:update');
   const [query, setQuery] = useState<VendorQuery>({ q: '', page: 1, perPage: 25, sort: 'name', desc: false });
   const [rows, setRows] = useState<VendorCompany[]>([]);
   const [total, setTotal] = useState(0);
@@ -63,7 +63,7 @@ export default function VendorCompaniesView() {
       <PageHeader
         title="Vendor Companies"
         subtitle="OEM, inspection and certifying companies offered on the inspection and calibration forms."
-        actions={editable && (
+        actions={can('vendor-company:create') && (
           <button type="button" className="insp-btn primary" onClick={() => navigate('/inspection/vendor-companies/new')}>
             <Icon name="plus" /> New vendor company</button>
         )}

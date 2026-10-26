@@ -4,7 +4,7 @@
 //  same glyph for each affordance.
 // ============================================================================
 import {
-  BadgeCheck, Bell, Boxes, Building2, CalendarClock, ChartPie, ChevronDown,
+  BadgeCheck, Bell, Bug, History, KeyRound, Layers, Newspaper, Shield, Users, Boxes, Building2, CalendarClock, ChartPie, ChevronDown,
   ChevronRight, ClipboardCheck, Download, Factory, FileDown, FileStack, FileText,
   FolderOpen, Funnel, Gauge, LayoutDashboard, Moon, PanelLeft, Pencil, Plus, Ruler, ScrollText,
   Settings2, Share2, ShieldCheck, SlidersHorizontal, Stamp, Store, Sun, Tags, Timer,
@@ -28,6 +28,13 @@ const ICONS = {
   companies: Building2,
   'vendor-companies': Store,
   units: Factory,
+  users: Users,
+  roles: Shield,
+  permissions: KeyRound,
+  'scope-templates': Layers,
+  'audit-logs': History,
+  'app-logs': Bug,
+  'release-log': Newspaper,
   // topbar
   'panel-left': PanelLeft,
   bell: Bell,

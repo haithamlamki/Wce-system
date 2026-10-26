@@ -6,7 +6,6 @@
 // ============================================================================
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../../../lib/supabase';
-import { mergeModulePermissions } from './logsFormat';
 
 function need() {
   if (!supabase) throw new Error('Cloud not configured.');
@@ -74,13 +73,6 @@ export async function saveUserUnitAccess(userId: string, access: UnitAccess[]): 
 /** Self-service password change (reference Security Management → Password Reset). */
 export async function changeOwnPassword(newPassword: string): Promise<void> {
   const { error } = await need().auth.updateUser({ password: newPassword });
-  if (error) throw new Error(error.message);
-}
-
-/** Replaces the user's insp_* grants, preserving other modules' permissions. */
-export async function saveInspPermissions(userId: string, existing: string[], inspSelection: string[]): Promise<void> {
-  const { error } = await need().rpc('set_user_permissions',
-    { p_user: userId, p_perms: mergeModulePermissions(existing, inspSelection) });
   if (error) throw new Error(error.message);
 }
 

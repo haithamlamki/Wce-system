@@ -35,7 +35,7 @@ export default function VendorCompanyView() {
     return error ? <EmptyState ico="⚠" title="Failed to load vendor company" desc={error} />
       : <EmptyState ico="◌" title="Loading" desc="Loading the vendor company…" />;
   }
-  if (editing && !can('insp_vendor_edit')) {
+  if (editing && !can(id ? 'vendor-company:update' : 'vendor-company:create')) {
     return <EmptyState ico="⚿" title="No Access" desc="You cannot edit vendor companies." />;
   }
 
@@ -56,7 +56,7 @@ export default function VendorCompanyView() {
         actions={(
           <>
             <button type="button" className="insp-btn" onClick={back}>Back</button>
-            {!editing && can('insp_vendor_edit') && (
+            {!editing && can('vendor-company:update') && (
               <button type="button" className="insp-btn primary" onClick={() => navigate(`/inspection/vendor-companies/${id}/edit`)}>Edit</button>
             )}
           </>

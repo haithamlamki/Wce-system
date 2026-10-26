@@ -22,7 +22,7 @@ const EMPTY: Draft = { unitId: '', title: REGISTER_TITLES[0], registerDate: '', 
 export default function CalibrationListView() {
   const { units, can } = useInspection();
   const navigate = useNavigate();
-  const editable = can('insp_calibration_edit');
+  const editable = can('calibration:update');
   const [rows, setRows] = useState<CalRegister[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

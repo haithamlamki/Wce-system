@@ -1,7 +1,7 @@
 // ============================================================================
 //  Equipment type detail — replicates the reference `/equipment/:id` page: a
 //  summary block, a "Specifications" section listing the type's spec fields and
-//  a "Parts & Components" section. All writes stay behind insp_manage_catalog.
+//  a "Parts & Components" section. All writes stay behind the equipment keys.
 // ============================================================================
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -15,7 +15,7 @@ export default function CatalogView() {
   const { typeId } = useParams();
   const navigate = useNavigate();
   const { can, types, parts, components, refreshCatalog } = useInspection();
-  const editable = can('insp_manage_catalog');
+  const editable = can('equipment:update');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatChanges, mergeModulePermissions, urgencyOf } from './logsFormat';
+import { formatChanges, urgencyOf } from './logsFormat';
 
 describe('formatChanges', () => {
   it('maps column names to labels and renders old → new', () => {
@@ -30,16 +30,3 @@ describe('urgencyOf', () => {
   });
 });
 
-describe('mergeModulePermissions', () => {
-  it('replaces only the insp_* subset, preserving other module grants', () => {
-    const out = mergeModulePermissions(
-      ['view', 'data_entry', 'insp_view', 'insp_upload'],
-      ['insp_view', 'insp_approve'],
-    );
-    expect(out.sort()).toEqual(['data_entry', 'insp_approve', 'insp_view', 'view']);
-  });
-  it('handles empty selections', () => {
-    expect(mergeModulePermissions(['insp_view', 'export'], [])).toEqual(['export']);
-    expect(mergeModulePermissions([], ['insp_view'])).toEqual(['insp_view']);
-  });
-});

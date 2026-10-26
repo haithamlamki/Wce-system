@@ -1,10 +1,8 @@
 // ============================================================================
 //  Pure helpers for the guide-parity features added in migration 0032:
-//  change-log rendering (§5.9), upcoming-inspection urgency colours (§5.11.4)
-//  and insp_* permission merging for the Users screen (§5.14).
+//  change-log rendering (§5.9), and upcoming-inspection urgency colours (§5.11.4).
 // ============================================================================
 import { APPROVE_STATUS_LABELS, WORKING_STATUS_LABELS } from '../types';
-import { INSPECTION_PERMISSIONS } from './permissions';
 
 const COLUMN_LABELS: Record<string, string> = {
   type_id: 'Equipment', part_id: 'Equipment Part', component_id: 'Part Component',
@@ -58,9 +56,3 @@ export function urgencyOf(daysUntilDue: number): Urgency {
   return 'green';
 }
 
-/** set_user_permissions() replaces a user's FULL grant set (all modules), so the
- *  inspection Users screen must swap only the insp_* subset it owns. */
-export function mergeModulePermissions(existing: string[], inspSelection: string[]): string[] {
-  const inspSet = new Set<string>(INSPECTION_PERMISSIONS);
-  return [...existing.filter((p) => !inspSet.has(p)), ...inspSelection];
-}

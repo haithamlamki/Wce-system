@@ -1,7 +1,7 @@
 // ============================================================================
 //  Library — replicates the reference `/library` page: a two-pane explorer with
 //  a "Library" folder tree beside a "Files" list showing name, size and date.
-//  Upload / new folder / delete stay gated on insp_manage_files, and files are
+//  Upload / new folder / delete stay gated on library:create / library:delete, and files are
 //  always opened through a signed URL.
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
@@ -27,7 +27,7 @@ function fileDate(iso: string | null | undefined): string {
 
 export default function LibraryView() {
   const { can } = useInspection();
-  const editable = can('insp_manage_files');
+  const editable = can('library:create');
   const [prefix, setPrefix] = useState('');
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
   const [loading, setLoading] = useState(true);

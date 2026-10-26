@@ -27,7 +27,7 @@ export default function CalibrationRegisterView() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const { can } = useInspection();
-  const editable = can('insp_calibration_edit');
+  const editable = can('calibration:update');
   const today = new Date().toISOString().slice(0, 10);
 
   const [register, setRegister] = useState<CalRegister | null>(null);

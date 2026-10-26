@@ -18,7 +18,7 @@ export default function FilesDrawer({ record, onClose, onRecordChanged }: {
   record: InspectionRecord; onClose: () => void; onRecordChanged?: () => void;
 }) {
   const { can } = useInspection();
-  const editable = can('insp_manage_files');
+  const editable = can('inspection-file:upload');
   const [files, setFiles] = useState<InspFile[]>([]);
   const [kind, setKind] = useState<FileKind>('inspection_certificate');
   const [expiry, setExpiry] = useState('');
