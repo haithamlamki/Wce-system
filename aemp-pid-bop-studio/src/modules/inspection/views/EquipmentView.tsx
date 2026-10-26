@@ -56,7 +56,7 @@ export default function EquipmentView() {
       <PageHeader
         title="Equipment"
         subtitle="Manage equipment types, their parts, components and specifications."
-        actions={can('insp_manage_catalog') ? (
+        actions={can('equipment:create') ? (
           <button type="button" className="insp-btn primary"
             onClick={() => navigate('/inspection/equipment/new')}>
             + New equipment type

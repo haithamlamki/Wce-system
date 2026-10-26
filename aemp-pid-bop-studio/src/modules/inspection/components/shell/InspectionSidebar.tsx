@@ -4,70 +4,59 @@
 //  tinted with the primary colour. See docs/inspection-reference-parity.md §1.
 // ============================================================================
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../../../state/AuthContext';
-import { isPrivileged } from '../../lib/permissions';
+import type { InspectionPermission } from '../../lib/permissions';
 import { useInspection } from '../../state/InspectionContext';
 import Icon from '../Icon';
 import type { IconName } from '../Icon';
 
-interface Item { to: string; label: string; ico: IconName; end?: boolean }
+interface Item { to: string; label: string; ico: IconName; perm: InspectionPermission; end?: boolean }
 
+// Each item shows only to holders of the reference permission behind it.
 const SECTIONS: { title: string; items: Item[] }[] = [
   {
     title: 'Main',
-    items: [{ to: '/inspection', label: 'Dashboard', ico: 'dashboard', end: true }],
+    items: [{ to: '/inspection', label: 'Dashboard', ico: 'dashboard', perm: 'dashboard:view', end: true }],
   },
   {
     title: 'Equipment',
     items: [
-      { to: '/inspection/equipment', label: 'Equipment', ico: 'equipment' },
-      { to: '/inspection/records', label: 'Inspections', ico: 'inspections' },
-      { to: '/inspection/approvals', label: 'Approvals', ico: 'approvals' },
-      { to: '/inspection/equipment-categories', label: 'Equipment Categories', ico: 'categories' },
-      { to: '/inspection/specifications', label: 'Specifications', ico: 'specifications' },
-      { to: '/inspection/calibration', label: 'Calibration Register', ico: 'calibration' },
-      { to: '/inspection/pid', label: 'P&ID', ico: 'pid' },
-      { to: '/inspection/library', label: 'Library', ico: 'library' },
+      { to: '/inspection/equipment', label: 'Equipment', ico: 'equipment', perm: 'equipment:view' },
+      { to: '/inspection/records', label: 'Inspections', ico: 'inspections', perm: 'inspection:view' },
+      { to: '/inspection/approvals', label: 'Approvals', ico: 'approvals', perm: 'inspection:approve' },
+      { to: '/inspection/equipment-categories', label: 'Equipment Categories', ico: 'categories', perm: 'equipment-category:view' },
+      { to: '/inspection/specifications', label: 'Specifications', ico: 'specifications', perm: 'specification:view' },
+      { to: '/inspection/calibration', label: 'Calibration Register', ico: 'calibration', perm: 'calibration:view' },
+      { to: '/inspection/pid', label: 'P&ID', ico: 'pid', perm: 'pid:view' },
+      { to: '/inspection/library', label: 'Library', ico: 'library', perm: 'library:view' },
     ],
   },
   {
     title: 'Administration',
     items: [
-      { to: '/inspection/admin/inspection-frequencies', label: 'Inspection Frequencies', ico: 'frequencies' },
+      { to: '/inspection/users', label: 'Users', ico: 'users', perm: 'user:view' },
+      { to: '/inspection/roles', label: 'Roles', ico: 'roles', perm: 'role:view' },
+      { to: '/inspection/permissions', label: 'Permissions', ico: 'permissions', perm: 'role:view' },
+      { to: '/inspection/scope-templates', label: 'Scope Templates', ico: 'scope-templates', perm: 'user:manage-access' },
+      { to: '/inspection/admin/inspection-frequencies', label: 'Inspection Frequencies', ico: 'frequencies', perm: 'inspection-frequency:view' },
+      { to: '/inspection/admin/audit-logs', label: 'Audit Logs', ico: 'audit-logs', perm: 'audit:view' },
+      { to: '/inspection/admin/logs', label: 'App Logs', ico: 'app-logs', perm: 'log:view' },
+      { to: '/inspection/release-log', label: 'Release Log', ico: 'release-log', perm: 'release-log:view' },
     ],
   },
   {
     title: 'Organization',
     items: [
-      { to: '/inspection/companies', label: 'Companies', ico: 'companies' },
-      { to: '/inspection/vendor-companies', label: 'Vendor Companies', ico: 'vendor-companies' },
-      { to: '/inspection/units', label: 'Units', ico: 'units' },
+      { to: '/inspection/companies', label: 'Companies', ico: 'companies', perm: 'company:view' },
+      { to: '/inspection/vendor-companies', label: 'Vendor Companies', ico: 'vendor-companies', perm: 'vendor-company:view' },
+      { to: '/inspection/units', label: 'Units', ico: 'units', perm: 'unit:view' },
     ],
   },
 ];
 
 export default function InspectionSidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { role } = useAuth();
   const { can } = useInspection();
-
-  const sections = SECTIONS.map((s) => {
-    if (s.title === 'Equipment' && !can('insp_calibration_view')) {
-      return { ...s, items: s.items.filter((it) => it.ico !== 'calibration') };
-    }
-    if (s.title === 'Organization' && !can('insp_vendor_view')) {
-      return { ...s, items: s.items.filter((it) => it.ico !== 'vendor-companies') };
-    }
-    // The reference exposes user administration only to accounts holding the
-    // permission; here the equivalent gate is the privileged role.
-    if (s.title === 'Administration' && isPrivileged(role)) {
-      return {
-        ...s,
-        items: [...s.items,
-          { to: '/inspection/users', label: 'Security Management', ico: 'approvals' as IconName }],
-      };
-    }
-    return s;
-  });
+  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((it) => can(it.perm)) }))
+    .filter((s) => s.items.length > 0);
 
   return (
     <aside className="insp-sidebar">

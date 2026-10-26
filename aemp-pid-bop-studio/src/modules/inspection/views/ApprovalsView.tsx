@@ -5,7 +5,7 @@
 //
 //  Business rule preserved from the previous implementation: a non-privileged
 //  approver only sees records that named them as approver. The DB RPC
-//  (insp_set_approval, guarded by insp_approve) remains the real authorization
+//  (insp_set_approval, guarded by inspection:approve) remains the real authorization
 //  boundary — the checks below only drive the UI.
 // ============================================================================
 import { useMemo, useState } from 'react';
@@ -95,12 +95,12 @@ export default function ApprovalsView() {
     }
   };
 
-  if (!can('insp_approve')) {
+  if (!can('inspection:approve')) {
     return (
       <>
         <PageHeader title="Approvals" subtitle="Inspection records waiting for your approval." />
         <EmptyState ico="⚿" title="Approval permission required"
-          desc="Ask your administrator for the insp_approve permission." />
+          desc="Ask your administrator for the inspection:approve permission." />
       </>
     );
   }

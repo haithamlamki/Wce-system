@@ -1,38 +1,25 @@
 // ============================================================================
-//  Security Management → User List (guide §5.14). Admin only: create users,
-//  set identity (first/last/phone/roles), role, deactivate / access expiry,
-//  grant insp_* permissions and the Configure Access matrix — per unit Full
-//  Access or a subset of equipment systems (reference User Edit page).
+//  Users (reference `/users`, guide §5.14): create users, set identity
+//  (first/last/phone/job titles), app role, deactivate / access expiry, and —
+//  like the reference User Edit page — assign Roles (permissions) and Scope
+//  Templates (companies / units). Needs user:view; assignments need
+//  user:manage-access.
 // ============================================================================
 import { useEffect, useState } from 'react';
-import { useAuth } from '../../../state/AuthContext';
 import { useInspection } from '../state/InspectionContext';
-import { isPrivileged, INSPECTION_PERMISSIONS, type InspectionPermission } from '../lib/permissions';
-import { createUser, listUsers, listUserGrants, saveInspPermissions, saveUserUnitAccess,
+import { createUser, listUsers, listUserGrants, saveUserUnitAccess,
   updateUserProfile, type UnitAccess, type UserAccount } from '../lib/users';
+import { fetchRoles, fetchScopeTemplates, fetchUserAccess, saveUserAccess,
+  type InspRole, type ScopeTemplate } from '../lib/accessApi';
 import { CATEGORY_LABELS, CATEGORY_ORDER } from '../types';
 import { EmptyState } from '../components/ui';
-
-const PERM_LABELS: Record<InspectionPermission, string> = {
-  insp_view: 'View module',
-  insp_data_entry: 'Data Entry (add / edit / delete records)',
-  insp_upload: 'Data Upload (Excel import)',
-  insp_approve: 'Approval',
-  insp_manage_catalog: 'Manage Equipment Components',
-  insp_manage_files: 'Manage files & library',
-  insp_export: 'Export data',
-  insp_calibration_view: 'Calibration Register (view)',
-  insp_calibration_edit: 'Calibration Register (create / edit / upload)',
-  insp_vendor_view: 'Vendor Companies (view)',
-  insp_vendor_edit: 'Vendor Companies (create / edit)',
-};
 
 /** unitId → categories (null = Full Access); absence = no access to the unit. */
 type AccessMap = Map<string, string[] | null>;
 
 export default function UsersView() {
-  const { role } = useAuth();
-  const { units } = useInspection();
+  const { can, units } = useInspection();
+  const manageAccess = can('user:manage-access');
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,7 +32,11 @@ export default function UsersView() {
   // editor
   const [sel, setSel] = useState<UserAccount | null>(null);
   const [grants, setGrants] = useState<{ permissions: string[]; unitAccess: UnitAccess[] } | null>(null);
-  const [perms, setPerms] = useState<Set<string>>(new Set());
+  const [roles, setRoles] = useState<InspRole[]>([]);
+  const [templates, setTemplates] = useState<ScopeTemplate[]>([]);
+  const [current, setCurrent] = useState<{ roleIds: string[]; templateIds: string[] }>({ roleIds: [], templateIds: [] });
+  const [roleIds, setRoleIds] = useState<Set<string>>(new Set());
+  const [templateIds, setTemplateIds] = useState<Set<string>>(new Set());
   const [access, setAccess] = useState<AccessMap>(new Map());
   const [edit, setEdit] = useState({
     role: 'field', active: true, expiry: '',
@@ -57,6 +48,12 @@ export default function UsersView() {
     listUsers().then(setUsers).catch((e) => setErr((e as Error).message));
   };
   useEffect(reload, []);
+  useEffect(() => {
+    if (!manageAccess) return;
+    Promise.all([fetchRoles(), fetchScopeTemplates()])
+      .then(([r, t]) => { setRoles(r); setTemplates(t); })
+      .catch((e) => setErr((e as Error).message));
+  }, [manageAccess]);
 
   const openUser = async (u: UserAccount) => {
     setSel(u); setGrants(null);
@@ -65,9 +62,9 @@ export default function UsersView() {
       firstName: u.firstName, lastName: u.lastName, phone: u.phone, jobRoles: [...u.jobRoles],
     });
     try {
-      const g = await listUserGrants(u.id);
+      const [g, acc] = await Promise.all([listUserGrants(u.id), fetchUserAccess(u.id)]);
       setGrants(g);
-      setPerms(new Set(g.permissions.filter((p) => (INSPECTION_PERMISSIONS as readonly string[]).includes(p))));
+      setCurrent(acc); setRoleIds(new Set(acc.roleIds)); setTemplateIds(new Set(acc.templateIds));
       setAccess(new Map(g.unitAccess.map((a) => [a.unitId, a.categories])));
     } catch (e) { setErr((e as Error).message); }
   };
@@ -82,7 +79,9 @@ export default function UsersView() {
         first_name: edit.firstName, last_name: edit.lastName, phone: edit.phone,
         job_roles: edit.jobRoles, full_name: fullName,
       });
-      await saveInspPermissions(sel.id, grants.permissions, [...perms]);
+      if (manageAccess) {
+        await saveUserAccess(sel.id, current, { roleIds: [...roleIds], templateIds: [...templateIds] });
+      }
       await saveUserUnitAccess(sel.id,
         [...access.entries()].map(([unitId, categories]) => ({ unitId, categories })));
       alert('User saved.');
@@ -128,10 +127,11 @@ export default function UsersView() {
   });
   const grantAllFull = () => setAccess(new Map(units.map((u) => [u.id, null])));
 
-  if (!isPrivileged(role)) {
-    return <EmptyState ico="⚿" title="Administrators only"
-      desc="Security Management requires the admin or manager role." />;
+  if (!can('user:view')) {
+    return <EmptyState ico="⚿" title="No Access" desc="You need the user:view permission." />;
   }
+  const flip = (set: (f: (s: Set<string>) => Set<string>) => void, v: string) =>
+    set((s) => { const n = new Set(s); if (n.has(v)) n.delete(v); else n.add(v); return n; });
 
   const list = users.filter((u) => !q
     || u.fullName.toLowerCase().includes(q.toLowerCase())
@@ -140,7 +140,7 @@ export default function UsersView() {
   return (
     <div>
       <div className="insp-toolbar">
-        <h2 style={{ margin: 0, fontSize: 18 }}>Security Management — Users</h2>
+        <h2 style={{ margin: 0, fontSize: 18 }}>Users</h2>
         <span style={{ color: 'var(--i-muted)', fontSize: 12 }}>
           Accounts, roles, unit access and time-limited (vendor) logins.
         </span>
@@ -167,7 +167,7 @@ export default function UsersView() {
             <button className="insp-btn primary" disabled={busy} onClick={doCreate}>Create</button>
             <button className="insp-btn" onClick={() => setShowCreate(false)}>Cancel</button>
             <span style={{ color: 'var(--i-muted)', fontSize: 11.5 }}>
-              After creating, open the user below to set role, permissions and units. Share the initial
+              After creating, open the user below to assign roles and scope templates. Share the initial
               password securely and ask them to change it after the first login.
             </span>
           </div>
@@ -249,23 +249,37 @@ export default function UsersView() {
                 </div>
               </div>
 
-              <div className="insp-field" style={{ marginTop: 12 }}>
-                <label>Inspection permissions</label>
-                {(INSPECTION_PERMISSIONS as readonly InspectionPermission[]).map((p) => (
-                  <label key={p} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, textTransform: 'none', fontWeight: 400 }}>
-                    <input type="checkbox" checked={perms.has(p)}
-                      onChange={() => setPerms((s) => { const n = new Set(s); if (n.has(p)) n.delete(p); else n.add(p); return n; })} />
-                    {PERM_LABELS[p]} <code style={{ color: 'var(--i-muted)' }}>{p}</code>
-                  </label>
-                ))}
-                <span style={{ color: 'var(--i-muted)', fontSize: 11 }}>
-                  Admin and manager roles hold every permission implicitly. Other modules' grants are preserved.
-                </span>
-              </div>
+              {manageAccess && (<>
+                <div className="insp-field" style={{ marginTop: 12 }}>
+                  <label>Roles ({roleIds.size})</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '2px 12px' }}>
+                    {roles.map((r) => (
+                      <label key={r.id} title={r.description} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, textTransform: 'none', fontWeight: 400 }}>
+                        <input type="checkbox" checked={roleIds.has(r.id)} onChange={() => flip(setRoleIds, r.id)} />
+                        {r.name} <span style={{ color: 'var(--i-muted)' }}>({r.permissions.length})</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="insp-field" style={{ marginTop: 12 }}>
+                  <label>Scope Templates ({templateIds.size === 0 ? 'none — user sees no records' : templateIds.size})</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '2px 12px' }}>
+                    {templates.map((t) => (
+                      <label key={t.id} title={t.description} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, textTransform: 'none', fontWeight: 400 }}>
+                        <input type="checkbox" checked={templateIds.has(t.id)} onChange={() => flip(setTemplateIds, t.id)} />
+                        {t.name}{!t.isActive && <span style={{ color: 'var(--i-muted)' }}> (inactive)</span>}
+                      </label>
+                    ))}
+                  </div>
+                  <span style={{ color: 'var(--i-muted)', fontSize: 11 }}>
+                    Admin and manager app roles hold every permission and every unit implicitly.
+                  </span>
+                </div>
+              </>)}
 
               <div className="insp-field" style={{ marginTop: 12 }}>
                 <label>
-                  Configure Access ({access.size === 0 ? 'no units — user sees no records' : `${access.size} unit(s)`})
+                  Tubular unit access ({access.size === 0 ? 'no units' : `${access.size} unit(s)`})
                 </label>
                 <div className="insp-toolbar" style={{ marginBottom: 6 }}>
                   <button className="insp-btn" onClick={grantAllFull}>Full Access (all units)</button>
@@ -297,8 +311,8 @@ export default function UsersView() {
                   })}
                 </div>
                 <span style={{ color: 'var(--i-muted)', fontSize: 11 }}>
-                  Unit access is shared with the Tubular module (same assignment table); the system
-                  checkboxes scope which equipment categories this user sees inside each unit.
+                  Unit assignments used by the Tubular module. Inspection record access comes from
+                  the Scope Templates above.
                 </span>
               </div>
 

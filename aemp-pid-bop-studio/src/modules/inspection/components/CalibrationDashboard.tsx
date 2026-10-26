@@ -1,7 +1,7 @@
 // ============================================================================
 //  Dashboard "Calibration" section (reference calibration widget): overdue and
 //  due-soon instrument counts, the worst lateness, and one line per rig that
-//  opens its register. Hidden for users without insp_calibration_view.
+//  opens its register. Hidden for users without calibration:view.
 // ============================================================================
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -26,7 +26,7 @@ function Stat({ label, value, caption, tone }: { label: string; value: number; c
 export default function CalibrationDashboard() {
   const { can } = useInspection();
   const navigate = useNavigate();
-  const allowed = can('insp_calibration_view');
+  const allowed = can('calibration:view');
   const [regs, setRegs] = useState<CalRegister[] | null>(null);
   const [worst, setWorst] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);

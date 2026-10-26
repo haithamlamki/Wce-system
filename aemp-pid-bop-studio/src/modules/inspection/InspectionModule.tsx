@@ -1,7 +1,7 @@
 // ============================================================================
 //  Equipment Inspection module shell — lazy-loaded from App.tsx. Replicates the
 //  reference system's sidebar shell and route set (see
-//  docs/inspection-reference-parity.md). Access-gated by insp_view; the DB
+//  docs/inspection-reference-parity.md). Access-gated by any role key; the DB
 //  (RLS + SECURITY DEFINER RPCs) remains the authorization boundary.
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
@@ -31,6 +31,12 @@ import VendorCompanyView from './views/VendorCompanyView';
 import UnitsView from './views/UnitsView';
 import CatalogView from './views/CatalogView';
 import UsersView from './views/UsersView';
+import RolesView from './views/RolesView';
+import RoleView from './views/RoleView';
+import PermissionsView from './views/PermissionsView';
+import ScopeTemplatesView from './views/ScopeTemplatesView';
+import AdminLogsView from './views/AdminLogsView';
+import ReleaseLogView from './views/ReleaseLogView';
 import PasswordResetView from './views/PasswordResetView';
 
 function ModuleRoutes() {
@@ -43,7 +49,7 @@ function ModuleRoutes() {
   if (error) return <EmptyState ico="⚠" title="Error" desc={error} />;
   if (!canAccess) {
     return <EmptyState ico="⚿" title="No Access"
-      desc="Your account has no Inspection module permission yet. Ask an administrator to grant insp_view." />;
+      desc="Your account has no Inspection module permission yet. Ask an administrator to assign you a role." />;
   }
   return (
     <Routes>
@@ -70,6 +76,15 @@ function ModuleRoutes() {
       <Route path="vendor-companies/:id/edit" element={<VendorCompanyView />} />
       <Route path="units" element={<UnitsView />} />
       <Route path="users" element={<UsersView />} />
+      <Route path="roles" element={<RolesView />} />
+      <Route path="roles/new" element={<RoleView />} />
+      <Route path="roles/:id" element={<RoleView />} />
+      <Route path="roles/:id/edit" element={<RoleView />} />
+      <Route path="permissions" element={<PermissionsView />} />
+      <Route path="scope-templates" element={<ScopeTemplatesView />} />
+      <Route path="admin/audit-logs" element={<AdminLogsView key="audit" kind="audit" />} />
+      <Route path="admin/logs" element={<AdminLogsView key="app" kind="app" />} />
+      <Route path="release-log" element={<ReleaseLogView />} />
       <Route path="password" element={<PasswordResetView />} />
       <Route path="*" element={<EmptyState ico="?" title="Not Found" desc="This Inspection page does not exist." />} />
     </Routes>

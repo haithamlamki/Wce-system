@@ -131,7 +131,7 @@ export default function DataEntryForm() {
       let recordId = id ?? '';
       if (id) await updateRecord(id, draft);
       else recordId = await insertRecord(draft);
-      if (files.length && can('insp_manage_files')) {
+      if (files.length && can('inspection-file:upload')) {
         // Sequential on purpose: keeps storage objects and insp_files rows in step.
         for (const file of files) await uploadFile(recordId, f.folder, file, null);
       }
@@ -233,7 +233,7 @@ export default function DataEntryForm() {
             <label htmlFor="fld-interDue">Intermediate Due (auto)</label>
             <input id="fld-interDue" className="insp-input" readOnly value={interDue ?? ''} />
           </div>
-          {can('insp_manage_files') && (
+          {can('inspection-file:upload') && (
             <>
               {field('Folder', 'folder', (
                 <Combobox

@@ -50,7 +50,7 @@ export default function CertificateExtractPanel({ record, file, onClose, onAppli
   onApplied: () => void;
 }) {
   const { can } = useInspection();
-  const canWrite = can('insp_data_entry');
+  const canWrite = can('inspection:update');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scanned, setScanned] = useState(false);

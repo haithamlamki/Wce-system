@@ -1,5 +1,5 @@
 // ============================================================================
-//  Catalog admin writes — plain RLS-guarded table writes (insp_manage_catalog).
+//  Catalog admin writes — plain RLS-guarded table writes (equipment / equipment-component / specification / company keys).
 // ============================================================================
 import { supabase } from '../../../lib/supabase';
 import type { InspCategory } from '../types';
