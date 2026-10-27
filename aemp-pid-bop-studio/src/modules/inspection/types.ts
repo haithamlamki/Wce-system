@@ -114,4 +114,6 @@ export const CERTIFICATE_KINDS: FileKind[] =
 export interface InspFile {
   id: string; recordId: string; kind: FileKind; storagePath: string;
   fileName: string; fileSize: number; expiryDate: string | null; createdAt: string;
+  /** Reference folder name (e.g. "MPI REPORT"); null for files uploaded here. */
+  folder?: string | null;
 }
