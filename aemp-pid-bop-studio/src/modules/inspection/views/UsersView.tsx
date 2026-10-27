@@ -135,7 +135,8 @@ export default function UsersView() {
 
   const list = users.filter((u) => !q
     || u.fullName.toLowerCase().includes(q.toLowerCase())
-    || u.email.toLowerCase().includes(q.toLowerCase()));
+    || u.email.toLowerCase().includes(q.toLowerCase())
+    || u.username.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div>
@@ -177,11 +178,11 @@ export default function UsersView() {
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div className="insp-table-wrap" style={{ flex: 1, minWidth: 480 }}>
           <table className="insp-table" style={{ minWidth: 560 }}>
-            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Roles</th><th>Role</th><th>Status</th><th>Expiry</th><th /></tr></thead>
+            <thead><tr><th>User Name</th><th>Name</th><th>Email</th><th>Phone</th><th>Roles</th><th>Role</th><th>Status</th><th>Expiry</th><th /></tr></thead>
             <tbody>
               {list.map((u) => (
                 <tr key={u.id} style={sel?.id === u.id ? { outline: '2px solid var(--i-brand)' } : {}}>
-                  <td>{u.fullName || '—'}</td><td>{u.email}</td><td>{u.phone || '—'}</td>
+                  <td>{u.username || '—'}</td><td>{u.fullName || '—'}</td><td>{u.email}</td><td>{u.phone || '—'}</td>
                   <td>{u.jobRoles.join(', ') || '—'}</td><td>{u.role}</td>
                   <td>{u.active
                     ? <span className="insp-rag compliant">Active</span>

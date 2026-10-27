@@ -15,6 +15,7 @@ function need() {
 export interface UserAccount {
   id: string;
   email: string;
+  username: string;              // reference "User Name" (employee number)
   fullName: string;
   firstName: string;
   lastName: string;
@@ -30,11 +31,11 @@ export interface UnitAccess { unitId: string; categories: string[] | null }
 
 export async function listUsers(): Promise<UserAccount[]> {
   const { data, error } = await need().from('profiles')
-    .select('id,email,full_name,first_name,last_name,phone,job_roles,role,active,access_expiry')
+    .select('id,email,username,full_name,first_name,last_name,phone,job_roles,role,active,access_expiry')
     .order('full_name');
   if (error) throw new Error(error.message);
   return (data ?? []).map((p) => ({
-    id: p.id, email: p.email ?? '', fullName: p.full_name ?? '',
+    id: p.id, email: p.email ?? '', username: p.username ?? '', fullName: p.full_name ?? '',
     firstName: p.first_name ?? '', lastName: p.last_name ?? '',
     phone: p.phone ?? '', jobRoles: p.job_roles ?? [],
     role: p.role ?? 'field', active: p.active ?? true,
