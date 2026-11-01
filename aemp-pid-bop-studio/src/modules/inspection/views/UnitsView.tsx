@@ -1,9 +1,11 @@
 // ============================================================================
 //  Units — replicates the reference `/units` list
 //  (columns: Name, Company, Description). Company and the client description
-//  live on the shared units register since migration 0040.
+//  live on the shared units register since migration 0040. Each unit opens
+//  its technical specification sheet (UnitSpecView, migration 0052).
 // ============================================================================
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import type { Column } from '../components/DataTable';
 import { PageHeader } from '../components/ui';
@@ -24,7 +26,10 @@ export default function UnitsView() {
   }, [units, companies]);
 
   const columns: Column<Row>[] = [
-    { key: 'name', header: 'Name', value: (r) => r.name },
+    {
+      key: 'name', header: 'Name', value: (r) => r.name,
+      render: (r) => <Link to={`/inspection/units/${r.id}`}>{r.name}</Link>,
+    },
     { key: 'company', header: 'Company', value: (r) => r.company },
     { key: 'description', header: 'Description', value: (r) => r.description || '—' },
   ];
@@ -36,6 +41,9 @@ export default function UnitsView() {
         rows={rows}
         columns={columns}
         rowKey={(r) => r.id}
+        rowActions={(r) => (
+          <Link className="insp-btn sm" to={`/inspection/units/${r.id}`}>Technical spec</Link>
+        )}
         loading={loading}
         searchPlaceholder="Search units…"
         emptyTitle="No units"

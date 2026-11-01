@@ -31,6 +31,7 @@ import CompaniesView from './views/CompaniesView';
 import VendorCompaniesView from './views/VendorCompaniesView';
 import VendorCompanyView from './views/VendorCompanyView';
 import UnitsView from './views/UnitsView';
+import UnitSpecView from './views/UnitSpecView';
 import CatalogView from './views/CatalogView';
 import UsersView from './views/UsersView';
 import RolesView from './views/RolesView';
@@ -79,6 +80,7 @@ function ModuleRoutes() {
       <Route path="vendor-companies/:id" element={<VendorCompanyView />} />
       <Route path="vendor-companies/:id/edit" element={<VendorCompanyView />} />
       <Route path="units" element={<UnitsView />} />
+      <Route path="units/:id" element={<UnitSpecView />} />
       <Route path="users" element={<UsersView />} />
       <Route path="roles" element={<RolesView />} />
       <Route path="roles/new" element={<RoleView />} />
