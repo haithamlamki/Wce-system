@@ -23,6 +23,31 @@ describe('validateGlb', () => {
   });
 });
 
+function glbWithJson(json: object): ArrayBuffer {
+  const body = new TextEncoder().encode(JSON.stringify(json));
+  const padded = Math.ceil(body.length / 4) * 4;
+  const buf = new ArrayBuffer(20 + padded);
+  const dv = new DataView(buf);
+  dv.setUint32(0, 0x46546c67, true);
+  dv.setUint32(4, 2, true);
+  dv.setUint32(8, buf.byteLength, true);
+  dv.setUint32(12, padded, true);
+  dv.setUint32(16, 0x4e4f534a, true);
+  new Uint8Array(buf, 20).set(body);
+  return buf;
+}
+
+describe('compressed GLB detection', () => {
+  it('rejects Draco / Meshopt models with a helpful message', () => {
+    expect(validateGlb(glbWithJson({ asset: { version: '2.0' }, extensionsRequired: ['KHR_draco_mesh_compression'] }))).toMatch(/not supported/);
+    expect(validateGlb(glbWithJson({ asset: { version: '2.0' }, extensionsRequired: ['EXT_meshopt_compression'] }))).toMatch(/Meshopt/);
+  });
+  it('accepts a plain GLB and ignores optional extensions', () => {
+    expect(validateGlb(glbWithJson({ asset: { version: '2.0' } }))).toBeNull();
+    expect(validateGlb(glbWithJson({ asset: { version: '2.0' }, extensionsUsed: ['KHR_draco_mesh_compression'] }))).toBeNull();
+  });
+});
+
 describe('base64 round trip', () => {
   it('survives a buffer bigger than one chunk', () => {
     const src = new Uint8Array(70000).map((_, i) => i % 251);

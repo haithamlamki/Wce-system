@@ -9,7 +9,8 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { SYM } from '../lib/symbols';
 import { loadModel } from '../lib/model3dStore';
-import { buildSymbolObject, createStage } from '../lib/threeStage';
+import { clone as cloneObject } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { buildSymbolObject, createStage, type SymbolObjectKind } from '../lib/threeStage';
 
 export interface Bop3DItem {
   id: string;
@@ -65,6 +66,16 @@ export default function Bop3DView({ items, datum, rt, onHover }: Props) {
       await Promise.all(types.map(async (t) => bufs.set(t, await loadModel(t))));
       if (disposed) return;
 
+      // Build each symbol type once; every item gets a clone (shared geometry/textures).
+      const templates = new Map<string, Promise<{ object: THREE.Object3D; kind: SymbolObjectKind } | null>>();
+      const template = (type: string, def: NonNullable<(typeof SYM)[string]>) => {
+        let t = templates.get(type);
+        if (!t) {
+          t = buildSymbolObject({ key: type, glb: bufs.get(type), flat: { svg: def.svg, w: def.w, h: def.h, color: def.color }, flatDepth: 0.35 }).catch(() => null);
+          templates.set(type, t);
+        }
+        return t;
+      };
       let flats = 0;
       let maxR = 1;
       for (const it of items) {
@@ -72,10 +83,10 @@ export default function Bop3DView({ items, datum, rt, onHover }: Props) {
         if (!def || it.height <= 0) continue;
         let obj: THREE.Object3D;
         try {
-          const res = await buildSymbolObject({ key: it.type, glb: bufs.get(it.type), flat: { svg: def.svg, w: def.w, h: def.h, color: def.color }, flatDepth: 0.35 });
+          const res = await template(it.type, def);
           if (!res) continue;
           if (res.kind === 'flat') flats++;
-          obj = res.object;
+          obj = cloneObject(res.object);
         } catch {
           continue; // a broken model must not blank the whole stack
         }

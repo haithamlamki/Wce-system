@@ -19,7 +19,29 @@ export function validateGlb(buf: ArrayBuffer): string | null {
   if (dv.getUint32(0, true) !== GLB_MAGIC) return 'Not a binary glTF (.glb) file.';
   if (dv.getUint32(4, true) !== 2) return 'Only glTF 2.0 GLB files are supported.';
   if (dv.getUint32(8, true) > buf.byteLength) return 'The GLB file is truncated.';
+  const ext = unsupportedGlbExtension(buf);
+  if (ext) return `This model uses ${ext}, which is not supported. Re-export it without compression (no Draco / Meshopt / Basis).`;
   return null;
+}
+
+/** Extensions that need a decoder the strict CSP does not allow us to load. */
+const UNSUPPORTED_EXT = ['KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_texture_basisu'];
+
+/** Name of the first required-but-unsupported glTF extension, or null. */
+export function unsupportedGlbExtension(buf: ArrayBuffer): string | null {
+  try {
+    const dv = new DataView(buf);
+    const len = dv.getUint32(12, true);
+    if (dv.getUint32(16, true) !== 0x4e4f534a || len <= 0 || 20 + len > buf.byteLength) return null; // not a JSON chunk
+    // the spec pads the JSON chunk with spaces, but some exporters pad with NULs
+    const text = new TextDecoder().decode(new Uint8Array(buf, 20, len)).replace(/\0+$/, '');
+    const json = JSON.parse(text);
+    const req: unknown = json?.extensionsRequired;
+    if (!Array.isArray(req)) return null;
+    return UNSUPPORTED_EXT.find((e) => req.includes(e)) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** ArrayBuffer → base64 (chunked so large models do not blow the call stack). */

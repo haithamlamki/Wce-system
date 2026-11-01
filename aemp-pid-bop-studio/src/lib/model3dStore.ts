@@ -69,9 +69,30 @@ async function remoteOk<T>(fn: () => PromiseLike<{ data: T | null; error: { mess
   }
 }
 
+/** key → updated_at for every shared model (one small query, no payloads).
+ *  Cached per session; null when the shared layer is unreachable. */
+let stampsP: Promise<Map<string, string> | null> | null = null;
+const remoteStamps = () => (stampsP ??= remoteOk(() => supabase!.from('symbol_models').select('key,updated_at')).then((rows) => {
+  if (!rows) return null;
+  return new Map((rows as Array<{ key: string; updated_at: string }>).map((r) => [r.key, r.updated_at] as [string, string]));
+}));
+const resetStamps = () => { stampsP = null; };
+
+/** Which shared version each local copy came from (absent = local-only model). */
+const STAMP_KEY = 'aemp.models3d.stamps';
+const readStamps = (): Record<string, string> => {
+  try { return JSON.parse(localStorage.getItem(STAMP_KEY) || '{}'); } catch { return {}; }
+};
+const writeStamp = (key: string, v: string | null) => {
+  try {
+    const m = readStamps();
+    if (v) m[key] = v; else delete m[key];
+    localStorage.setItem(STAMP_KEY, JSON.stringify(m));
+  } catch { /* storage unavailable — fall back to always trusting local */ }
+};
+
 export async function listRemoteModelKeys(): Promise<string[]> {
-  const rows = await remoteOk(() => supabase!.from('symbol_models').select('key'));
-  return ((rows as Array<{ key: string }> | null) ?? []).map((r) => r.key);
+  return [...((await remoteStamps())?.keys() ?? [])];
 }
 
 export async function getRemoteModel(key: string): Promise<ArrayBuffer | null> {
@@ -88,31 +109,61 @@ export async function putRemoteModel(key: string, buf: ArrayBuffer): Promise<boo
 
 export async function deleteRemoteModel(key: string): Promise<void> {
   await remoteOk(() => supabase!.from('symbol_models').delete().eq('key', key).select('key'));
+  resetStamps();
 }
 
 /** Combined API ------------------------------------------------------------- */
-/** Local first (instant/offline), then the shared copy — which is cached locally. */
+/** Local first (instant/offline). If the shared copy is newer, replaced or removed
+ *  by someone else, the local cache is refreshed so every device converges. */
 export async function loadModel(key: string): Promise<ArrayBuffer | null> {
   const local = await getLocalModel(key);
-  if (local) return local;
-  const remote = await getRemoteModel(key);
-  if (remote) await putLocalModel(key, remote);
-  return remote;
+  const stamps = await remoteStamps();
+  if (!stamps) return local; // offline / table missing → trust local
+  const remoteStamp = stamps.get(key);
+  const localStamp = readStamps()[key];
+  if (remoteStamp) {
+    if (local && localStamp === remoteStamp) return local;
+    const remote = await getRemoteModel(key);
+    if (remote) {
+      await putLocalModel(key, remote);
+      writeStamp(key, remoteStamp);
+      return remote;
+    }
+    return local;
+  }
+  // Not shared: a local copy that came from the shared layer was removed elsewhere.
+  if (local && localStamp) {
+    await deleteLocalModel(key);
+    writeStamp(key, null);
+    return null;
+  }
+  return local;
 }
 
 /** Save locally, then try to share. `shared` is false when only this browser has it. */
 export async function saveModel(key: string, buf: ArrayBuffer): Promise<{ shared: boolean }> {
   await putLocalModel(key, buf);
-  return { shared: await putRemoteModel(key, buf) };
+  writeStamp(key, null);
+  const shared = await putRemoteModel(key, buf);
+  resetStamps();
+  if (shared) {
+    const t = (await remoteStamps())?.get(key);
+    if (t) writeStamp(key, t);
+  }
+  return { shared };
 }
 
 export async function removeModel(key: string): Promise<void> {
   await deleteLocalModel(key);
+  writeStamp(key, null);
   await deleteRemoteModel(key);
 }
 
-/** Every key that has a model (local ∪ shared) — used to badge library cards. */
+/** Every key that has a model (local ∪ shared) — used to badge library cards.
+ *  Local copies that were removed from the shared layer elsewhere are dropped. */
 export async function listModelKeys(): Promise<Set<string>> {
-  const [a, b] = await Promise.all([listLocalModelKeys(), listRemoteModelKeys()]);
-  return new Set([...a, ...b]);
+  const [local, stamps] = await Promise.all([listLocalModelKeys(), remoteStamps()]);
+  if (!stamps) return new Set(local);
+  const known = readStamps();
+  return new Set([...local.filter((k) => !known[k] || stamps.has(k)), ...stamps.keys()]);
 }
