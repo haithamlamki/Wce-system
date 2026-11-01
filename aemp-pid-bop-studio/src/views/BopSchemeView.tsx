@@ -4,7 +4,7 @@
 //  scale by height with an elevation axis, top-of-stack and clearance-to-RT
 //  dimension. Units convert m/ft. Hover shows details + inspection status.
 // ============================================================================
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useProject } from '../state/ProjectContext';
 import { SECTION_NAMES, stackMetrics, toFeet, toMetres, type HoleSection } from '../lib/bop';
 import { printBop } from '../lib/printExport';
@@ -13,6 +13,9 @@ import { SYM, type SymbolKey } from '../lib/symbols';
 import { STATUS_COLOR, STATUS_LABEL, statusOf } from '../lib/status';
 import type { BopItem } from '../types';
 import SvgMarkup from '../components/SvgMarkup';
+import type { Bop3DItem } from '../components/Bop3DView';
+
+const Bop3DView = lazy(() => import('../components/Bop3DView'));
 
 const W = 520;
 const H = 680;
@@ -33,6 +36,7 @@ export default function BopSchemeView() {
   const { bop } = project;
   const [hover, setHover] = useState<{ it: BopItem; x: number; y: number } | null>(null);
   const [section, setSection] = useState<HoleSection>('12.25');
+  const [mode, setMode] = useState<'2d' | '3d'>('2d');
 
   const m = stackMetrics(bop);
   const toUnit = (v: number) => (bop.unit === 'ft' ? toFeet(v) : v);
@@ -63,6 +67,16 @@ export default function BopSchemeView() {
   const outletElev = crossBand ? (crossBand.bottom + crossBand.topE) / 2 : (bop.datum + m.topOfStack) / 2;
   const sideItems = bop.items.filter((it) => it.side);
   const sortBranch = (sd: 'choke' | 'kill') => sideItems.filter((it) => it.side === sd).sort((a, b) => (a.branchOrder ?? 0) - (b.branchOrder ?? 0));
+
+  // 3D stack: main bands at their real elevations; side branches fan out from the outlet.
+  const items3d: Bop3DItem[] = [
+    ...bands.map(({ it, bottom, topE }) => ({ id: it.id, type: it.type as string, bottom, height: topE - bottom, x: 0 })),
+    ...(['choke', 'kill'] as const).flatMap((sd) => sortBranch(sd).map((it, i) => ({
+      id: it.id, type: it.type as string, bottom: outletElev - 0.25, height: Math.min(it.height, 0.8), x: (sd === 'choke' ? 1 : -1) * (1.6 + i * 1.0),
+    }))),
+  ];
+  const hover3d = (id: string | null, cx: number, cy: number) =>
+    setHover(id ? { it: bop.items.find((x) => x.id === id)!, x: cx, y: cy } : null);
 
   function Branch({ items, dir, label }: { items: BopItem[]; dir: 1 | -1; label: string }) {
     if (!items.length) return null;
@@ -108,6 +122,10 @@ export default function BopSchemeView() {
             <strong>No stack yet</strong>
             Choose a hole section and AI-build the BOP stack-up.
           </div>
+        ) : mode === '3d' ? (
+          <Suspense fallback={<div className="placeholder"><strong>Loading 3D…</strong></div>}>
+            <Bop3DView items={items3d} datum={bop.datum} rt={bop.rt} onHover={hover3d} />
+          </Suspense>
         ) : (
           <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style={{ maxHeight: '100%', padding: 16 }}
             onPointerLeave={() => setHover(null)}>
@@ -180,6 +198,14 @@ export default function BopSchemeView() {
       </div>
 
       <aside style={{ width: 330, flex: '0 0 auto', background: 'var(--panel)', borderLeft: '1px solid var(--line2)', padding: 16, overflowY: 'auto' }}>
+        <div role="group" aria-label="View mode" style={{ display: 'flex', border: '1px solid var(--line2)', borderRadius: 7, overflow: 'hidden', marginBottom: 14 }}>
+          {(['2d', '3d'] as const).map((m) => (
+            <button key={m} onClick={() => { setMode(m); setHover(null); }} aria-pressed={mode === m}
+              style={{ flex: 1, border: 0, padding: '8px 0', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: mode === m ? 'var(--accent)' : 'var(--panel2)', color: mode === m ? '#fff' : 'var(--ink)' }}>
+              {m.toUpperCase()}
+            </button>
+          ))}
+        </div>
         <Field label={`Datum (zero) elevation · ${bop.unit}`}>
           <input type="number" step={0.1} value={+toUnit(bop.datum).toFixed(2)} onChange={(e) => patchBop({ datum: fromUnit(+e.target.value) })} style={inp} />
         </Field>

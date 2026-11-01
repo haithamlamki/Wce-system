@@ -4,11 +4,14 @@
 //  import/export the custom set. Edit & replace work on built-ins too: the
 //  change is stored as a per-project override (it travels with save/load).
 // ============================================================================
-import { useReducer, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { useProject } from '../state/ProjectContext';
 import { safeColor } from '../lib/sanitizeSvg';
 import { SYM, type SymbolDef } from '../lib/symbols';
 import SymbolDrawer from './SymbolDrawer';
+import Symbol3DModal from './Symbol3DModal';
+import { listModelKeys } from '../lib/model3dStore';
+import { hasBuiltin3d } from '../lib/builtin3dKeys';
 import SvgMarkup from './SvgMarkup';
 
 /** True for raster image files we can embed as an <image> (PNG/JPG/GIF/WebP). */
@@ -59,6 +62,9 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
   const { project, addCustomSymbol, updateCustomSymbol, deleteCustomSymbol, hideSymbol, restoreSymbol, hiddenSymbols, canEditLibrary } = useProject();
   const [drawer, setDrawer] = useState<{ key: string | null } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  const [view3d, setView3d] = useState<string | null>(null);
+  const [modelKeys, setModelKeys] = useState<Set<string>>(new Set());
+  useEffect(() => { let alive = true; listModelKeys().then((k) => { if (alive) setModelKeys(k); }); return () => { alive = false; }; }, []);
   const [, refresh] = useReducer((x) => x + 1, 0);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const replaceRef = useRef<HTMLInputElement | null>(null);
@@ -136,7 +142,9 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
   function renderCard([key, s]: [string, SymbolDef]) {
     const kind = kindOf(key);
     return (
-      <div key={key} style={{ ...card, ...(kind !== 'built-in' ? { borderColor: 'var(--accent)' } : {}) }}>
+      <div key={key} style={{ ...card, position: 'relative', ...(kind !== 'built-in' ? { borderColor: 'var(--accent)' } : {}) }}>
+        <button style={{ ...badge3d, ...(modelKeys.has(key) || hasBuiltin3d(key) ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' } : {}) }}
+          title={modelKeys.has(key) || hasBuiltin3d(key) ? 'View the 3D model' : 'View in 3D (no model yet — flat card)'} onClick={() => setView3d(key)}>3D</button>
         <div style={{ height: 84, display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
           <svg viewBox={`-4 -4 ${s.w + 8} ${s.h + 8}`} width="100%" height={84} preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
             <SvgMarkup svg={s.svg} style={{ color: safeColor(s.color) }} />
@@ -204,6 +212,14 @@ export default function SymbolLibrary({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
+      {view3d && (
+        <Symbol3DModal
+          symKey={view3d}
+          onClose={() => setView3d(null)}
+          onChanged={(k, has) => setModelKeys((prev) => { const n = new Set(prev); if (has) n.add(k); else n.delete(k); return n; })}
+        />
+      )}
+
       {drawer && (
         <SymbolDrawer
           editKey={drawer.key}
@@ -219,5 +235,6 @@ const backdrop: React.CSSProperties = { position: 'fixed', inset: 0, background:
 const modal: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 14, boxShadow: 'var(--shadow)', padding: 22, width: 'min(1140px, 96vw)' };
 const card: React.CSSProperties = { background: 'var(--panel2)', border: '1px solid var(--line2)', borderRadius: 10, padding: '12px 10px 10px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' };
 const smallBtn: React.CSSProperties = { flex: 1, background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 6, padding: '3px 0', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' };
+const badge3d: React.CSSProperties = { position: 'absolute', top: 6, right: 6, zIndex: 1, background: 'var(--panel)', color: 'var(--ink)', border: '1px solid var(--line2)', borderRadius: 5, padding: '1px 6px', fontSize: 10, fontWeight: 700, fontFamily: 'var(--mono)', cursor: 'pointer' };
 const primary: React.CSSProperties = { background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '8px 14px', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' };
 const ghost: React.CSSProperties = { background: 'var(--panel2)', color: 'var(--ink)', border: '1px solid var(--line2)', borderRadius: 7, padding: '8px 14px', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' };
