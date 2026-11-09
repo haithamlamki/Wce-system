@@ -8,13 +8,14 @@ import {
   ChevronRight, ClipboardCheck, Download, Factory, FileDown, FileStack, FileText,
   FolderOpen, Funnel, Gauge, LayoutDashboard, Moon, PanelLeft, Pencil, Plus, Ruler, ScrollText,
   Settings2, Share2, ShieldCheck, SlidersHorizontal, Stamp, Store, Sun, Tags, Timer,
-  Trash2, TriangleAlert, Upload,
+  Trash2, TriangleAlert, Upload, Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 const ICONS = {
   // sidebar
   dashboard: LayoutDashboard,
+  moh: Wrench,
   equipment: Boxes,
   inspections: ClipboardCheck,
   approvals: BadgeCheck,
