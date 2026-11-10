@@ -1,0 +1,19 @@
+/* Major Overhaul pages — print layout + small helpers. */
+.moh-print-only { display: none; }
+.moh-info { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 18px; }
+.moh-info .k { color: var(--i-muted); font-size: 11.5px; }
+.moh-info .v { font-weight: 600; overflow-wrap: anywhere; }
+.moh-cost { color: var(--i-muted); font-size: 10.5px; display: block; margin-top: 2px; }
+
+@media print {
+  .insp-sidebar, .insp-topbar, .insp-tabnav, .insp-pagehead .actions, .insp-filterrow,
+  .moh-noprint, .insp-drawer, .insp-iconbtn { display: none !important; }
+  .moh-print-only { display: block; }
+  .moh-print-head { margin-bottom: 12px; border-bottom: 2px solid #1f3a5f; padding-bottom: 8px; }
+  .moh-print-head h1 { margin: 0 0 4px; font-size: 18px; }
+  .insp-table-wrap { overflow: visible !important; max-height: none !important; }
+  .insp-table { font-size: 9.5px; }
+  .insp-card, .insp-kpi, .insp-table tr { break-inside: avoid; }
+  .insp-kpi, .insp-card, .insp-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { size: A4 landscape; margin: 10mm; }
+}

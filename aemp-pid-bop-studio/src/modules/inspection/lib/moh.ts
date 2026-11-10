@@ -50,6 +50,20 @@ export interface MohProject {
   plannedMonth: number | null; startDate: string | null; durationDays: number | null;
   vendor: string; poNumber: string; prNumber: string; responsible: string;
   status: ProjectStatus; comments: string;
+  /** Budget in the rig's currency (insp_moh_rig_meta.currency); null = not estimated. */
+  estimatedCost: number | null;
+}
+
+export const CURRENCIES = ['OMR', 'USD', 'SAR', 'AED', 'EUR', 'GBP'] as const;
+export type Currency = typeof CURRENCIES[number];
+
+/** Per-rig planner details (insp_moh_rig_meta, migration 0054). */
+export interface RigMeta {
+  rigId: string; location: string; currency: Currency; preparedBy: string; remarks: string;
+}
+
+export function blankRigMeta(rigId: string): RigMeta {
+  return { rigId, location: '', currency: 'OMR', preparedBy: '', remarks: '' };
 }
 
 export interface Rig { id: string; name: string }
@@ -292,7 +306,7 @@ export function blankProject(row: PlanRow, year: number): MohProject {
   return {
     rigId: row.rigId, itemId: row.item.id, mohUnitId: row.unit?.id ?? null, year,
     plannedMonth: null, startDate: null, durationDays: null, vendor: '', poNumber: '', prNumber: '',
-    responsible: '', status: 'Not Started', comments: '',
+    responsible: '', status: 'Not Started', comments: '', estimatedCost: null,
   };
 }
 
@@ -300,3 +314,44 @@ export const STATUS_TONE: Record<MohStatus, 'danger' | 'warning' | 'success' | '
   OVERDUE: 'danger', 'DUE THIS YEAR': 'warning', 'DUE NEXT YEAR': 'success', PLANNED: 'info',
   'NOT DUE IN PLAN': 'neutral', 'NO LAST MOH DATA': 'neutral', 'NOT APPLICABLE': 'neutral',
 };
+
+/** `OMR 12,500.000` — OMR uses 3 decimals (baisa), others 2, as the HTML's moneyFor. */
+export function money(v: number, currency: string): string {
+  const d = currency === 'OMR' ? 3 : 2;
+  return `${currency} ${v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+}
+
+export type CurrencyTotals = Partial<Record<Currency, number>>;
+
+/** `OMR 1,000.000 + USD 500.00`, or `—` when nothing is estimated. */
+export function currencyText(t: CurrencyTotals): string {
+  const parts = CURRENCIES.filter((c) => (t[c] ?? 0) > 0).map((c) => money(t[c] as number, c));
+  return parts.length ? parts.join(' + ') : '—';
+}
+
+export interface CostSummary { total: CurrencyTotals; byYear: Record<number, CurrencyTotals>; byRig: Record<string, CurrencyTotals> }
+
+/**
+ * Estimated MOH budget: the cost of every planned occurrence (applicable row,
+ * year inside the plan) that has project details, in its rig's currency.
+ * Currencies are never converted or mixed — totals stay per currency.
+ */
+export function costSummary(
+  rows: PlanRow[], years: number[], projects: ReadonlyMap<string, MohProject>,
+  currencyOf: (rigId: string) => Currency,
+): CostSummary {
+  const out: CostSummary = { total: {}, byYear: Object.fromEntries(years.map((y) => [y, {}])), byRig: {} };
+  const add = (t: CurrencyTotals, c: Currency, v: number) => { t[c] = (t[c] ?? 0) + v; };
+  for (const r of rows) {
+    if (!r.applicable) continue;
+    for (const y of r.calc.years) {
+      if (!(y in out.byYear)) continue;
+      const cost = projects.get(projectKey(r.rigId, r.item.id, r.unit?.id ?? null, y))?.estimatedCost;
+      if (!cost || cost <= 0) continue;
+      const c = currencyOf(r.rigId);
+      add(out.total, c, cost); add(out.byYear[y], c, cost);
+      add((out.byRig[r.rigId] ??= {}), c, cost);
+    }
+  }
+  return out;
+}

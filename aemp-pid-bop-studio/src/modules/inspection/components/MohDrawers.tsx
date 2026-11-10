@@ -105,8 +105,8 @@ export function UnitDrawer({ item, rigId, rigName, unit, readOnly, onClose, onSa
   );
 }
 
-export function ProjectDrawer({ project, title, readOnly, onClose, onSaved }: {
-  project: MohProject; title: string; readOnly: boolean; onClose: () => void; onSaved: () => void;
+export function ProjectDrawer({ project, title, currency, readOnly, onClose, onSaved }: {
+  project: MohProject; title: string; currency: string; readOnly: boolean; onClose: () => void; onSaved: () => void;
 }) {
   const [p, setP] = useState<MohProject>(project);
   const [busy, setBusy] = useState(false);
@@ -115,6 +115,7 @@ export function ProjectDrawer({ project, title, readOnly, onClose, onSaved }: {
     (e: { target: { value: string } }) => setP({ ...p, [k]: e.target.value });
 
   const save = async () => {
+    if (p.estimatedCost !== null && !(p.estimatedCost >= 0)) { setErr('Estimated cost must be zero or more.'); return; }
     setBusy(true); setErr(null);
     try { await saveProject(p); onSaved(); } catch (e) { setErr((e as Error).message); setBusy(false); }
   };
@@ -145,6 +146,9 @@ export function ProjectDrawer({ project, title, readOnly, onClose, onSaved }: {
         <Field id="pd-dur" label="Estimated duration (days)">
           <input id="pd-dur" type="number" min={0} className="insp-input" value={p.durationDays ?? ''}
             onChange={(e) => setP({ ...p, durationDays: toNum(e.target.value) })} /></Field>
+        <Field id="pd-cost" label={`Estimated cost (${currency})`}>
+          <input id="pd-cost" type="number" min={0} step="0.001" className="insp-input" value={p.estimatedCost ?? ''}
+            onChange={(e) => setP({ ...p, estimatedCost: toNum(e.target.value) })} /></Field>
         <Field id="pd-vendor" label="Vendor / workshop">
           <input id="pd-vendor" className="insp-input" value={p.vendor} onChange={text('vendor')} /></Field>
         <Field id="pd-resp" label="Responsible person">
