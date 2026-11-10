@@ -5,7 +5,7 @@
 //  Palette is read from the module's CSS custom properties at mount so light
 //  and dark themes both resolve correctly.
 // ============================================================================
-import { useEffect, useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import {
   ArcElement, BarController, BarElement, CategoryScale, Chart as ChartJS,
   DoughnutController, Legend, LineController, LineElement, LinearScale,
@@ -60,7 +60,8 @@ export default function Chart({
     [type, horizontal, stacked, showLegend, labels, series],
   );
 
-  useEffect(() => {
+  // Layout effect so destroy() runs before React detaches the canvas.
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
     if (!canvas || !wrap) return undefined;
@@ -89,7 +90,8 @@ export default function Chart({
         responsive: true,
         maintainAspectRatio: false,
         animation: false,
-        resizeDelay: 120,
+        // No resizeDelay: Chart.js's debounced resize is not cancelled by
+        // destroy(), so it would call update() on a detached canvas and throw.
         cutout: type === 'doughnut' ? '72%' : undefined,
         plugins: {
           legend: showLegend

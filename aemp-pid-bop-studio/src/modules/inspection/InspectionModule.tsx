@@ -41,6 +41,8 @@ import ScopeTemplatesView from './views/ScopeTemplatesView';
 import AdminLogsView from './views/AdminLogsView';
 import ReleaseLogView from './views/ReleaseLogView';
 import PasswordResetView from './views/PasswordResetView';
+import MohDashboardView from './views/MohDashboardView';
+import MohRigView from './views/MohRigView';
 
 function ModuleRoutes() {
   const { enabled, loading, canAccess, error } = useInspection();
@@ -57,6 +59,8 @@ function ModuleRoutes() {
   return (
     <Routes>
       <Route index element={<DashboardView />} />
+      <Route path="moh" element={<MohDashboardView />} />
+      <Route path="moh/:rigId" element={<MohRigView />} />
       <Route path="equipment" element={<EquipmentView />} />
       <Route path="equipment/:typeId" element={<CatalogView />} />
       <Route path="records" element={<RecordsView />} />

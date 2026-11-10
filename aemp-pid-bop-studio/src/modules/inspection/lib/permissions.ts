@@ -20,6 +20,8 @@ const ACTIONS = {
   'inspection-frequency': ['create', 'delete', 'update', 'view'],
   library: ['create', 'delete', 'download', 'view'],
   log: ['view'],
+  /** Major Overhaul dashboard + register (migration 0053; not in the reference system). */
+  moh: ['update', 'view'],
   pid: ['create', 'delete', 'issue', 'update', 'view'],
   'release-log': ['view'],
   role: ['create', 'delete', 'manage-permissions', 'update', 'view'],
@@ -35,7 +37,7 @@ export type InspectionPermission = {
   [R in keyof Actions]: `${R & string}:${Actions[R][number]}`
 }[keyof Actions];
 
-/** All 80 reference permission keys, grouped by resource in reference order. */
+/** The 80 reference permission keys plus the 2 MOH keys, grouped by resource. */
 export const INSPECTION_PERMISSIONS: readonly InspectionPermission[] = Object.entries(ACTIONS)
   .flatMap(([r, acts]) => (acts as readonly string[]).map((a) => `${r}:${a}` as InspectionPermission));
 

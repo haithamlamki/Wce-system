@@ -15,7 +15,10 @@ interface Item { to: string; label: string; ico: IconName; perm: InspectionPermi
 const SECTIONS: { title: string; items: Item[] }[] = [
   {
     title: 'Main',
-    items: [{ to: '/inspection', label: 'Dashboard', ico: 'dashboard', perm: 'dashboard:view', end: true }],
+    items: [
+      { to: '/inspection', label: 'Dashboard', ico: 'dashboard', perm: 'dashboard:view', end: true },
+      { to: '/inspection/moh', label: 'Major Overhaul Dashboard', ico: 'moh', perm: 'moh:view' },
+    ],
   },
   {
     title: 'Equipment',
