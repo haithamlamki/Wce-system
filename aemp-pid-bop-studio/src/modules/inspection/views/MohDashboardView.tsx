@@ -3,20 +3,26 @@
 //  fed live from the system (migration 0053 + major-inspection auto-fill).
 //  KPIs, consolidated annual workload, rig × year matrix and charts over a
 //  configurable horizon (default 10 years). Each rig opens its own plan page.
+//  Also: estimated budget, Excel import / export and a print layout.
 // ============================================================================
 import { useMemo, useState } from 'react';
+import './moh.css';
 import { useNavigate } from 'react-router-dom';
 import Chart from '../components/Chart';
 import DataTable from '../components/DataTable';
 import type { Column } from '../components/DataTable';
 import Icon from '../components/Icon';
+import MohImportPanel from '../components/MohImportPanel';
 import MohItemsPanel from '../components/MohItemsPanel';
 import { Card, EmptyState, LoadingState, PageHeader, SectionTitle } from '../components/ui';
-import { exportCsv, Kpi, PlanControls, useMohPlan } from '../components/MohShared';
+import { exportCsv, Kpi, PlanControls, printedOn, PrintHeader, useMohPlan } from '../components/MohShared';
 import { useInspection } from '../state/InspectionContext';
-import { MOH_CATEGORIES, summarize, type PlanRow, type Summary } from '../lib/moh';
+import { costSummary, currencyText, MOH_CATEGORIES, summarize, type CurrencyTotals, type PlanRow, type Summary } from '../lib/moh';
+import { annualSheet, matrixSheet, planSheet, projectsSheet, rigSummarySheet, withTitle, writeWorkbook } from '../lib/mohExport';
 
-interface RigSummary { id: string; name: string; s: Summary; auto: number }
+interface RigSummary {
+  id: string; name: string; s: Summary; auto: number; client: string; location: string; cost: CurrencyTotals;
+}
 
 const STATUS_SLICES = [
   { key: 'OVERDUE', label: 'Overdue', color: '--i-danger' },
@@ -34,16 +40,21 @@ export default function MohDashboardView() {
   const { rows, years, rigs, data, error } = plan;
   const [category, setCategory] = useState('');
   const [showItems, setShowItems] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
   const editable = can('moh:update');
 
   const shown: PlanRow[] = useMemo(
     () => (category ? rows.filter((r) => r.item.category === category) : rows), [rows, category]);
   const total = useMemo(() => summarize(shown, years), [shown, years]);
+  const { projects, currencyOf, clientOf, metaOf } = plan;
+  const cost = useMemo(() => costSummary(shown, years, projects, currencyOf), [shown, years, projects, currencyOf]);
   const perRig: RigSummary[] = useMemo(() => rigs.map((rig) => {
     const rr = shown.filter((r) => r.rigId === rig.id);
     return { id: rig.id, name: rig.name, s: summarize(rr, years),
-      auto: rr.filter((r) => r.source === 'inspection' && r.applicable).length };
-  }), [rigs, shown, years]);
+      auto: rr.filter((r) => r.source === 'inspection' && r.applicable).length,
+      client: clientOf(rig.id), location: metaOf(rig.id).location, cost: cost.byRig[rig.id] ?? {} };
+  }), [rigs, shown, years, clientOf, metaOf, cost]);
 
   const open = (id: string) => navigate(`/inspection/moh/${id}`);
   const span = `${years[0]}–${years[years.length - 1]}`;
@@ -54,9 +65,24 @@ export default function MohDashboardView() {
     perRig.map((r) => [r.name, r.s.units, r.s.overdue, r.s.dueThis, r.s.dueNext, r.s.missing, r.auto,
       ...years.map((y) => r.s.annual[y]), r.s.projects]));
 
+  const reportLines = [`Period ${span}`, `${rigs.length} rigs`, category && `Category ${category}`, printedOn()]
+    .filter(Boolean) as string[];
+  const exportExcel = () => {
+    const meta = data?.rigMeta ?? new Map();
+    void writeWorkbook(`MOH_All_Rigs_${span}.xlsx`, [
+      { name: 'Rig Summary', rows: withTitle('All Rigs – MOH Summary', reportLines, rigSummarySheet(rigs, shown, years, meta, clientOf)) },
+      { name: 'Workload Matrix', rows: withTitle('All Rigs – Workload Matrix', reportLines, matrixSheet(rigs, shown, years, cost)) },
+      { name: 'Annual Budget', rows: withTitle('All Rigs – Annual Workload & Budget', reportLines, annualSheet(shown, years, cost)) },
+      { name: 'Equipment Plan', rows: withTitle('All Rigs – Equipment Plan', reportLines, planSheet(shown, years, projects, true)) },
+      { name: 'MOH Projects', rows: withTitle('All Rigs – MOH Projects', reportLines, projectsSheet(shown, years, projects, currencyOf)) },
+    ]).catch((e: Error) => setMsg(e.message));
+  };
+
   const columns: Column<RigSummary>[] = [
     { key: 'rig', header: 'Rig', sortable: true, value: (r) => r.name,
       render: (r) => <a href={`/inspection/moh/${r.id}`} onClick={(e) => { e.preventDefault(); open(r.id); }}>{r.name}</a> },
+    { key: 'client', header: 'Client', sortable: true, value: (r) => r.client },
+    { key: 'location', header: 'Location', sortable: true, value: (r) => r.location },
     { key: 'units', header: 'Units', align: 'right', sortable: true, value: (r) => r.s.units },
     { key: 'overdue', header: 'Overdue', align: 'right', sortable: true, value: (r) => r.s.overdue,
       render: (r) => <span style={{ color: r.s.overdue ? 'var(--i-danger)' : undefined, fontWeight: r.s.overdue ? 600 : 400 }}>{r.s.overdue}</span> },
@@ -65,6 +91,7 @@ export default function MohDashboardView() {
     { key: 'missing', header: 'Missing data', align: 'right', sortable: true, value: (r) => r.s.missing },
     { key: 'auto', header: 'From inspections', align: 'right', sortable: true, value: (r) => r.auto },
     { key: 'projects', header: `MOH ${span}`, align: 'right', sortable: true, value: (r) => r.s.projects },
+    { key: 'budget', header: 'Estimated budget', align: 'right', value: (r) => currencyText(r.cost) },
   ];
 
   return (
@@ -73,8 +100,15 @@ export default function MohDashboardView() {
         subtitle={`Consolidated MOH workload and overdue exposure across all rigs · ${span}`}
         actions={(
           <>
+            <button type="button" className="insp-btn" onClick={exportExcel} disabled={!data}>
+              <Icon name="export" /> Export Excel</button>
             <button type="button" className="insp-btn" onClick={exportSummary} disabled={!data}>
-              <Icon name="export" /> Export CSV</button>
+              <Icon name="export" /> CSV</button>
+            <button type="button" className="insp-btn" onClick={() => window.print()} disabled={!data}>Print</button>
+            {editable && (
+              <button type="button" className="insp-btn" onClick={() => setShowImport((v) => !v)} disabled={!data}>
+                <Icon name="upload" /> Import Excel</button>
+            )}
             {editable && (
               <button type="button" className="insp-btn" onClick={() => setShowItems((v) => !v)}>
                 <Icon name="columns" /> Equipment master</button>
@@ -82,7 +116,14 @@ export default function MohDashboardView() {
           </>
         )} />
 
-      {error && <div className="insp-card" style={{ borderColor: 'var(--i-danger)', marginBottom: 14 }}>{error}</div>}
+      <PrintHeader title="All Rigs – Major Overhaul Dashboard" lines={reportLines} />
+      {(error || msg) && <div className="insp-card" style={{ borderColor: 'var(--i-danger)', marginBottom: 14 }}>{error || msg}</div>}
+
+      {showImport && data && (
+        <div className="moh-noprint" style={{ marginBottom: 14 }}>
+          <MohImportPanel rigs={rigs} data={data} onClose={() => setShowImport(false)} onImported={plan.reload} />
+        </div>
+      )}
 
       {showItems && data && (
         <MohItemsPanel items={data.items} onClose={() => setShowItems(false)} onSaved={plan.reload} />
@@ -111,6 +152,7 @@ export default function MohDashboardView() {
             <Kpi label={`MOH projects · ${years.length} yrs`} value={total.projects}
               caption={total.highest ? `peak ${total.highest}` : undefined} />
             <Kpi label="Missing last MOH" value={total.missing} caption="enter on rig pages" />
+            <Kpi label="Estimated budget" value={currencyText(cost.total)} caption="from project details" />
           </div>
 
           <SectionTitle>Workload</SectionTitle>
@@ -142,6 +184,21 @@ export default function MohDashboardView() {
           <SectionTitle>Rig-by-Rig Summary</SectionTitle>
           <DataTable rows={perRig} columns={columns} rowKey={(r) => r.id} loading={!data}
             searchPlaceholder="Search rigs…" emptyTitle="No rigs" emptyDesc="No rigs are inside your access scope." />
+
+          <SectionTitle>Annual Workload &amp; Budget</SectionTitle>
+          <div className="insp-table-wrap">
+            <table className="insp-table">
+              <thead><tr><th>Year</th><th style={{ textAlign: 'right' }}>Planned MOHs</th><th style={{ textAlign: 'right' }}>Estimated cost</th></tr></thead>
+              <tbody>
+                {years.map((y) => (
+                  <tr key={y}><td>{y}</td><td style={{ textAlign: 'right' }}>{total.annual[y] || '—'}</td>
+                    <td style={{ textAlign: 'right' }}>{currencyText(cost.byYear[y] ?? {})}</td></tr>
+                ))}
+              </tbody>
+              <tfoot><tr><th>Total</th><th style={{ textAlign: 'right' }}>{total.projects}</th>
+                <th style={{ textAlign: 'right' }}>{currencyText(cost.total)}</th></tr></tfoot>
+            </table>
+          </div>
 
           <SectionTitle>All Rigs – Workload Matrix</SectionTitle>
           <div className="insp-table-wrap">

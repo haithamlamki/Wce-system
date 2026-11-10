@@ -8,8 +8,8 @@ import { Badge } from './ui';
 import { useInspection } from '../state/InspectionContext';
 import { downloadCsv } from '../lib/exportCsv';
 import {
-  buildPlanRows, clampHorizon, DEFAULT_HORIZON, MAX_HORIZON, planYears, projectKey, STATUS_TONE,
-  type MohProject, type MohStatus, type PlanRow, type Rig,
+  blankRigMeta, buildPlanRows, clampHorizon, costSummary, DEFAULT_HORIZON, MAX_HORIZON, planYears, projectKey, STATUS_TONE,
+  type Currency, type MohProject, type MohStatus, type PlanRow, type Rig, type RigMeta,
 } from '../lib/moh';
 import { fetchMohData, type MohData } from '../lib/mohApi';
 
@@ -29,7 +29,7 @@ export function todayUTC(): Date {
 }
 
 export function useMohPlan() {
-  const { units, scopedUnitIds } = useInspection();
+  const { units, companies, scopedUnitIds } = useInspection();
   const thisYear = new Date().getFullYear();
   const [horizon, setHorizonState] = useState(() => clampHorizon(stored(H_KEY), DEFAULT_HORIZON));
   const [startYear, setStartState] = useState(() => {
@@ -66,7 +66,19 @@ export function useMohPlan() {
   const projects = useMemo(() => new Map<string, MohProject>((data?.projects ?? [])
     .map((p) => [projectKey(p.rigId, p.itemId, p.mohUnitId, p.year), p])), [data]);
 
-  return { data, error, reload, rigs, rows, years, horizon, setHorizon, startYear, setStartYear, projects };
+  const metaOf = useCallback((rigId: string): RigMeta => data?.rigMeta.get(rigId) ?? blankRigMeta(rigId), [data]);
+  const currencyOf = useCallback((rigId: string): Currency => metaOf(rigId).currency, [metaOf]);
+  /** Client as recorded on the unit (migration 0040): description, else owning company. */
+  const clientOf = useCallback((rigId: string): string => {
+    const u = units.find((x) => x.id === rigId);
+    return u?.description?.trim() || companies.find((c) => c.id === u?.companyId)?.name || '';
+  }, [units, companies]);
+  const cost = useMemo(() => costSummary(rows, years, projects, currencyOf), [rows, years, projects, currencyOf]);
+
+  return {
+    data, error, reload, rigs, rows, years, horizon, setHorizon, startYear, setStartYear, projects,
+    metaOf, currencyOf, clientOf, cost,
+  };
 }
 
 export function PlanControls({ startYear, horizon, onStart, onHorizon }: {
@@ -126,4 +138,19 @@ export function rowsToCsv(header: string[], body: (string | number)[][]): string
 
 export function exportCsv(fileName: string, header: string[], body: (string | number)[][]): void {
   downloadCsv(rowsToCsv(header, body), fileName);
+}
+
+/** Report header shown only when printing (title, period, who / when, remarks). */
+export function PrintHeader({ title, lines, remarks }: { title: string; lines: string[]; remarks?: string }) {
+  return (
+    <div className="moh-print-only moh-print-head">
+      <h1>{title}</h1>
+      <div>{lines.filter(Boolean).join('  ·  ')}</div>
+      {remarks?.trim() && <p><b>Remarks:</b> {remarks}</p>}
+    </div>
+  );
+}
+
+export function printedOn(): string {
+  return `Printed ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 }
