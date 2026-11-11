@@ -18,6 +18,7 @@ const SECTIONS: { title: string; items: Item[] }[] = [
     items: [
       { to: '/inspection', label: 'Dashboard', ico: 'dashboard', perm: 'dashboard:view', end: true },
       { to: '/inspection/moh', label: 'Major Overhaul Dashboard', ico: 'moh', perm: 'moh:view' },
+      { to: '/inspection/am', label: 'Annual Maintenance', ico: 'am', perm: 'am:view' },
     ],
   },
   {

@@ -4,11 +4,12 @@ import {
 } from './permissions';
 
 describe('inspection permissions', () => {
-  it('lists the 80 reference keys + 2 MOH keys across 22 resources', () => {
-    expect(INSPECTION_PERMISSIONS).toHaveLength(82);
-    expect(new Set(INSPECTION_PERMISSIONS).size).toBe(82);
-    expect(PERMISSION_RESOURCES).toHaveLength(22);
+  it('lists the 80 reference keys + 2 MOH + 2 AM keys across 23 resources', () => {
+    expect(INSPECTION_PERMISSIONS).toHaveLength(84);
+    expect(new Set(INSPECTION_PERMISSIONS).size).toBe(84);
+    expect(PERMISSION_RESOURCES).toHaveLength(23);
     expect(permissionsOf('moh')).toEqual(['moh:update', 'moh:view']);
+    expect(permissionsOf('am')).toEqual(['am:update', 'am:view']);
     expect(permissionsOf('inspection')).toContain('inspection:edit-identity');
     expect(permissionsOf('inspection')).not.toContain('inspection-file:upload');
   });
