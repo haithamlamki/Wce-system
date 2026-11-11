@@ -8,6 +8,8 @@ import type { Role } from '../../../state/AuthContext';
 
 const ACTIONS = {
   ai: ['use'],
+  /** Annual Maintenance plans + rig contract terms (migration 0055; not in the reference system). */
+  am: ['update', 'view'],
   audit: ['view'],
   calibration: ['create', 'delete', 'export', 'file-download', 'file-upload', 'import', 'notify', 'update', 'view'],
   company: ['create', 'delete', 'update', 'view'],
@@ -37,7 +39,7 @@ export type InspectionPermission = {
   [R in keyof Actions]: `${R & string}:${Actions[R][number]}`
 }[keyof Actions];
 
-/** The 80 reference permission keys plus the 2 MOH keys, grouped by resource. */
+/** The 80 reference permission keys plus the 2 MOH and 2 AM keys, grouped by resource. */
 export const INSPECTION_PERMISSIONS: readonly InspectionPermission[] = Object.entries(ACTIONS)
   .flatMap(([r, acts]) => (acts as readonly string[]).map((a) => `${r}:${a}` as InspectionPermission));
 

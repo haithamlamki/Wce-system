@@ -4,7 +4,7 @@
 //  same glyph for each affordance.
 // ============================================================================
 import {
-  BadgeCheck, Bell, Bug, History, KeyRound, Layers, Newspaper, Shield, Users, Boxes, Building2, CalendarClock, ChartPie, ChevronDown,
+  BadgeCheck, Bell, Bug, CalendarRange, History, KeyRound, Layers, Newspaper, Shield, Users, Boxes, Building2, CalendarClock, ChartPie, ChevronDown,
   ChevronRight, ClipboardCheck, Download, Factory, FileDown, FileStack, FileText,
   FolderOpen, Funnel, Gauge, LayoutDashboard, Moon, PanelLeft, Pencil, Plus, Ruler, ScrollText,
   Settings2, Share2, ShieldCheck, SlidersHorizontal, Stamp, Store, Sun, Tags, Timer,
@@ -16,6 +16,7 @@ const ICONS = {
   // sidebar
   dashboard: LayoutDashboard,
   moh: Wrench,
+  am: CalendarRange,
   equipment: Boxes,
   inspections: ClipboardCheck,
   approvals: BadgeCheck,
