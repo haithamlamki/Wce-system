@@ -131,8 +131,12 @@ export default function AmDashboardView() {
           <>
             <button type="button" className="insp-btn" onClick={() => window.print()} disabled={!data}>Print</button>
             {editable && (
-              <button type="button" className="insp-btn primary" onClick={() => setShowImport((v) => !v)} disabled={!data}>
-                <Icon name="upload" /> Import Excel plan</button>
+              <>
+                <button type="button" className="insp-btn" onClick={() => navigate('/inspection/am/new')}>
+                  <Icon name="plus" /> New plan</button>
+                <button type="button" className="insp-btn primary" onClick={() => setShowImport((v) => !v)} disabled={!data}>
+                  <Icon name="upload" /> Import Excel plan</button>
+              </>
             )}
           </>
         )} />

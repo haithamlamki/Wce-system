@@ -92,6 +92,8 @@ export default function AmPlanView() {
         actions={(
           <>
             <button type="button" className="insp-btn" onClick={() => navigate('/inspection/am')}>← All plans</button>
+            <button type="button" className="insp-btn primary" onClick={() => navigate(`/inspection/am/${plan.id}/sheet`)}>
+              <Icon name="edit" /> {editable ? 'Edit in sheet' : 'Open sheet'}</button>
             <button type="button" className="insp-btn" onClick={() => void downloadPlanWorkbook(plan, items).catch(fail)}>
               <Icon name="export" /> Export Excel</button>
             <button type="button" className="insp-btn" onClick={() => window.print()}>Print</button>

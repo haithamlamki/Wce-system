@@ -145,11 +145,11 @@ export async function saveContract(c: AmContract): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export type PlanPatch = Partial<Pick<AmPlan, 'status' | 'actualStart' | 'actualEnd' | 'allowedDays' | 'rateBasis'
+export type PlanPatch = Partial<Pick<AmPlan, 'title' | 'status' | 'actualStart' | 'actualEnd' | 'allowedDays' | 'rateBasis'
   | 'ratePercent' | 'overrunRatePercent' | 'dailyRate' | 'currency' | 'includesCatIv' | 'notes'>>;
 
 const PATCH_COLS: Record<keyof PlanPatch, string> = {
-  status: 'status', actualStart: 'actual_start', actualEnd: 'actual_end', allowedDays: 'allowed_days',
+  title: 'title', status: 'status', actualStart: 'actual_start', actualEnd: 'actual_end', allowedDays: 'allowed_days',
   rateBasis: 'rate_basis', ratePercent: 'rate_percent', overrunRatePercent: 'overrun_rate_percent',
   dailyRate: 'daily_rate', currency: 'currency', includesCatIv: 'includes_cat_iv', notes: 'notes',
 };
