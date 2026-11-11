@@ -45,6 +45,7 @@ import MohDashboardView from './views/MohDashboardView';
 import MohRigView from './views/MohRigView';
 import AmDashboardView from './views/AmDashboardView';
 import AmPlanView from './views/AmPlanView';
+import AmSheetView from './views/AmSheetView';
 
 function ModuleRoutes() {
   const { enabled, loading, canAccess, error } = useInspection();
@@ -64,7 +65,9 @@ function ModuleRoutes() {
       <Route path="moh" element={<MohDashboardView />} />
       <Route path="moh/:rigId" element={<MohRigView />} />
       <Route path="am" element={<AmDashboardView />} />
+      <Route path="am/new" element={<AmSheetView />} />
       <Route path="am/:planId" element={<AmPlanView />} />
+      <Route path="am/:planId/sheet" element={<AmSheetView />} />
       <Route path="equipment" element={<EquipmentView />} />
       <Route path="equipment/:typeId" element={<CatalogView />} />
       <Route path="records" element={<RecordsView />} />
