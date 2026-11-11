@@ -208,7 +208,12 @@ function ItemRows({ item: i, index, items, editable, edit }: {
 
 /** Alt+Enter in a task inserts the next task, as adding a row in the workbook. */
 function taskKeys(e: KeyboardEvent<HTMLTextAreaElement>, add: () => void) {
-  if (e.key === 'Enter' && e.altKey) { e.preventDefault(); add(); }
+  if (e.key !== 'Enter' || !e.altKey) return;
+  e.preventDefault();
+  const row = e.currentTarget.closest('tr');
+  add();
+  // Move the cursor into the new task, as Excel moves to the inserted row.
+  requestAnimationFrame(() => row?.nextElementSibling?.querySelector<HTMLTextAreaElement>('td.task textarea')?.focus());
 }
 
 /** A date typed as in Excel ("15-Nov-26", "15/11/2026"; Ctrl+; = today), shown in the sheet's format. */

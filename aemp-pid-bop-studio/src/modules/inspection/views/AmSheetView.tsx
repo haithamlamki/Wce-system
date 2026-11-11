@@ -97,8 +97,9 @@ export default function AmSheetView() {
       const m = (e as Error).message;
       setIssues([{ line: null, message: /insp_am_plans_title|duplicate key/.test(m)
         ? 'This rig already has a plan with that project name.' : m }]);
+    } finally {
+      setBusy(false); // also after creating a plan, whose route change keeps this component mounted
     }
-    setBusy(false);
   };
 
   if (error) return <EmptyState ico="⚠" title="Maintenance plan" desc={error} />;
