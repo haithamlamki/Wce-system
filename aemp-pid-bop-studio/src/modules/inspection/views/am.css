@@ -13,21 +13,49 @@
 .am-checklist input { margin-top: 2px; }
 .am-checklist .done span { color: var(--i-muted); text-decoration: line-through; }
 
-.am-gantt { overflow-x: auto; font-size: 11px; }
-.am-gantt-row { display: grid; grid-template-columns: 260px 1fr; min-width: calc(260px + var(--am-days) * 22px); }
-.am-gantt-label { padding: 3px 8px 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.am-gantt-grid { display: grid; grid-template-columns: repeat(var(--am-days), 22px); }
-.am-gantt-grid > * { grid-row: 1; }
-.am-gantt-head .am-gantt-label { font-weight: 600; }
-.am-gantt-day { text-align: center; color: var(--i-muted); border-left: 1px solid var(--i-border); }
-.am-gantt-cell { border-left: 1px solid var(--i-border); min-height: 20px; }
-.am-gantt-day.win, .am-gantt-cell.win { background: color-mix(in srgb, var(--i-brand) 10%, transparent); }
-.am-gantt-day.today { color: var(--i-danger); font-weight: 700; }
-.am-gantt-cell.today { box-shadow: inset 2px 0 0 var(--i-danger); }
-.am-gantt-bar { align-self: center; height: 14px; border-radius: 3px; color: #fff; font-size: 10px; line-height: 14px;
-  padding: 0 4px; overflow: hidden; white-space: nowrap; z-index: 1; }
+/* Gantt — the workbook's "Gantt Chart" sheet (paper colours, also in dark mode) */
+.amg-wrap { overflow: auto; max-height: calc(100vh - 220px); background: #fff; color: #000;
+  border: 1px solid #d0d7de; border-radius: 6px; font-family: Calibri, Carlito, 'Segoe UI', Arial, sans-serif; font-size: 12px; }
+.amg { border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+.amg th, .amg td { padding: 0 3px; height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-right: 1px solid #d9d9d9; border-bottom: 1px solid #d9d9d9; }
+.amg thead th { position: sticky; z-index: 2; background: #fff; text-align: center; font-weight: 700; }
+.amg .wk th { top: 0; color: #1f3864; text-align: left; border-left: 1px solid #8497b0; }
+.amg .dt th { top: 20px; color: #1f3864; }
+.amg .hd th { top: 40px; height: 34px; background: #07788d; color: #fff; white-space: normal; line-height: 1.1; }
+.amg .hd th:nth-child(n+7) { font-weight: 400; font-size: 11px; padding: 0; }
+.amg th.we { background: #8497b0; color: #fff; }
+.amg th.today { background: #ff0000; color: #fff; }
+.amg .wk th, .amg .dt th { height: 18px; }
+.amg .dt th.win { border-bottom: 4px solid #07788d; }
+/* frozen first column, as the sheet's pane split */
+.amg .fix { position: sticky; left: 0; z-index: 3; background: #fff; }
+.amg thead .fix { z-index: 4; }
+.amg .hd th.fix { background: #07788d; text-align: left; }
+.amg td.lbl { background: #eaf3f8; font-weight: 600; }
+.amg td.c { text-align: center; }
+.amg td.st-Completed { background: #c6efce; color: #006100; }
+.amg td.st-InProgress { background: #ffeb9c; color: #9c5700; }
+.amg td.st-NotStarted { background: #e7e6e6; color: #3a3a3a; }
+.amg td.d { padding: 0; border-right-color: #eeeeee; }
+.amg td.d.we { background: #eef1f6; }
+.amg td.d.today { border-left: 1px dashed #1f3864; border-right: 1px dashed #1f3864; }
+/* bar: grey remainder, filled part by progress; thin dark outline with end caps */
+.amg td.bar { background: #e7e6e6; border-top: 1px solid #404040; border-bottom: 1px solid #404040; }
+.amg td.bar.f-prog { background: #ffc000; }
+.amg td.bar.f-done { background: #70ad47; }
+.amg td.bar.f-late { background: #c00000; }
+.amg td.bar.bs { border-left: 1px solid #404040; }
+.amg td.bar.be { border-right: 1px solid #404040; }
+.amg-note { margin: 6px 4px 2px; font-size: 12px; color: var(--i-muted); }
+.amg-note .k { display: inline-block; width: 14px; height: 10px; margin: 0 4px 0 10px; vertical-align: -1px;
+  border: 1px solid #404040; background: #e7e6e6; }
+.amg-note .k.f-prog { background: #ffc000; } .amg-note .k.f-done { background: #70ad47; } .amg-note .k.f-late { background: #c00000; }
+.amg-note .k.k-today { background: #ff0000; border-color: #ff0000; }
+.amg-note .k.k-win { background: #fff; border: 0; border-bottom: 4px solid #07788d; height: 6px; }
 
 @media print {
   .am-noprint { display: none !important; }
-  .am-gantt { overflow: visible; }
+  .amg-wrap { overflow: visible; max-height: none; border: 0; }
+  .amg thead th, .amg .fix { position: static; }
 }
