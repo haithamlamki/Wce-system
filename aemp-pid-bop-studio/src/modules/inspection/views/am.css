@@ -21,6 +21,7 @@
   border-right: 1px solid #d9d9d9; border-bottom: 1px solid #d9d9d9; }
 .amg thead th { position: sticky; z-index: 2; background: #fff; text-align: center; font-weight: 700; }
 .amg .wk th { top: 0; color: #1f3864; text-align: left; border-left: 1px solid #8497b0; }
+.amg .wk th.fix { border-left: 0; }
 .amg .dt th { top: 20px; color: #1f3864; }
 .amg .hd th { top: 40px; height: 34px; background: #07788d; color: #fff; white-space: normal; line-height: 1.1; }
 .amg .hd th:nth-child(n+7) { font-weight: 400; font-size: 11px; padding: 0; }
